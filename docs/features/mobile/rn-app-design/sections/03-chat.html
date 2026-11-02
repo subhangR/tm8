@@ -1,0 +1,1446 @@
+<section class="doc-section" id="s-chat" data-title="Chat: conversations, transcript, composer, channels, messages, forms" data-lane="03 chat">
+<style>
+/* ---- lane 03 · chat — every rule scoped under #s-chat, tokens only ---- */
+#s-chat .hstrip { display: flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 var(--gutter) 6px; background: var(--paper); border-bottom: 1px solid var(--line); position: relative; z-index: 2; white-space: nowrap; overflow: hidden; font-size: var(--fs-c1); color: var(--ink-3); }
+#s-chat .hstrip .chip { height: 24px; flex: 0 1 auto; min-width: 0; }
+#s-chat .ctx { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-c1); line-height: 1; color: var(--ink-3); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+#s-chat .ctx .ring { width: 16px; height: 16px; } #s-chat .ctx .ring::after { width: 10px; height: 10px; }
+#s-chat .ctx.unk .ring { background: var(--active); }
+#s-chat .phone[data-os="android"] .topbar.chat .title { font-size: var(--fs-hl); line-height: var(--lh-hl); font-weight: 500; }
+#s-chat .day, #s-chat .since { display: flex; align-items: center; gap: 10px; font-size: var(--fs-c1); font-weight: 600; color: var(--ink-3); white-space: nowrap; }
+#s-chat .day::before, #s-chat .day::after, #s-chat .since::before, #s-chat .since::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+#s-chat .since { color: var(--brand); } #s-chat .since::before, #s-chat .since::after { background: var(--brand); opacity: .4; }
+#s-chat .jump { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px 0 10px; border-radius: var(--r-pill); background: var(--card); border: 1px solid var(--line-2); box-shadow: var(--sh-pop); font-size: var(--fs-foot); font-weight: 600; color: var(--ink); z-index: 4; white-space: nowrap; }
+#s-chat .jump .ic { width: 16px; height: 16px; color: var(--brand); }
+#s-chat .mchip { display: inline-flex; align-items: center; height: 18px; padding: 0 5px; border-radius: 5px; border: 1px solid var(--line-2); font-size: var(--fs-c2); font-weight: 600; color: var(--ink-3); white-space: nowrap; }
+#s-chat .turn .prose { font-size: var(--fs-callout); line-height: var(--lh-body); }
+#s-chat .turn .prose ul { margin-bottom: var(--s2); } #s-chat .turn .prose h2 { margin-top: 0; }
+#s-chat .bubble .chip, #s-chat .post .chip, #s-chat .box .chip { height: 22px; font-size: var(--fs-foot); vertical-align: -4px; margin: 0 1px; }
+#s-chat .turn.other { align-items: flex-start; }
+#s-chat .turn.other .bubble { background: var(--surface); border-radius: 18px 18px 18px 4px; padding: 10px 14px; max-width: 86%; font-size: var(--fs-body); line-height: 22px; }
+#s-chat .turn.third { align-self: center; width: 94%; padding: 10px 12px; border: 1px dashed var(--line-2); border-radius: 14px; background: var(--surface); gap: 6px; }
+#s-chat .turn.third .tx { font-size: var(--fs-sub); line-height: var(--lh-sub); }
+#s-chat .via { display: inline-flex; align-items: center; gap: 5px; } #s-chat .via .chip { height: 22px; }
+#s-chat .think { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-foot); color: var(--ink-3); font-weight: 500; }
+#s-chat .think .ic { width: 14px; height: 14px; }
+#s-chat .thought { margin: 0; padding: 2px 0 2px 12px; border-left: 2px solid var(--line-2); font-size: var(--fs-foot); line-height: var(--lh-foot); color: var(--ink-3); font-style: italic; }
+#s-chat .steps .fl { color: var(--block); font-weight: 600; } #s-chat .steps > .ic:last-child { margin-left: -4px; }
+#s-chat .steps.open { gap: 0; }
+#s-chat .step .sx { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#s-chat .step .sx i { font-style: normal; color: var(--ink-3); }
+#s-chat .step.err .sx i { color: var(--block); }
+#s-chat .step .spinner { width: 13px; height: 13px; flex: 0 0 auto; border-top-color: var(--brand); }
+#s-chat .step.dim { color: var(--ink-3); }
+#s-chat .errline { font-size: var(--fs-foot); line-height: var(--lh-foot); color: var(--block); }
+#s-chat .errline span { color: var(--ink-3); }
+#s-chat .receipt { padding: 4px 0; background: var(--surface); border-color: transparent; }
+#s-chat .receipt .rr { display: grid; grid-template-columns: 14px auto minmax(0, 1fr) auto; align-items: center; column-gap: 8px; padding: 6px 12px; min-height: 36px; }
+#s-chat .receipt .rr.nest { padding-left: 34px; position: relative; }
+#s-chat .receipt .rr.nest::before { content: ""; position: absolute; left: 18px; top: 0; height: 50%; width: 9px; border-left: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); border-bottom-left-radius: 4px; }
+#s-chat .receipt .rr .ri { display: grid; place-items: center; color: var(--ink-3); } #s-chat .receipt .rr .ri .ic { width: 16px; height: 16px; }
+#s-chat .receipt .rr .rt { min-width: 0; display: flex; flex-direction: column; }
+#s-chat .receipt .rr .rt b { font-weight: 500; font-size: var(--fs-sub); line-height: var(--lh-sub); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#s-chat .receipt .rr .rt small { font-size: var(--fs-c1); line-height: var(--lh-c1); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 5px; }
+#s-chat .receipt .rr.bad .rt b { color: var(--block); white-space: normal; }
+#s-chat .receipt .rr.bad .rt small { white-space: normal; }
+#s-chat .receipt .rr .mk.edited, #s-chat .receipt .rr .mk.linked { color: var(--ink-2); }
+#s-chat .spill { display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 6px; border-radius: var(--r-pill); background: var(--run-soft); color: var(--run); font-size: var(--fs-c2); font-weight: 600; flex: 0 0 auto; }
+#s-chat .spill .ic { width: 11px; height: 11px; }
+#s-chat .spill.wait { background: var(--wait-soft); color: var(--wait); }
+#s-chat .spill::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; animation: ph-pulse 1.4s ease-in-out infinite; }
+#s-chat .thumb { width: 40px; height: 28px; border-radius: 5px; border: 1px solid var(--line-2); background: var(--card); display: grid; place-items: center; }
+#s-chat .thumb svg { width: 36px; height: 24px; fill: none; stroke: var(--ink-3); stroke-width: 1.2; }
+#s-chat .usage { display: flex; flex-wrap: wrap; gap: 0 8px; font-family: var(--mono); font-size: var(--fs-c2); line-height: 16px; color: var(--ink-4); }
+#s-chat .usage b { font-weight: 600; color: var(--ink-3); }
+#s-chat .endmark { display: flex; align-items: center; gap: 6px; font-size: var(--fs-c1); line-height: var(--lh-c1); color: var(--ink-3); }
+#s-chat .endmark .ic { width: 13px; height: 13px; } #s-chat .endmark.ok .ic { color: var(--run); } #s-chat .endmark.bad { color: var(--block); }
+#s-chat .endmark .sq { width: 9px; height: 9px; border-radius: 2px; background: var(--ink-3); flex: 0 0 auto; }
+#s-chat .terr { border-radius: var(--r-md); background: var(--block-soft); color: var(--block); padding: 9px 12px; font-size: var(--fs-foot); line-height: var(--lh-foot); }
+#s-chat .terr b { display: block; font-weight: 600; } #s-chat .terr span { color: var(--ink-2); font-family: var(--mono); font-size: var(--fs-c1); }
+#s-chat .liverow { display: flex; align-items: center; gap: 10px; padding: 7px var(--gutter); border-top: 1px solid var(--line); background: var(--paper); position: relative; z-index: 2; }
+#s-chat .liverow .spinner { width: 16px; height: 16px; border-top-color: var(--run); flex: 0 0 auto; }
+#s-chat .liverow .lt { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+#s-chat .liverow .lt b { font-size: var(--fs-foot); line-height: var(--lh-foot); font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#s-chat .liverow .lt small { font-family: var(--mono); font-size: var(--fs-c2); line-height: 14px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#s-chat .stopbtn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: var(--r-pill); background: var(--block-soft); color: var(--block); font-size: var(--fs-foot); font-weight: 600; flex: 0 0 auto; }
+#s-chat .stopbtn i { width: 9px; height: 9px; border-radius: 2px; background: currentColor; }
+#s-chat .caret { display: inline-block; width: 2px; height: 19px; background: var(--brand); vertical-align: -4px; margin-left: 1px; animation: s-chat-blink 1s steps(1) infinite; }
+@keyframes s-chat-blink { 50% { opacity: 0; } }
+#s-chat .code { border-radius: var(--r-sm); background: var(--surface); overflow: hidden; margin: var(--s2) 0; border: 1px solid var(--line); }
+#s-chat .code .ch { display: flex; align-items: center; justify-content: space-between; padding: 4px 10px; font-family: var(--mono); font-size: var(--fs-c2); color: var(--ink-3); border-bottom: 1px solid var(--line); }
+#s-chat .code .ch span { display: inline-flex; align-items: center; gap: 4px; font-family: var(--ui); font-weight: 600; font-size: var(--fs-c1); color: var(--ink-2); }
+#s-chat .code .ch .ic { width: 13px; height: 13px; }
+#s-chat .code pre { margin: 0; padding: 8px 10px; background: transparent; border-radius: 0; font-size: var(--fs-c1); line-height: 17px; }
+#s-chat .tk { color: var(--merged); } #s-chat .tq { color: var(--run); } #s-chat .tc { color: var(--ink-4); }
+#s-chat .prose table { margin: var(--s2) 0; } #s-chat .prose th { background: var(--surface); font-weight: 600; }
+#s-chat .form { border: 1px solid var(--line-2); border-radius: var(--r-lg); background: var(--card); overflow: hidden; }
+#s-chat .form .fh { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: var(--wait-soft); font-size: var(--fs-foot); font-weight: 600; color: var(--ink-2); }
+#s-chat .form .fh .ic { width: 16px; height: 16px; color: var(--wait); } #s-chat .form .fh .pill { margin-left: auto; }
+#s-chat .form .fq { padding: 10px 12px 6px; font-size: var(--fs-hl); line-height: var(--lh-hl); font-weight: 600; }
+#s-chat .form .fo { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 12px; font-size: var(--fs-sub); line-height: var(--lh-sub); }
+#s-chat .form .fo + .fo { border-top: 1px solid var(--line); }
+#s-chat .form .fo .input { flex: 1; min-height: 36px; font-size: var(--fs-sub); }
+#s-chat .form .ff { display: flex; align-items: center; gap: 8px; padding: 10px 12px 12px; }
+#s-chat .form .ff .note { font-size: var(--fs-c1); color: var(--ink-3); line-height: var(--lh-c1); }
+#s-chat .form.done .fh { background: var(--merged-soft); } #s-chat .form.done .fh .ic { color: var(--merged); }
+#s-chat .radio { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--line-2); flex: 0 0 auto; display: grid; place-items: center; }
+#s-chat .radio.on { border-color: var(--brand); } #s-chat .radio.on::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--brand); }
+#s-chat .rec { margin-left: auto; font-size: var(--fs-c2); font-weight: 700; color: var(--run); background: var(--run-soft); border-radius: 5px; padding: 2px 6px; white-space: nowrap; }
+#s-chat .post { display: flex; gap: 10px; padding: 8px var(--gutter); }
+#s-chat .post .pb { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+#s-chat .post .ph { display: flex; align-items: baseline; gap: 6px; font-size: var(--fs-c1); color: var(--ink-3); white-space: nowrap; }
+#s-chat .post .ph b { color: var(--ink); font-size: var(--fs-sub); font-weight: 600; }
+#s-chat .post .tx { font-size: var(--fs-sub); line-height: var(--lh-sub); color: var(--ink); }
+#s-chat .post.follow { padding-top: 0; } #s-chat .post.follow .avatar { visibility: hidden; height: 0; }
+#s-chat .mention { color: var(--brand); font-weight: 600; background: var(--brand-soft); border-radius: 4px; padding: 0 3px; }
+#s-chat .reacts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+#s-chat .rx { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 9px; border-radius: var(--r-pill); border: 1px solid var(--line); background: var(--surface); font-size: var(--fs-c1); font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+#s-chat .rx .ic { width: 14px; height: 14px; } #s-chat .rx.me { border-color: transparent; background: var(--brand-soft); color: var(--brand); }
+#s-chat .replies { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-foot); font-weight: 600; color: var(--brand); white-space: nowrap; }
+#s-chat .replies span { font-weight: 400; color: var(--ink-3); }
+#s-chat .imgs { display: flex; gap: 6px; }
+#s-chat .img { width: 108px; height: 80px; border-radius: 10px; background: var(--active); position: relative; overflow: hidden; border: 1px solid var(--line); }
+#s-chat .img::before { content: ""; position: absolute; left: 30%; right: 30%; top: 10%; bottom: -10%; border-radius: 8px; background: var(--card); box-shadow: var(--sh-md); }
+#s-chat .img::after { content: ""; position: absolute; left: 30%; right: 30%; bottom: 0; height: 18%; background: var(--brand-soft); border-top: 1px solid var(--line-2); }
+#s-chat .facets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#s-chat .facets .lab { font-size: var(--fs-c2); font-weight: 700; letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--ink-4); }
+#s-chat .list.lines > .row.kid { border-top: 0; }
+#s-chat .row.kid { padding-left: calc(var(--gutter) + 34px); min-height: 52px; }
+#s-chat .row.kid::before { content: ""; position: absolute; left: 34px; top: 0; bottom: 0; width: 1px; background: var(--line-2); }
+#s-chat .row.kid.last::before { bottom: 50%; }
+#s-chat .row.kid::after { content: ""; position: absolute; left: 34px; top: 50%; width: 10px; height: 1px; background: var(--line-2); }
+#s-chat .row.kid .kind-ic { width: 28px; height: 28px; }
+#s-chat .row.kid .t { font-size: var(--fs-sub); line-height: var(--lh-sub); }
+#s-chat .row.par .avatar { z-index: 1; }
+#s-chat .disc { display: inline-flex; align-items: center; gap: 2px; color: var(--brand); font-weight: 600; }
+#s-chat .disc .ic { width: 13px; height: 13px; color: var(--brand); stroke-width: 2.25; }
+#s-chat .row .s .chip { height: 22px; font-size: var(--fs-c1); flex: 0 1 auto; min-width: 0; }
+#s-chat .row .s.abt { color: var(--ink-3); }
+#s-chat .row .trail .pin { width: 15px; height: 15px; color: var(--wait); }
+#s-chat .swipe-actions.w3 { width: 180px; } #s-chat .row.swiped3 { transform: translateX(-180px); }
+#s-chat .swipe-actions .act.arch { background: var(--ink-3); }
+#s-chat .preview { position: absolute; left: var(--gutter); right: var(--gutter); z-index: 12; background: var(--paper); border-radius: 14px; overflow: hidden; box-shadow: var(--sh-pop); border: 1px solid var(--line); }
+#s-chat .preview .pv-h { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: var(--fs-sub); font-weight: 600; }
+#s-chat .preview .thread { gap: var(--s3); padding: var(--s3); }
+#s-chat .tray { display: flex; gap: 8px; align-items: center; padding: 2px 0 0; overflow: hidden; }
+#s-chat .tile { width: 56px; height: 56px; border-radius: 10px; background: var(--active); position: relative; overflow: hidden; flex: 0 0 auto; border: 1px solid var(--line-2); }
+#s-chat .tile::before { content: ""; position: absolute; left: 16px; right: 16px; top: 6px; bottom: -4px; border-radius: 5px; background: var(--card); }
+#s-chat .tile .x, #s-chat .attach .x { position: absolute; right: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--ink); color: var(--paper); display: grid; place-items: center; z-index: 1; }
+#s-chat .tile .x .ic, #s-chat .attach .x .ic { width: 11px; height: 11px; stroke-width: 2.5; }
+#s-chat .tile .up { position: absolute; left: 4px; right: 4px; bottom: 4px; height: 4px; border-radius: 2px; background: var(--line-2); z-index: 1; }
+#s-chat .tile .up i { display: block; height: 100%; width: 64%; border-radius: 2px; background: var(--brand); }
+#s-chat .tray .attach { position: relative; padding-right: 30px; height: 56px; max-width: 180px; }
+#s-chat .tray .attach .x { top: 50%; margin-top: -9px; right: 6px; }
+#s-chat .tray .attach span { display: flex; flex-direction: column; min-width: 0; }
+#s-chat .composer .box.multi { min-height: 0; display: block; }
+#s-chat .composer .pk.dis { opacity: .5; }
+#s-chat .composer .pk.bad { border-color: var(--block); color: var(--block); background: var(--block-soft); }
+#s-chat .poptitle { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px 4px; font-size: var(--fs-c1); color: var(--ink-3); }
+#s-chat .grp { padding: 8px 12px 2px; font-size: var(--fs-c2); font-weight: 700; letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--ink-4); }
+#s-chat .popover-list .row .s { font-size: var(--fs-c1); line-height: var(--lh-c1); }
+#s-chat .popover-list .row.sel { background: var(--brand-soft); }
+#s-chat .popover-list .pfoot { padding: 6px 12px 8px; border-top: 1px solid var(--line); font-size: var(--fs-c1); color: var(--ink-3); }
+#s-chat .vpanel { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px var(--gutter) 6px; }
+#s-chat .wave { display: flex; align-items: center; gap: 3px; height: 34px; }
+#s-chat .wave i { width: 3px; border-radius: 2px; background: var(--brand); animation: s-chat-wave 1.1s ease-in-out infinite; }
+#s-chat .wave i:nth-child(3n) { animation-delay: -.3s; } #s-chat .wave i:nth-child(3n+1) { animation-delay: -.6s; }
+@keyframes s-chat-wave { 0%, 100% { transform: scaleY(.45); } 50% { transform: scaleY(1); } }
+#s-chat .micbig { width: 72px; height: 72px; border-radius: 50%; background: var(--block); color: var(--brand-ink); display: grid; place-items: center; box-shadow: 0 0 0 10px var(--block-soft); }
+#s-chat .micbig .ic { width: 30px; height: 30px; color: var(--paper); }
+#s-chat .vhint { font-size: var(--fs-c1); color: var(--ink-3); display: flex; gap: 14px; }
+#s-chat .slider { position: relative; height: 28px; margin: 4px 6px 0; }
+#s-chat .slider::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; height: 4px; border-radius: 2px; background: var(--active); }
+#s-chat .slider .fill { position: absolute; left: 0; top: 12px; height: 4px; border-radius: 2px; background: var(--brand); }
+#s-chat .slider .stop { position: absolute; top: 10px; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; background: var(--line-2); }
+#s-chat .slider .knob { position: absolute; top: 3px; width: 22px; height: 22px; margin-left: -11px; border-radius: 50%; background: var(--card); border: 2px solid var(--brand); box-shadow: var(--sh-md); }
+#s-chat .slabels { display: flex; justify-content: space-between; font-size: var(--fs-c1); color: var(--ink-3); padding: 0 0 2px; }
+#s-chat .slabels b { color: var(--brand); }
+#s-chat .slider.off .fill, #s-chat .slider.off .knob { display: none; }
+#s-chat .seg3 { display: flex; padding: 2px; border-radius: 9px; background: var(--surface); margin-left: auto; }
+#s-chat .seg3 span { padding: 5px 9px; font-size: var(--fs-c1); font-weight: 600; color: var(--ink-2); border-radius: 7px; white-space: nowrap; }
+#s-chat .seg3 span.on { background: var(--card); color: var(--ink); box-shadow: var(--sh-sm); }
+#s-chat .seg3 span.off { color: var(--ink-4); text-decoration: line-through; }
+#s-chat .help { padding: 8px var(--gutter) 0; font-size: var(--fs-c1); line-height: var(--lh-c1); color: var(--ink-3); }
+#s-chat .phone[data-os="android"] .keyboard .k { width: 29px; }
+#s-chat .phone[data-os="android"] .keyboard .k.w { width: 40px; }
+#s-chat .phone[data-os="android"] .keyboard .k.space { width: 156px; }
+#s-chat .people { display: flex; justify-content: center; gap: 18px; padding: 8px var(--gutter) 0; }
+#s-chat .people .pp { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: var(--fs-c1); color: var(--ink-2); position: relative; }
+#s-chat .people .pp.talk .avatar { box-shadow: 0 0 0 3px var(--paper), 0 0 0 5px var(--run); }
+#s-chat .people .pp .mut { position: absolute; right: -2px; top: 30px; width: 20px; height: 20px; border-radius: 50%; background: var(--block); color: var(--paper); display: grid; place-items: center; }
+#s-chat .people .pp .mut .ic { width: 12px; height: 12px; }
+#s-chat .vbtns { display: flex; justify-content: center; gap: 28px; padding: 16px 0 4px; }
+#s-chat .vbtns .vb { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: var(--fs-c1); color: var(--ink-2); }
+#s-chat .vbtns .vb > span { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
+#s-chat .vbtns .vb > span .ic { width: 24px; height: 24px; }
+#s-chat .vbtns .vb.on > span { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+#s-chat .vbtns .vb.leave > span { background: var(--block); color: var(--paper); border-color: transparent; }
+#s-chat .skr { display: flex; gap: 12px; align-items: center; padding: 14px var(--gutter); }
+#s-chat .skr .skeleton.av { width: 36px; height: 36px; border-radius: 9px; flex: 0 0 auto; }
+#s-chat .skr .lines { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+#s-chat .tc-b .del { color: var(--block); } #s-chat .tc-b .add { color: var(--run); } #s-chat .tc-b .dm { color: var(--ink-4); }
+#s-chat .toolcard .tc-h .sub { font-weight: 500; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#s-chat .toolcard .tc-more { padding: 6px 12px 8px; font-size: var(--fs-c1); font-weight: 600; color: var(--brand); border-top: 1px solid var(--line); }
+#s-chat .toolcard.ok .tc-h > .ic:first-child { color: var(--run); }
+#s-chat .stack-v { display: flex; flex-direction: column; gap: 8px; padding: 0 var(--gutter); }
+#s-chat .srow { display: flex; align-items: center; gap: 8px; min-height: 36px; font-size: var(--fs-foot); color: var(--ink-2); }
+#s-chat .srow .ic { width: 15px; height: 15px; color: var(--ink-3); } #s-chat .srow .st { margin-left: auto; color: var(--ink-4); font-variant-numeric: tabular-nums; }
+#s-chat .srow .ok { color: var(--run); }
+#s-chat .mfoot { font-size: var(--fs-c1); line-height: var(--lh-c1); color: var(--ink-3); padding: 0 var(--gutter); }
+#s-chat .msgrow { display: flex; gap: 10px; padding: 10px var(--gutter); }
+#s-chat .msgrow + .msgrow { border-top: 1px solid var(--line); }
+#s-chat .msgrow.reply { padding-left: calc(var(--gutter) + 26px); position: relative; border-top: 0; padding-top: 2px; }
+#s-chat .msgrow.reply::before { content: ""; position: absolute; left: 30px; top: 0; height: 22px; width: 12px; border-left: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); border-bottom-left-radius: 6px; }
+#s-chat .msgrow .mb { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+#s-chat .msgrow .mh { display: flex; align-items: baseline; gap: 6px; font-size: var(--fs-c1); color: var(--ink-3); white-space: nowrap; }
+#s-chat .msgrow .mh b { color: var(--ink); font-size: var(--fs-foot); font-weight: 600; }
+#s-chat .msgrow .mt { font-size: var(--fs-sub); line-height: var(--lh-sub); }
+#s-chat .msgrow .sendagain { align-self: flex-start; }
+#s-chat .tgt { display: flex; align-items: center; gap: 10px; padding: 9px var(--gutter); font-size: var(--fs-foot); }
+#s-chat .tgt + .tgt { border-top: 1px solid var(--line); }
+#s-chat .tgt .kind-ic { width: 28px; height: 28px; border-radius: 7px; background: var(--surface); display: grid; place-items: center; color: var(--ink-2); flex: 0 0 auto; }
+#s-chat .tgt .kind-ic .ic { width: 15px; height: 15px; }
+#s-chat .tgt .tm { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+#s-chat .tgt .tm b { font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#s-chat .tgt .tm small { color: var(--ink-3); font-size: var(--fs-c1); white-space: normal; }
+#s-chat .tinyc { font-size: var(--fs-c1); line-height: var(--lh-c1); color: var(--ink-3); }
+#s-chat .gap { height: 6px; }
+#s-chat .quote { border-left: 3px solid var(--line-2); padding: 2px 0 2px 10px; color: var(--ink-2); font-size: var(--fs-foot); line-height: var(--lh-foot); }
+#s-chat .menu .mi small { color: var(--ink-3); font-size: var(--fs-foot); margin-left: auto; margin-right: 4px; }
+#s-chat .menu .mi.sep { border-top: 6px solid var(--surface); }
+#s-chat .menu .mi.dim { color: var(--ink-4); }
+#s-chat .tinyhint { display: flex; align-items: center; gap: 6px; padding: 0 var(--gutter); font-size: var(--fs-c1); color: var(--ink-3); }
+#s-chat .tinyhint .ic { width: 13px; height: 13px; }
+#s-chat .legend-wide { max-width: 560px; }
+#s-chat .phone p:not(.thought), #s-chat .phone ul, #s-chat .phone ol, #s-chat .phone li { color: inherit; max-width: none; }
+#s-chat .phone pre { color: var(--ink-2); }
+#s-chat .phone code { background: var(--surface); color: inherit; }
+#s-chat .menu .mi { white-space: nowrap; }
+#s-chat .toolcard .tc-h .st { white-space: nowrap; }
+</style>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="s-chat-like" viewBox="0 0 24 24"><path d="M7 11v9H4v-9h3z"/><path d="M7 11l4-7c1.4 0 2.4 1 2.4 2.4V10h5.1c1.2 0 2.1 1.1 1.9 2.3l-1.3 6.2c-.2 1-1 1.5-2 1.5H7"/></symbol>
+  <symbol id="s-chat-dislike" viewBox="0 0 24 24"><path d="M17 13V4h3v9h-3z"/><path d="M17 13l-4 7c-1.4 0-2.4-1-2.4-2.4V14H5.5c-1.2 0-2.1-1.1-1.9-2.3l1.3-6.2c.2-1 1-1.5 2-1.5H17"/></symbol>
+</svg>
+
+<header>
+  <div class="lane-eyebrow">03 · Chat</div>
+  <h2>Chat: conversations, transcript, composer, channels, messages, forms</h2>
+  <p class="lede">Chat is where tm8 work starts, so this is the screen the app is built around: a Chats tab of live conversations with teammates, a transcript that shows what each turn <em>did to the graph</em> (the receipt, one row per entity) instead of tool JSON, and a composer that feels native under a thumb — keyboard-docked, voice, paste, per-host <code>/</code> and <code>@</code> pickers, an offline queue. What is new versus the web phone shell: native stacks and detented sheets, a live-turn row with Stop, a step sheet that holds tool cards one tap away from the reading flow, forms answered inline, chats that expand the sessions they launched, and channels and anchor messages that show delivery and record as two separate facts.</p>
+</header>
+
+<div class="callout ruling"><b>Truth this lane draws from</b><code>chat-home/turn-receipt.ts</code> (one row per entity, marks made / moved / edited / linked / pending / failed), <code>turn-steps.ts</code> + <code>turn-step-lines.ts</code> (human step words, no tool names, R8), <code>live-turn-status-model.ts</code> (the now-sentence and clock), <code>transcript/context-reading.ts</code> (unknown is not zero), <code>composer/composer-model.ts</code> (roles over six modes, effort stops), <code>ChatCredentialPicker.tsx</code>, <code>@tm8/contract</code> <code>chat.start</code> and <code>ChatWorkdirMode</code>, <code>rich-input/triggers.ts</code>, <code>channel-screen/feed-model.ts</code> (delivery words), <code>mobile/CONTRACT.md</code> §3–§5, and <code>tm8 help chat · message send · form</code>. Where a screen needs something the node does not return today, the caption says <b>proposed</b> and the closing callout lists the server work.</div>
+
+<!-- ===================================================== 1 · CHATS ROOT -->
+<h3>Chats — the home tab</h3>
+<p>Newest activity first. Every row says what its conversation is doing <em>in words</em>: <span class="tag">live</span> pulses while a turn streams and the subtitle carries the live row's own sentence ("Worker · Writing…"), <span class="tag">waiting</span> means the agent is waiting on <em>you</em> (a form, a permission), <span class="tag">exited</span> means the chat's runtime is gone and the next message restarts it. A quiet row's subtitle is its last receipt as a sentence ("made 1 doc, linked PR #1012"). A chat that launched sessions carries them as a tree (owner ruling 2026-10-28 14:05).</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large">
+          <div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier<svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+          <div class="title hidden">Chats</div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn brand"><svg class="ic"><use href="#i-edit"/></svg></span></div>
+          <div class="big">Chats</div>
+        </header>
+        <main class="content">
+          <div class="filters"><span class="f on">All</span><span class="f">Live</span><span class="f">Mine</span><span class="f">Unread</span><span class="f">Pinned</span></div>
+          <div class="list lines">
+            <a class="row tall"><span class="avatar agent c2"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Explain the Back Contract to me</span><span class="s">TM8 Helper<span class="dot"></span>3 turns</span><span class="s abt">about <span class="chip"><svg class="ic"><use href="#i-doc"/></svg>The Back Contract</span></span></span><span class="trail"><svg class="ic pin"><use href="#i-pin"/></svg><span class="time">Sun</span></span></a>
+            <a class="row tall"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Design the mobile tab bar</span><span class="s"><span class="pill live">live</span>Worker · Writing…</span></span><span class="trail"><span class="time">now</span></span></a>
+            <a class="row tall unread"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Release notes for #955</span><span class="s"><span class="pill waiting">waiting</span>Reviewer asked you</span></span><span class="trail"><span class="time">11:02</span></span></a>
+            <a class="row tall par"><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Plan the credentials security lane</span><span class="s">Coordinator<span class="dot"></span><span class="disc"><svg class="ic"><use href="#i-chevron-down"/></svg>2 sessions</span></span></span><span class="trail"><span class="time">Mon</span></span></a>
+            <a class="row kid"><span class="kind-ic"><svg class="ic"><use href="#i-session"/></svg></span><span class="main"><span class="t">Security lane A</span><span class="s"><span class="pill waiting">waiting</span>push to origin</span></span><span class="trail"><span class="time">10:48</span></span></a>
+            <a class="row kid last"><span class="kind-ic"><svg class="ic"><use href="#i-session"/></svg></span><span class="main"><span class="t">PTY recheck fails closed</span><span class="s"><span class="pill exited">exited</span>done · PR #1012</span></span><span class="trail"><span class="time">Mon</span></span></a>
+            <a class="row tall"><span class="avatar agent c2"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Why does the PTY recheck fail closed?</span><span class="s">TM8 Helper<span class="dot"></span>made 1 doc, linked #1012</span></span><span class="trail"><span class="time">Mon</span></span></a>
+            <a class="row tall par"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Audit the facade for dead endpoints</span><span class="s"><span class="pill exited">exited</span><span class="disc"><svg class="ic"><use href="#i-chevron-right"/></svg>1 session · done</span></span></span><span class="trail"><span class="time">Sat</span></span></a>
+          </div>
+        </main>
+        <nav class="tabbar">
+          <a class="tab on"><svg class="ic"><use href="#i-chats"/></svg>Chats</a>
+          <a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a>
+          <a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a>
+          <a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a>
+        </nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Chats root — iOS, light</b>Pinned first (pin glyph), then by activity. "Plan the credentials security lane" is expanded: the two sessions it launched nest under it with their own verdict words and a guide line; "Audit the facade…" is collapsed to "▸ 1 session · done". The unread dot on "Release notes for #955" is <b>proposed</b> — today's node counts unread for channels only. <span class="route">/[server]/[space]/(tabs)/chats?f=all</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar">
+          <div class="lead"><span class="spacebtn"><span class="mark">A</span><svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+          <div class="title">Chats</div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="filters"><span class="f">All</span><span class="f on">Live</span><span class="f">Mine</span><span class="f">Unread</span><span class="f">Pinned</span></div>
+          <div class="list lines">
+            <a class="row tall"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Design the mobile tab bar</span><span class="s"><span class="pill live">live</span>Worker · Writing…</span></span><span class="trail"><span class="time">now</span></span></a>
+            <div class="row tall" style="overflow:hidden;padding:0">
+              <div class="swipe-actions w3"><span class="act read"><svg class="ic"><use href="#i-check"/></svg>Read</span><span class="act pin"><svg class="ic"><use href="#i-pin"/></svg>Pin</span><span class="act arch"><svg class="ic"><use href="#i-inbox"/></svg>Archive</span></div>
+              <a class="row tall swiped3" style="background:var(--paper);flex:1 0 100%"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Release notes for #955</span><span class="s"><span class="pill waiting">waiting</span>Reviewer asked</span></span><span class="trail"><span class="time">11:02</span></span></a>
+            </div>
+            <a class="row tall"><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Bridge as an entity</span><span class="s"><span class="pill live">live</span>Coordinator · Thinking…</span></span><span class="trail"><span class="time">13:38</span></span></a>
+            <a class="row tall par"><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Plan the credentials security lane</span><span class="s"><span class="disc"><svg class="ic"><use href="#i-chevron-right"/></svg>2 sessions · 1 waiting</span></span></span><span class="trail"><span class="time">Mon</span></span></a>
+          </div>
+          <div class="help" style="padding-top:14px">Live shows chats with a turn running and chats whose launched sessions are still live or waiting — that is why the credentials chat is here.</div>
+          <span class="fab ext" style="bottom:16px"><svg class="ic"><use href="#i-edit"/></svg>New chat</span>
+        </main>
+        <nav class="tabbar">
+          <a class="tab on"><svg class="ic"><use href="#i-chats"/></svg>Chats</a>
+          <a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a>
+          <a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox</a>
+          <a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a>
+        </nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Chats root — Android, dark, Live filter, a row swiped</b>Trailing swipe reveals Read · Pin · Archive; a full swipe archives with an Undo snackbar. Archive is tm8's soft delete (<code>entity delete</code>, undone by <code>entity restore</code>). Read is <b>proposed</b> with per-chat unread; Pin is kept on this phone until a member preference exists. Extended FAB is the Material create. <span class="route">/[server]/[space]/(tabs)/chats?f=live</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large">
+          <div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier<svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+          <div class="title hidden">Chats</div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn brand"><svg class="ic"><use href="#i-edit"/></svg></span></div>
+          <div class="big">Chats</div>
+        </header>
+        <main class="content">
+          <div class="filters"><span class="f on">All</span><span class="f">Live</span><span class="f">Mine</span><span class="f">Unread</span><span class="f">Pinned</span></div>
+          <div class="list lines">
+            <a class="row tall"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Design the mobile tab bar</span><span class="s">Worker</span></span></a>
+            <a class="row tall"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Release notes for #955</span><span class="s">Reviewer</span></span></a>
+            <a class="row tall"><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Plan the credentials security lane</span><span class="s">Coordinator</span></span></a>
+          </div>
+        </main>
+        <nav class="tabbar">
+          <a class="tab on"><svg class="ic"><use href="#i-chats"/></svg>Chats</a>
+          <a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a>
+          <a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a>
+          <a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a>
+        </nav>
+        <div class="scrim" style="backdrop-filter:blur(6px)"></div>
+        <div class="preview" style="top:40px">
+          <div class="pv-h"><span class="avatar sm agent c1"><svg class="ic sm"><use href="#i-bot"/></svg></span>Release notes for #955<span class="pill waiting" style="margin-left:auto">waiting</span></div>
+          <div class="thread">
+            <div class="turn me"><div class="bubble">Write release notes for #955 — keep the mobile part short.</div></div>
+            <div class="turn"><div class="byline"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="who">Reviewer</span><span class="mchip">Sonnet 5.5</span><span>11:02</span></div>
+              <div class="prose"><p>#955 is merged. One decision before I write the mobile paragraph:</p></div>
+              <div class="form"><div class="fh"><svg class="ic"><use href="#i-form"/></svg>Which tab bar?<span class="pill waiting">awaiting you</span></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="menu" style="left:16px;top:352px;width:250px">
+          <div class="mi">Pin<svg class="ic"><use href="#i-pin"/></svg></div>
+          <div class="mi">Mark as read<svg class="ic"><use href="#i-check"/></svg></div>
+          <div class="mi">Rename…<svg class="ic"><use href="#i-edit"/></svg></div>
+          <div class="mi">Copy link<svg class="ic"><use href="#i-link"/></svg></div>
+          <div class="mi">Open on web<svg class="ic"><use href="#i-external"/></svg></div>
+          <div class="mi destructive">Archive<svg class="ic"><use href="#i-trash"/></svg></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Long-press — preview and context menu (iOS, dark)</b>The native preview the 2026-10-18 ruling left open: a lifted, read-only peek of the last turns over a blurred list, then a menu. Tapping the preview opens the chat (a push, never a peek screen); dragging it away dismisses. Android long-press enters multi-select instead (Pin · Archive across rows). <span class="route">/[server]/[space]/(tabs)/chats — no route of its own</span></div>
+  </div>
+</div>
+<div class="why">The liveness words come from two server axes on the chat summary — the turn (<code>streaming · idle · stopped-continuable · error</code>) and the runtime (<code>cold · live · stopped</code>) — composed by one table (Components, below), never re-derived per screen; L7: "liveness never lies". Unread is drawn because the owner listed it, but it is honest only once the facade counts it: <code>ChatThreadSummary</code> carries no unread and <code>read_marks</code> is not written per chat (<code>ChatHomeScreen.tsx</code>, cold-start comment), so a node without the widening draws no dot and no Unread filter — absent, not zero. The session tree uses the entity's own <code>counters.sessions</code> (<code>launched_by</code>, migration 331) for the collapsed count and the hierarchy read (lane 08) for the children, so the list never re-reads transcripts to find them.</div>
+
+<!-- ===================================================== 2 · NEW CHAT -->
+<h3>New chat — teammate, model, mode, where it works, credentials</h3>
+<p><code>chat.start</code> creates the chat <em>and</em> posts its first message in one transaction, so nothing exists until Send: this screen only chooses. Teammate, model, mode and workdir are all required and pinned for the chat's life at the CLI; here they arrive pre-filled — the remembered pick, else the default teammate (<code>default-teammate.ts</code>: the seeded pick while the space still has it, the Crafter in a craft chat, else the first listed) — and stay editable rows until Send, so every value on the chat is one the viewer saw.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><span style="padding-left:4px">Cancel</span></span></div>
+          <div class="title">New chat<span class="sub">Atelier · tm8.sh</span></div>
+          <div class="trail"></div>
+        </header>
+        <main class="content grouped">
+          <div class="section-h">Teammate</div>
+          <div class="list inset lines">
+            <div class="row"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Worker</span><span class="s">does the work itself · Opus 5.5</span></span><span class="check on"><svg class="ic"><use href="#i-check"/></svg></span></div>
+            <div class="row"><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Coordinator</span><span class="s">plans with you · Fable 5.1 1M</span></span><span class="check"></span></div>
+            <div class="row"><span class="main"><span class="t" style="color:var(--brand);font-weight:500">All 9 teammates</span></span><svg class="ic" style="color:var(--ink-4)"><use href="#i-chevron-right"/></svg></div>
+          </div>
+          <div class="section-h">This chat</div>
+          <div class="list inset lines">
+            <div class="row"><span class="main"><span class="t" style="font-weight:400">About</span></span><span class="chip"><svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app</span><svg class="ic" style="color:var(--ink-4)"><use href="#i-close"/></svg></div>
+            <div class="row"><span class="main"><span class="t" style="font-weight:400">Mode</span></span><span class="sub">Worker</span><svg class="ic" style="color:var(--ink-4)"><use href="#i-chevron-right"/></svg></div>
+            <div class="row"><span class="main"><span class="t" style="font-weight:400">Model</span></span><span class="sub">Opus 5.5 1M · High</span><svg class="ic" style="color:var(--ink-4)"><use href="#i-chevron-right"/></svg></div>
+            <div class="row"><span class="main"><span class="t" style="font-weight:400">Works in</span></span><span class="seg3"><span class="on">Project</span><span>Scratch</span><span class="off">Worktree</span></span></div>
+            <div class="row"><span class="main"><span class="t" style="font-weight:400">Project</span></span><span class="sub">tm8</span><svg class="ic" style="color:var(--ink-4)"><use href="#i-chevron-right"/></svg></div>
+            <div class="row"><span class="main"><span class="t" style="font-weight:400">Credentials</span></span><span class="sub">Auto</span><svg class="ic" style="color:var(--ink-4)"><use href="#i-chevron-right"/></svg></div>
+          </div>
+          <div class="help">Worktree is not offered for chats: a chat works in its project's directory as it stands, or in a scratch directory. For a worktree, launch a work session.</div>
+        </main>
+        <div class="composer">
+          <div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><div class="box"><span class="ph">Message Worker…</span></div><span class="ib"><svg class="ic"><use href="#i-mic"/></svg></span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>New chat — iOS, light</b>Worker is preselected (the default teammate), each with its persona line and model. "About" is the one entity the chat is about — written as the <code>about</code> edge; ✕ removes it. Worktree is drawn disabled with its reason rather than hidden: <code>ChatWorkdirMode</code> is <code>project | scratch</code>. The first message is the composer at the bottom; Send is <code>chat.start</code>. <span class="route">/[server]/[space]/chat/new?teammate=&amp;about=</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-close"/></svg></span></div>
+          <div class="title">New chat</div>
+          <div class="trail"></div>
+        </header>
+        <main class="content grouped">
+          <div class="section-h">Teammate</div>
+          <div class="list inset lines"><div class="row"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Worker</span><span class="s">Opus 5.5</span></span></div></div>
+        </main>
+        <div class="scrim"></div>
+        <div class="sheet tall">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="h">Model</span><span class="btn sm ghost">Done</span></div>
+          <div class="sheet-b">
+            <div class="search" style="margin-top:0"><svg class="ic"><use href="#i-search"/></svg>Search 18 models</div>
+            <div class="grp">Anthropic</div>
+            <div class="list">
+              <div class="row"><span class="main"><span class="t">Opus 5.5</span><span class="s">claude-code · effort Low–Max</span></span><span class="mchip" style="border-color:var(--brand);color:var(--brand)">1M ✓</span><svg class="ic" style="color:var(--brand)"><use href="#i-check"/></svg></div>
+              <div class="row"><span class="main"><span class="t">Fable 5.1</span><span class="s">claude-code</span></span><span class="mchip">1M</span></div>
+              <div class="row"><span class="main"><span class="t">Sonnet 5.5</span><span class="s">claude-code</span></span></div>
+            </div>
+            <div class="grp">OpenAI</div>
+            <div class="list">
+              <div class="row" style="opacity:.55"><span class="main"><span class="t">GPT 6.1 Sol</span><span class="s" style="white-space:normal">Chat adapter codex is unavailable</span></span><svg class="ic"><use href="#i-lock"/></svg></div>
+            </div>
+            <div class="divider" style="margin:6px 16px"></div>
+            <div style="padding:2px 16px 0">
+              <div class="slabels"><span style="font-weight:600;color:var(--ink)">Effort</span><b>High</b></div>
+              <div class="slider"><span class="fill" style="width:66.6%"></span><span class="stop" style="left:0"></span><span class="stop" style="left:33.3%"></span><span class="stop" style="left:66.6%"></span><span class="stop" style="left:100%"></span><span class="knob" style="left:66.6%"></span></div>
+              <div class="slabels"><span>Low</span><span>Medium</span><span>High</span><span>Max</span></div>
+              <div class="tinyc" style="padding-top:4px">slower · deeper reasoning — the stops are the ones this model declares.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Model + effort sheet — Android, dark</b>One sheet, model on top and effort underneath (the web's "not a fourth control"); the 1M context is a toggle on its base row. A model the server cannot run is listed, disabled, with its reason. The effort slider snaps to the catalog's own stops for this model (<code>CLAUDE_CODE_EFFORTS</code>: low · medium · high · max); a model whose entry has none renders the dial disabled with the reason (see States). <span class="route">sheet over /chat/new — no route</span></div>
+  </div>
+</div>
+<div class="why">Credentials never carry a secret: the row picks a <em>source</em> (<code>ChatCredentialSelection</code>: Auto · Mine · Space default · Server, or a named space credential) and the server resolves it at the next claim. The mode row shows the three roles the web composer offers over the six server modes (Worker → <code>build</code>, Coordinator → <code>ask</code>, Dispatcher → <code>orchestrate</code>; <code>composer-model.ts</code>). The CLI's rule — "an invented default would be a chat nobody chose" — is kept by drawing every pre-filled value as a visible row before Send, not by refusing to pre-fill.</div>
+
+<!-- ===================================================== 3 · TRANSCRIPT -->
+<h3>The transcript — anatomy</h3>
+<p>The chat page is one screen: a header that names the conversation, the teammate and model, what it is about and whether it is live; the turns; the composer. Every turn below is drawn from the same parts the web transcript reads (<code>thinking · text · tool_call · tool_result · usage · error · done</code>), regrouped the way <code>TurnParts.tsx</code> regroups them: "the ledger, not the calls".</p>
+<div class="anatomy">
+  <div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar chat">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Chats</span></span></div>
+          <div class="title">Design the mobile tab bar<span class="sub">Worker · Opus 5.5 1M</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <div class="hstrip">about<span class="chip"><svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app</span><span class="pill done">done</span><span class="ctx"><span class="ring" style="--p:24"></span>48k · 24%</span></div>
+        <main class="content">
+          <div class="thread">
+            <div class="day">Today</div>
+            <div class="turn me"><div class="bubble">Draft the native tab bar — Chats · Work · Inbox · Browse — and file what's left under <span class="chip"><svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app</span></div></div>
+            <div class="turn">
+              <div class="byline"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="who">Worker</span><span class="mchip">Opus 5.5 1M</span><span>13:14</span></div>
+              <div class="think"><svg class="ic"><use href="#i-sparkle"/></svg>Thought for 12s<svg class="ic"><use href="#i-chevron-right"/></svg></div>
+              <div class="prose"><p>Four tabs that are jobs, not kinds. I drew the bar and sent the tile work to review. One move was refused.</p></div>
+              <div class="steps"><span class="n">12 steps</span>· read 4 docs, ran 2 commands<span class="fl">· 2 failed</span><svg class="ic"><use href="#i-chevron-right"/></svg></div>
+              <div class="receipt">
+                <div class="rr"><span class="mk edited">✎</span><span class="ri"><svg class="ic"><use href="#i-task"/></svg></span><span class="rt"><b>TM8 Mobile app</b><small>criteria ticked</small></span><span class="pill working">working</span></div>
+                <div class="rr nest"><span class="mk made">+</span><span class="thumb"><svg viewBox="0 0 36 24"><rect x="3" y="3" width="13" height="8" rx="1.5"/><rect x="20" y="3" width="13" height="8" rx="1.5"/><rect x="3" y="14" width="30" height="7" rx="1.5"/><path d="M16 7h4"/></svg></span><span class="rt"><b>Tab bar sketch</b><small>drawing · 9 shapes · 4 connectors</small></span><span></span></div>
+                <div class="rr"><span class="mk moved">→</span><span class="ri"><svg class="ic"><use href="#i-task"/></svg></span><span class="rt"><b>Quiet list tiles + one-row header</b></span><span class="pill review">in review</span></div>
+                <div class="rr bad"><span class="mk failed">✕</span><span class="ri"><svg class="ic"><use href="#i-task"/></svg></span><span class="rt"><b>Moving “Desktop-shell reflow overflow (tablet-768)” to done failed</b><small>2 acceptance criteria are still unticked</small></span><span></span></div>
+              </div>
+              <div class="usage"><b>usage</b><span>1,204 in</span><span>38,410 cache read</span><span>2,116 out</span><span>cost not reported</span></div>
+            </div>
+          </div>
+        </main>
+        <div class="composer">
+          <div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><div class="box"><span class="ph">Message Worker…</span></div><span class="ib"><svg class="ic"><use href="#i-mic"/></svg></span></div>
+          <div class="picks"><span class="pk"><svg class="ic"><use href="#i-settings"/></svg>Worker</span><span class="pk"><svg class="ic"><use href="#i-sparkle"/></svg>Opus 5.5 1M · High</span><span class="pk"><svg class="ic"><use href="#i-key"/></svg>Auto</span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <span class="an" data-n="1" style="left:12px;top:56px"></span>
+    <span class="an" data-n="2" style="left:96px;top:76px"></span>
+    <span class="an" data-n="3" style="left:4px;top:96px"></span>
+    <span class="an" data-n="4" style="left:364px;top:96px"></span>
+    <span class="an" data-n="5" style="left:4px;top:180px"></span>
+    <span class="an" data-n="6" style="left:4px;top:282px"></span>
+    <span class="an" data-n="7" style="left:150px;top:312px"></span>
+    <span class="an" data-n="8" style="left:364px;top:342px"></span>
+    <span class="an" data-n="9" style="left:364px;top:404px"></span>
+    <span class="an" data-n="10" style="left:364px;top:440px"></span>
+    <span class="an" data-n="11" style="left:364px;top:640px"></span>
+    <span class="an" data-n="12" style="left:364px;top:744px"></span>
+  </div>
+  <ol class="legend">
+    <li><b>Back names where you came from</b> — ‹ Chats; the iOS edge swipe and Android predictive back both pop. The stack entry keeps this scroll position and the composer draft.</li>
+    <li><b>Title, teammate · model</b> — the chat's own title (rename from the menu) over the teammate and the model the <em>next</em> turn will claim. Tapping opens chat info.</li>
+    <li><b>About chip and liveness word</b> — the <code>about</code> edge as a chip (tap pushes the task); then the word: <code>live</code> · <code>waiting</code> · <code>stopped</code> · <code>failed</code> · <code>exited</code> · <code>done</code>. Never a bare dot.</li>
+    <li><b>Context meter</b> — used · percent of capacity from the chat's stored reading and live <code>chat.context</code> frames. "—" with a reason when nothing measured it; "last known" when the runtime is stopped. Tap for the detail sheet (used, capacity, remaining, cache reuse, sampled, model, source).</li>
+    <li><b>Your turn</b> — a bubble on the right, markdown, entity chips inline. Sidedness is by author id, not role.</li>
+    <li><b>Agent byline</b> — rounded-square avatar, name, model chip, time. A mode chip joins when the turn ran in a mode other than the chat's default.</li>
+    <li><b>Thinking</b> — collapsed to "Thought for 12s"; opens to the verbatim reasoning, never markdown. The duration is <b>proposed</b> (see Steps).</li>
+    <li><b>Prose</b> — the answer as markdown: headings, lists, code with Copy, tables, and every pasted entity id rendered as a chip.</li>
+    <li><b>Steps</b> — one header per turn: "12 steps · read 4 docs, ran 2 commands · 2 failed". Tap opens every run's list; a failure never folds away.</li>
+    <li><b>Receipt</b> — one row per entity the turn touched: the mark says what happened, the trailing word is the entity's state <em>now</em>, nesting shows a drawn edge, a refusal is a red row with the server's reason. Rows push the entity.</li>
+    <li><b>Usage</b> — the turn's own counts by the provider's categories; cost only when the runtime reported it.</li>
+    <li><b>Composer</b> — ＋ (add to this turn), the field, mic or Send; under it the picks row: mode, model · effort, credentials — each opens its sheet.</li>
+  </ol>
+</div>
+
+<h3>A turn with everything, and the same transcript on Android</h3>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar chat">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Chats</span></span></div>
+          <div class="title">Design the mobile tab bar<span class="sub">Worker · Opus 5.5 1M</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <div class="hstrip">about<span class="chip"><svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app</span><span class="pill done">done</span><span class="ctx"><span class="ring" style="--p:24"></span>48k · 24%</span></div>
+        <main class="content">
+          <div class="thread">
+            <div class="turn">
+              <div class="byline"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="who">Worker</span><span class="mchip">Opus 5.5 1M</span><span>13:14</span></div>
+              <div class="think"><svg class="ic"><use href="#i-sparkle"/></svg>Thought for 12s<svg class="ic"><use href="#i-chevron-down"/></svg></div>
+              <p class="thought">CONTRACT.md's "tab bar retired" is the web drawer. Draw the native bar; do not reopen that ruling.</p>
+              <div class="prose"><p>One move was refused.</p></div>
+              <div class="errline">✕ Running a shell command failed: Exit code 1 <span>· The agent retried</span></div>
+              <div class="steps"><span class="n">12 steps</span>· read 4 docs, ran 2 commands<span class="fl">· 2 failed</span><svg class="ic"><use href="#i-chevron-down"/></svg></div>
+              <div class="steps open">
+                <div class="step"><svg class="ic"><use href="#i-doc"/></svg><span class="sx">Read 4 docs</span><span class="st">1.2s</span></div>
+                <div class="step err"><svg class="ic"><use href="#i-terminal"/></svg><span class="sx">Running a shell command failed <i>· Exit code 1</i></span><span class="st">0.8s</span></div>
+                <div class="step"><svg class="ic"><use href="#i-terminal"/></svg><span class="sx">Ran a shell command <i>· Run the shell contract tests</i></span><span class="st">2.1s</span></div>
+              </div>
+              <div class="receipt">
+                <div class="rr"><span class="mk edited">✎</span><span class="ri"><svg class="ic"><use href="#i-task"/></svg></span><span class="rt"><b>TM8 Mobile app</b><small>criteria ticked<span class="spill"><svg class="ic"><use href="#i-session"/></svg>Worker · Opus 5.5 · live</span></small></span><span class="pill working">working</span></div>
+                <div class="rr nest"><span class="mk made">+</span><span class="thumb"><svg viewBox="0 0 36 24"><rect x="3" y="3" width="13" height="8" rx="1.5"/><rect x="20" y="3" width="13" height="8" rx="1.5"/><rect x="3" y="14" width="30" height="7" rx="1.5"/><path d="M16 7h4"/></svg></span><span class="rt"><b>Tab bar sketch</b><small>drawing · 9 shapes · 4 connectors</small></span><span></span></div>
+                <div class="rr"><span class="mk moved">→</span><span class="ri"><svg class="ic"><use href="#i-task"/></svg></span><span class="rt"><b>Quiet list tiles + one-row header</b></span><span class="pill review">in review</span></div>
+                <div class="rr bad"><span class="mk failed">✕</span><span class="ri"><svg class="ic"><use href="#i-task"/></svg></span><span class="rt"><b>Moving “Desktop-shell reflow overflow (tablet-768)” to done failed</b><small>2 acceptance criteria are still unticked</small></span><span></span></div>
+              </div>
+              <div class="usage"><b style="color:var(--merged)">✓ done</b><b>usage</b><span>1,204 in</span><span>38,410 cache read</span><span>2,116 out</span><span>cost not reported</span></div>
+            </div>
+          </div>
+        </main>
+        <div class="composer">
+          <div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><div class="box"><span class="ph">Message Worker…</span></div><span class="ib"><svg class="ic"><use href="#i-mic"/></svg></span></div>
+          <div class="picks"><span class="pk"><svg class="ic"><use href="#i-settings"/></svg>Worker</span><span class="pk"><svg class="ic"><use href="#i-sparkle"/></svg>Opus 5.5 1M · High</span><span class="pk"><svg class="ic"><use href="#i-key"/></svg>Auto</span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>The turn with everything — iOS, dark</b>Thinking open; the failed command's errline stays with its run (R5) and says the agent retried; the steps open (glyph per kind of step, state in the words, writes absent because their receipt row <em>is</em> their step); a receipt with a nested drawing, a session pill on its task row and a refused move; done; usage with cost absent. Step durations and "Thought for 12s" are <b>proposed</b>: <code>message_parts.created_at</code> is stored but not on the transcript read. Tapping a step opens its tool card (next group). <span class="route">/[server]/[space]/chat/[id]?turn=01a1c3f0</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar chat">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Chats</span></span></div>
+          <div class="title">Design the mobile tab bar<span class="sub">Worker · Opus 5.5 1M</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <div class="hstrip">about<span class="chip"><svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app</span><span class="ctx"><span class="ring" style="--p:24"></span>48k · 24%</span></div>
+        <main class="content">
+          <div class="thread">
+            <div class="turn">
+              <div class="byline"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="who">Worker</span><span class="mchip">Opus 5.5 1M</span><span>13:14</span></div>
+              <div class="prose">
+                <h2>The bar</h2>
+                <p>Four jobs, per <span class="chip"><svg class="ic"><use href="#i-doc"/></svg>Mobile shell contract</span> §5:</p>
+                <ul><li><b>Chats</b> — live turns badge</li><li><b>Work</b> — what is moving</li><li><b>Inbox</b> — what needs you</li><li><b>Browse</b> — every kind</li></ul>
+                <table><thead><tr><th>Tab</th><th>Badge</th><th>Re-tap</th></tr></thead><tbody><tr><td>Chats</td><td>live</td><td>top</td></tr><tr><td>Inbox</td><td>unread</td><td>top</td></tr></tbody></table>
+                <div class="code"><div class="ch">app/(tabs)/_layout.tsx<span><svg class="ic"><use href="#i-copy"/></svg>Copy</span></div><pre><span class="tk">export default</span> <span class="tk">function</span> Layout() {
+  <span class="tk">return</span> &lt;Tabs&gt;
+    &lt;Tabs.Screen name=<span class="tq">"chats"</span> /&gt;
+    &lt;Tabs.Screen name=<span class="tq">"work"</span> /&gt;
+  &lt;/Tabs&gt;;
+}</pre></div>
+              </div>
+              <div class="usage"><b>usage</b><span>1,204 in</span><span>2,116 out</span><span>cost not reported</span></div>
+            </div>
+          </div>
+        </main>
+        <div class="composer">
+          <div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><div class="box"><span class="ph">Message Worker…</span></div><span class="ib"><svg class="ic"><use href="#i-mic"/></svg></span></div>
+          <div class="picks"><span class="pk"><svg class="ic"><use href="#i-settings"/></svg>Worker</span><span class="pk"><svg class="ic"><use href="#i-sparkle"/></svg>Opus 5.5 1M · High</span><span class="pk"><svg class="ic"><use href="#i-key"/></svg>Auto</span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Markdown answer — Android, light</b>Heading, list, a table (scrolls sideways when wider than the column, never squeezed), a code block with its path and Copy (copies the code only; a snackbar confirms), and an entity chip inline. Material top bar: left title over the teammate · model line; ← is Up. <span class="route">/[server]/[space]/chat/[id]</span></div>
+  </div>
+</div>
+
+<h3>Live turns, third parties, failures</h3>
+<div class="screen-strip">
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar chat">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Chats</span></span></div>
+          <div class="title">Design the mobile tab bar<span class="sub">Worker · Opus 5.5 1M</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <div class="hstrip"><span class="pill live">live</span>since 13:20<span class="ctx"><span class="ring" style="--p:31"></span>61k · 31%</span></div>
+        <main class="content">
+          <div class="thread">
+            <div class="since">New since you left</div>
+            <div class="turn me"><div class="bubble">Now the Android variant — 80dp bar with the active pill.</div></div>
+            <div class="turn">
+              <div class="byline"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="who">Worker</span><span class="mchip">Opus 5.5 1M</span><span>now</span></div>
+              <div class="think"><svg class="ic"><use href="#i-sparkle"/></svg>Thought for 6s<svg class="ic"><use href="#i-chevron-right"/></svg></div>
+              <div class="prose"><p>Material 3 puts an 80dp bar under the content with a pill behind the active icon. Drawing it beside the iOS one<span class="caret"></span></p></div>
+              <div class="receipt">
+                <div class="rr"><span class="mk pending">·</span><span class="ri"><svg class="ic"><use href="#i-drawing"/></svg></span><span class="rt"><b>Creating drawing “Tab bar sketch — Android”</b></span><span class="pill pending">pending</span></div>
+              </div>
+              <div class="steps"><span class="n">4 steps</span>· read 2 docs<svg class="ic"><use href="#i-chevron-down"/></svg></div>
+              <div class="steps open">
+                <div class="step"><svg class="ic"><use href="#i-doc"/></svg><span class="sx">Read 2 docs</span><span class="st">0.6s</span></div>
+                <div class="step"><span class="spinner"></span><span class="sx">Searching the code… <i>· “navigationBar”</i></span></div>
+              </div>
+            </div>
+          </div>
+          <span class="jump"><svg class="ic"><use href="#i-arrow-up" /></svg>Back to live</span>
+        </main>
+        <div class="liverow"><span class="spinner"></span><span class="lt"><b>Creating drawing “Tab bar sketch — Android”…</b><small>step 4 · 1m 12s · last step 8s ago</small></span><span class="stopbtn"><i></i>Stop</span></div>
+        <div class="composer">
+          <div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><div class="box"><span class="ph">Queue a message…</span></div><span class="ib"><svg class="ic"><use href="#i-mic"/></svg></span></div>
+          <div class="picks"><span class="pk"><svg class="ic"><use href="#i-settings"/></svg>Worker</span><span class="pk"><svg class="ic"><use href="#i-sparkle"/></svg>Opus 5.5 1M · High</span><span class="pk"><svg class="ic"><use href="#i-key"/></svg>Auto</span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Live turn — Android, dark</b>"New since you left" marks what arrived while you were away (this phone's own last-seen turn). The answer streams with a caret; the write in flight is a <b>pending</b> receipt row that the real row replaces in place; only the current run's steps are open. The live row says what is happening now, the clock and the silence ("last step 8s ago"; past 90 s it reads "still working", never an error) and owns <b>Stop</b>. The composer keeps Send: a message now queues behind the running turn. The pill appears when you scroll up and returns you to the live edge. <span class="route">/[server]/[space]/chat/[id]</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar chat">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Chats</span></span></div>
+          <div class="title">Plan the credentials security lane<span class="sub">Coordinator · Fable 5.1 1M</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <div class="hstrip"><span class="pill stale">stopped</span>send a message to continue<span class="ctx"><span class="ring" style="--p:12"></span>118k · 12%</span></div>
+        <main class="content">
+          <div class="thread">
+            <div class="day">Today</div>
+            <div class="turn third">
+              <div class="byline"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="who">Worker</span><span class="via">via<span class="chip run"><svg class="ic"><use href="#i-session"/></svg>Security lane A</span></span><span>10:48</span></div>
+              <div class="tx">Waiting on a permission: push to origin. Approve it on the session and I'll open the PR.</div>
+            </div>
+            <div class="turn other">
+              <div class="byline"><span class="avatar c2">P</span><span class="who">Priya</span><span>11:20</span></div>
+              <div class="bubble">Approved the push from my phone. Is #1012 merged?</div>
+            </div>
+            <div class="turn">
+              <div class="byline"><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg></span><span class="who">Coordinator</span><span class="mchip">Fable 5.1 1M</span><span>11:21</span></div>
+              <div class="terr"><b>Turn failed</b><span>Anthropic API: 529 overloaded_error</span></div>
+              <div class="endmark bad"><svg class="ic"><use href="#i-error"/></svg>Turn failed after 2 steps · 14s</div>
+            </div>
+            <div class="turn me"><div class="bubble">Try again.</div></div>
+            <div class="turn">
+              <div class="byline"><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg></span><span class="who">Coordinator</span><span class="mchip">Fable 5.1 1M</span><span>11:23</span></div>
+              <div class="prose"><p>Checking #1012 and the lane's last report…</p></div>
+              <div class="steps"><span class="n">3 steps</span>· read 1 pull request<svg class="ic"><use href="#i-chevron-right"/></svg></div>
+              <div class="step dim"><span class="endmark"><span class="sq"></span></span><span class="sx">Stopped while reading pull requests</span></div>
+              <div class="endmark"><span class="sq"></span>Stopped after 3 steps · 22s</div>
+            </div>
+          </div>
+        </main>
+        <div class="composer">
+          <div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><div class="box"><span class="ph">Message Coordinator…</span></div><span class="ib"><svg class="ic"><use href="#i-mic"/></svg></span></div>
+          <div class="picks"><span class="pk"><svg class="ic"><use href="#i-settings"/></svg>Coordinator</span><span class="pk"><svg class="ic"><use href="#i-sparkle"/></svg>Fable 5.1 1M · High</span><span class="pk"><svg class="ic"><use href="#i-key"/></svg>Auto</span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Third parties, a failed turn, an interrupted turn — iOS, light</b>A session's report lands in the <em>middle lane</em> with "via ◆ Security lane A" — its persona is the same Worker summary the chat's own agent would carry, so only the <code>authored_from</code> source can say it came from elsewhere. Another human's turn sits left with a round avatar. A failed turn shows the runtime's message once, as the turn's own alert; a stopped turn pins the step it was in and freezes its clock. <span class="route">/[server]/[space]/chat/[id]</span></div>
+  </div>
+</div>
+<div class="why">The live row is the only thing that narrates the present, which is why the transcript's step list is not a live region (web D15 §2) and why silence reads "Thinking…" rather than the last step in present tense: tools run in ~0.4 s and the model is then silent for 12 s on average (live-turn-status-model.ts, measured on the live node). Stop belongs to the row, not the Send button, because <code>chat stop</code> stops only the running turn — queued turns behind it still run — so the composer stays a composer. A stopped call is drawn <em>stopped</em>, not running: an interrupted runtime never writes a terminal record for the calls it abandoned, and a pulse on a call that will never finish is a lie.</div>
+
+<h3>Tool cards — the step sheet</h3>
+<p>Tool cards exist, but not in the reading flow. A step line is tappable; it opens the <b>step sheet</b> over the transcript, where each step can show its card: a shell command and its truncated output, a file read or edit as a diff excerpt, a graph write with its operation and the version it produced. The sheet is temporary and over your place (CONTRACT §4), so dismissing returns you to the paragraph you were reading.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar chat">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Chats</span></span></div>
+          <div class="title">Design the mobile tab bar<span class="sub">Worker · Opus 5.5 1M</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <main class="content"></main>
+        <div class="scrim"></div>
+        <div class="sheet tall">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="h">12 steps</span><span class="btn sm ghost">Done</span></div>
+          <div class="sheet-b">
+            <div class="mfoot" style="margin:0 0 8px">Worker's turn at 13:14 · writes are on the receipt</div>
+            <div class="stack-v">
+              <div class="srow"><span class="ok">✓</span><svg class="ic"><use href="#i-doc"/></svg>Read 4 docs<span class="st">1.2s</span></div>
+              <div class="toolcard err">
+                <div class="tc-h"><svg class="ic"><use href="#i-terminal"/></svg><span class="sub" style="color:inherit">Run the shell contract tests</span><span class="st">exit 1 · 0.8s</span></div>
+                <div class="tc-b cmd">bun test packages/tm8-ui/src/mobile/shell-contract.test.ts</div>
+                <div class="tc-b" style="padding-top:0">✗ phone shell names a tab bar (CONTRACT §5)
+  expected "drawer", received "tabs"
+<span class="dm">Tests  1 failed | 13 passed (14)</span></div>
+                <div class="tc-more">Show all 41 lines</div>
+              </div>
+              <div class="toolcard ok">
+                <div class="tc-h"><svg class="ic"><use href="#i-edit"/></svg><span class="sub" style="color:var(--ink-2)">Edited CONTRACT.md</span><span class="st">+6 −2</span></div>
+                <div class="tc-b"><span class="del">- The tab bar was retired on 2026-08-19,</span>
+<span class="add">+ The web shell retired its tab bar on</span>
+<span class="add">+ 2026-08-19; the native app has four tabs.</span></div>
+              </div>
+              <div class="srow"><span class="ok">✓</span><svg class="ic"><use href="#i-terminal"/></svg>Ran it again · exit 0 · Tests 14 passed<span class="st">2.1s</span></div>
+              <div class="toolcard ok">
+                <div class="tc-h"><svg class="ic"><use href="#i-task"/></svg><span class="sub" style="color:var(--ink-2)">Moved “Quiet list tiles + one-row header”</span><span class="st">v14 → v15</span></div>
+                <div class="tc-b">operation  entities.commands.work
+status     in_review
+<span class="dm">result     stored · v15 · 01a17e42</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Step sheet with tool cards — iOS, light</b>Opened by tapping a step line. A shell card shows the command, the first lines of output and "Show all"; a file card a diff excerpt; a graph-write card the operation, the new status and the version it produced. Strings shaped like credentials are masked (••••) before they render. <b>Proposed</b> amendment to R8, for this sheet only. <span class="route">sheet over /chat/[id] — no route (sheet content is never shared)</span></div>
+  </div>
+</div>
+<div class="why">Kept from the web: <b>no tool name, no box, no payload in the transcript</b> (graph-seeds R8, pinned by <code>no-tool-boxes.test.tsx</code>; tool-call rules R1–R8, doc 01a0ddb5, signed off by Subhang). A turn that read nine entities once drew nine bordered cards each announcing <code>tm8_read</code>; the receipt and the counted step lines replaced them, and the phone keeps that. What the owner asked for — tool cards for the steps worth showing — lands where it cannot crowd reading: an explicit tap, a sheet, one step's card at a time. The <code>explain_*</code> cards stay inline exactly as on the web, because their payload <em>is</em> the content.</div>
+
+<!-- ===================================================== 4 · COMPOSER -->
+<h3>The composer</h3>
+<p>One composer component, three hosts — a chat, a channel, the messages on an anchor — each turning on the pickers its server path can honour: a chat gets <code>/</code> (skill references) and files; a channel and anchor messages also get <code>@</code>, because only <code>messages.post</code> carries mentions. Return inserts a newline on a phone (<code>enterSends.ts</code>); Send is the button. The keyboard inset is measured once at the frame and every bottom surface rides on it (CONTRACT §3) — natively, one <code>KeyboardAvoidingView</code>-class provider at the root, never a listener per screen.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar chat">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Chats</span></span></div>
+          <div class="title">Explain the Back Contract to me<span class="sub">TM8 Helper · Sonnet 5.5</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <div class="hstrip">about<span class="chip"><svg class="ic"><use href="#i-doc"/></svg>The Back Contract</span><span class="ctx"><span class="ring" style="--p:9"></span>18k · 9%</span></div>
+        <main class="content">
+          <div class="thread">
+            <div class="turn">
+              <div class="prose"><p>So a cold link lands on the kind's list when you go back, and nothing ever jumps several levels.</p></div>
+              <div class="usage"><b>usage</b><span>412 in</span><span>17,980 cache read</span><span>388 out</span><span>cost not reported</span></div>
+            </div>
+          </div>
+        </main>
+        <div class="composer">
+          <div class="tray">
+            <span class="tile"><span class="x"><svg class="ic"><use href="#i-close"/></svg></span><span class="up"><i></i></span></span>
+            <span class="attach"><svg class="ic"><use href="#i-file"/></svg><span><span class="n">CONTRACT.md</span><span class="m">37 KB</span></span><span class="x"><svg class="ic"><use href="#i-close"/></svg></span></span>
+          </div>
+          <div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><div class="box multi">Compare it with <span class="chip"><svg class="ic"><use href="#i-doc"/></svg>One surface at a time</span> — where do they disagree about sheets? Use the screenshot.<span class="caret"></span></div><span class="send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></div>
+          <div class="picks"><span class="pk"><svg class="ic"><use href="#i-settings"/></svg>Coordinator</span><span class="pk"><svg class="ic"><use href="#i-sparkle"/></svg>Sonnet 5.5 · Medium</span><span class="pk"><svg class="ic"><use href="#i-key"/></svg>Auto</span></div>
+        </div>
+        <div class="keyboard">
+          <div class="kr"><span class="k">q</span><span class="k">w</span><span class="k">e</span><span class="k">r</span><span class="k">t</span><span class="k">y</span><span class="k">u</span><span class="k">i</span><span class="k">o</span><span class="k">p</span></div>
+          <div class="kr"><span class="k">a</span><span class="k">s</span><span class="k">d</span><span class="k">f</span><span class="k">g</span><span class="k">h</span><span class="k">j</span><span class="k">k</span><span class="k">l</span></div>
+          <div class="kr"><span class="k w">⇧</span><span class="k">z</span><span class="k">x</span><span class="k">c</span><span class="k">v</span><span class="k">b</span><span class="k">n</span><span class="k">m</span><span class="k w">⌫</span></div>
+          <div class="kr"><span class="k w">123</span><span class="k space">space</span><span class="k w" style="width:88px">return</span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Keyboard up, attachments, multi-line — iOS, light</b>The field grows to six lines, then scrolls inside itself. The tray holds what rides with <em>this</em> message: a pasted image (its upload starts at once; the bar is real progress), a file, and an entity chip. Picks sit above the keyboard. The entity chip is <b>proposed</b>: it is written into the body as a <code>tm8://</code> link — the convention <code>/</code> already uses — because the chat wire carries no <code>mentionIds</code>. <span class="route">/[server]/[space]/chat/[id]</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar chat">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Chats</span></span></div>
+          <div class="title">Release notes for #955<span class="sub">Reviewer · Sonnet 5.5</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="thread"><div class="turn"><div class="prose"><p>Draft is above. Want me to check it against the diff?</p></div></div></div>
+        </main>
+        <div class="composer">
+          <div class="popover-list">
+            <div class="poptitle"><span>Skills · 2</span><span>references, does not run</span></div>
+            <div class="row sel"><span class="kind-ic"><svg class="ic"><use href="#i-skill"/></svg></span><span class="main"><span class="t">code-review</span><span class="s">Review a diff for correctness bugs</span></span></div>
+            <div class="row"><span class="kind-ic"><svg class="ic"><use href="#i-skill"/></svg></span><span class="main"><span class="t">github</span><span class="s">Pull requests, issues and checks</span></span></div>
+          </div>
+          <div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><div class="box">Yes, use /<span class="caret"></span></div><span class="send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></div>
+          <div class="picks"><span class="pk"><svg class="ic"><use href="#i-settings"/></svg>Coordinator</span><span class="pk"><svg class="ic"><use href="#i-sparkle"/></svg>Sonnet 5.5 · Medium</span></div>
+        </div>
+        <div class="keyboard">
+          <div class="kr"><span class="k">q</span><span class="k">w</span><span class="k">e</span><span class="k">r</span><span class="k">t</span><span class="k">y</span><span class="k">u</span><span class="k">i</span><span class="k">o</span><span class="k">p</span></div>
+          <div class="kr"><span class="k">a</span><span class="k">s</span><span class="k">d</span><span class="k">f</span><span class="k">g</span><span class="k">h</span><span class="k">j</span><span class="k">k</span><span class="k">l</span></div>
+          <div class="kr"><span class="k w">⇧</span><span class="k">z</span><span class="k">x</span><span class="k">c</span><span class="k">v</span><span class="k">b</span><span class="k">n</span><span class="k">m</span><span class="k w">⌫</span></div>
+          <div class="kr"><span class="k w">?123</span><span class="k space"> </span><span class="k w" style="width:64px">↵</span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b><code>/</code> skill picker, keyboard up — Android, dark</b>Typing <code>/</code> at the start of a word opens the full-width list over the composer; typing on filters by word prefix ("Matching “co”"). It has no focusable parts and is not modal — the field keeps focus (CONTRACT §4, the third shape). Committing writes <code>[/code-review](tm8://skill/…)</code>: a reference the agent may read, not an invocation (R1). <span class="route">/[server]/[space]/chat/[id]</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Chats</span></span></div>
+          <div class="title">#mobile<span class="sub">4 members · 2 teammates</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-voice"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="post"><span class="avatar sm c2">P</span><span class="pb"><span class="ph"><b>Priya</b>09:15</span><span class="tx">The 360dp nav bar clips its labels on the Pixel 7a.</span></span></div>
+        </main>
+        <div class="composer">
+          <div class="popover-list">
+            <div class="poptitle"><span>Matching “l”</span><span>3 of 13</span></div>
+            <div class="grp">People</div>
+            <div class="row sel"><span class="avatar sm c4">L</span><span class="main"><span class="t">Lena</span><span class="s">member · online 2m ago</span></span></div>
+            <div class="grp">Teammates</div>
+            <div class="row"><span class="avatar sm agent c1"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Graph Architect</span><span class="s">teammate · Opus 5</span></span></div>
+            <div class="row"><span class="avatar sm agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Fable 5.1 1M Teammate</span><span class="s">teammate · Fable 5.1 1M</span></span></div>
+            <div class="pfoot">A mention notifies the person and wakes a teammate's live session.</div>
+          </div>
+          <div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><div class="box">Can someone check it? @l<span class="caret"></span></div><span class="send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></div>
+        </div>
+        <div class="keyboard">
+          <div class="kr"><span class="k">q</span><span class="k">w</span><span class="k">e</span><span class="k">r</span><span class="k">t</span><span class="k">y</span><span class="k">u</span><span class="k">i</span><span class="k">o</span><span class="k">p</span></div>
+          <div class="kr"><span class="k">a</span><span class="k">s</span><span class="k">d</span><span class="k">f</span><span class="k">g</span><span class="k">h</span><span class="k">j</span><span class="k">k</span><span class="k">l</span></div>
+          <div class="kr"><span class="k w">⇧</span><span class="k">z</span><span class="k">x</span><span class="k">c</span><span class="k">v</span><span class="k">b</span><span class="k">n</span><span class="k">m</span><span class="k w">⌫</span></div>
+          <div class="kr"><span class="k w">123</span><span class="k space">space</span><span class="k w" style="width:88px">send</span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b><code>@</code> mention picker in the #mobile composer — iOS, dark</b>Members (round) and teammates (rounded-square) in one list, filtered by the prefix of any word — "l" reaches Lena, Graph Architect and "Fable 5.1 1M Teammate". Same non-modal shape as <code>/</code>. Committing inserts <code>@Lena</code> and adds her to the post's <code>--mention</code> list. In a chat composer <code>@</code> types as text (no wire field yet; see open questions). <span class="route">/[server]/[space]/channel/[id]</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar chat">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Chats</span></span></div>
+          <div class="title">Design the mobile tab bar<span class="sub">Worker · Opus 5.5 1M</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <div class="hstrip">about<span class="chip"><svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app</span><span class="pill done">done</span><span class="ctx"><span class="ring" style="--p:31"></span>61k · 31%</span></div>
+        <main class="content">
+          <div class="thread">
+            <div class="turn">
+              <div class="prose"><p>Both sketches are on <span class="chip"><svg class="ic"><use href="#i-drawing"/></svg>Tab bar sketch</span>. The Android bar is 80dp with the active pill.</p></div>
+              <div class="usage"><b>usage</b><span>980 in</span><span>59,200 cache read</span><span>1,744 out</span><span>cost not reported</span></div>
+            </div>
+          </div>
+        </main>
+        <div class="composer">
+          <div class="vpanel">
+            <div class="wave"><i style="height:10px"></i><i style="height:22px"></i><i style="height:30px"></i><i style="height:18px"></i><i style="height:26px"></i><i style="height:34px"></i><i style="height:20px"></i><i style="height:28px"></i><i style="height:14px"></i><i style="height:24px"></i><i style="height:32px"></i><i style="height:16px"></i><i style="height:26px"></i><i style="height:12px"></i><i style="height:22px"></i><i style="height:30px"></i><i style="height:18px"></i><i style="height:10px"></i></div>
+            <div class="box multi" style="width:100%">Move the Inbox badge onto the tab label, not the icon, and check it at 360<span class="caret"></span></div>
+            <div class="micbig"><svg class="ic"><use href="#i-mic"/></svg></div>
+            <div class="vhint"><span>Release to insert</span><span>↑ Slide up to cancel</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Voice input — hold to talk (iOS, light)</b>Holding the mic replaces the keyboard with a capture panel; words appear as they are recognised. Releasing <em>inserts</em> the text into the field for review — nothing is sent until Send. Recognition runs on the device (iOS Speech, Android <code>SpeechRecognizer</code>); no audio reaches tm8. <span class="route">/[server]/[space]/chat/[id]</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar chat">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Chats</span></span></div>
+          <div class="title">Design the mobile tab bar<span class="sub">Worker · Opus 5.5 1M</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <main class="content"></main>
+        <div class="scrim"></div>
+        <div class="sheet tall">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="h">Chat settings</span><span class="btn sm ghost">Done</span></div>
+          <div class="sheet-b">
+            <div class="grp">Mode · applies to your next message</div>
+            <div class="list">
+              <div class="row"><span class="main"><span class="t">Worker</span><span class="s">does the work itself — files and the graph</span></span><svg class="ic" style="color:var(--brand)"><use href="#i-check"/></svg></div>
+              <div class="row"><span class="main"><span class="t">Coordinator</span><span class="s">talks it through, hands work to the team</span></span></div>
+              <div class="row"><span class="main"><span class="t">Dispatcher</span><span class="s">splits the work, dispatches sessions</span></span></div>
+            </div>
+            <div class="grp">Credentials · from the next turn</div>
+            <div class="list">
+              <div class="row"><span class="main"><span class="t">Auto</span><span class="s">your default → login → space → server</span></span><svg class="ic" style="color:var(--brand)"><use href="#i-check"/></svg></div>
+              <div class="row"><span class="main"><span class="t">Mine</span><span class="s">my connected account; refuse if missing</span></span></div>
+              <div class="row"><span class="main"><span class="t">Anthropic — space default</span><span class="s">space credential</span></span></div>
+              <div class="row"><span class="main"><span class="t">Server</span><span class="s">the server's account, when policy allows</span></span></div>
+            </div>
+            <div class="grp">Fixed when the chat started</div>
+            <div class="list"><div class="row"><span class="main"><span class="t" style="font-weight:400">Works in · project tm8</span></span><svg class="ic" style="color:var(--ink-4)"><use href="#i-lock"/></svg></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Chat settings sheet (mode + credentials) — Android, light</b>The ⚙ pick's sheet: the three roles with the consequence of each, then credentials by source — never a secret. The workdir is shown locked with why. A mode change rides on the next message only (<code>requested_chat_mode</code>), so it needs no relaunch; a credential or model change applies at the next claim. <span class="route">sheet over /chat/[id] — no route</span></div>
+  </div>
+</div>
+<div class="why">The picks row is the web's split made physical: inside the composer is <em>this message</em> (mode, model · effort, ＋), behind ⚙ is <em>this thread</em> (credentials, where it works). Model and effort share one sheet because effort is a property of the model: the stops come from the catalog and a model that declares none says why. The <code>@</code> list is the CONTRACT §4 third shape — "a surface driven from an input it must not cover is not a sheet" — so it is never modal and never steals focus; the model and settings pickers are true sheets with their own focus and Android-back dismissal. Offline, Send still works: the message is queued on the phone with a visible pending pill (States).</div>
+
+<!-- ===================================================== 5 · FORMS -->
+<h3>Forms — a question the agent asked</h3>
+<p>When an agent needs a decision it creates a form (<code>tm8 form create</code>: single or multiple choice, short or long text, scale; "recommended" options; "Other" when allowed). The chat draws it inline where it was asked, answerable without leaving the transcript; the chat row and header read <span class="tag">waiting</span> until it is answered. Lane 07 draws the Inbox's "awaiting your answer" row; it opens here.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar chat">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Inbox</span></span></div>
+          <div class="title">Release notes for #955<span class="sub">Reviewer · Sonnet 5.5</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <div class="hstrip">about<span class="chip merged" style="border-color:transparent;background:var(--merged-soft)"><svg class="ic" style="color:var(--merged)"><use href="#i-pr"/></svg>#955</span><span class="pill waiting">waiting on you</span><span class="ctx"><span class="ring" style="--p:6"></span>12k · 6%</span></div>
+        <main class="content">
+          <div class="thread">
+            <div class="turn">
+              <div class="byline"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="who">Reviewer</span><span class="mchip">Sonnet 5.5</span><span>11:02</span></div>
+              <div class="prose"><p>#955 is merged. One decision before I write the mobile paragraph:</p></div>
+              <div class="form">
+                <div class="fh"><svg class="ic"><use href="#i-form"/></svg>Which tab bar?<span class="pill waiting">awaiting you</span></div>
+                <div class="fq">Which tab bar should the notes describe?</div>
+                <div class="fo"><span class="radio on"></span>Four tabs — Chats · Work · Inbox · Browse<span class="rec">Recommended</span></div>
+                <div class="fo"><span class="radio"></span>Five tabs — adds Sessions</div>
+                <div class="fo"><span class="radio"></span>The drawer, as on the web</div>
+                <div class="fo"><span class="radio"></span><span class="input"><span class="ph">Other…</span></span></div>
+                <div class="ff"><span class="btn primary sm">Submit</span><span class="btn sm outline">Later</span><span class="note">Answers go to Reviewer's turn</span></div>
+              </div>
+            </div>
+          </div>
+        </main>
+        <div class="composer">
+          <div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><div class="box"><span class="ph">Message Reviewer…</span></div><span class="ib"><svg class="ic"><use href="#i-mic"/></svg></span></div>
+          <div class="picks"><span class="pk"><svg class="ic"><use href="#i-settings"/></svg>Coordinator</span><span class="pk"><svg class="ic"><use href="#i-sparkle"/></svg>Sonnet 5.5 · Medium</span><span class="pk"><svg class="ic"><use href="#i-key"/></svg>Auto</span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>The form, inline and unanswered — iOS, light</b>Arrived from Inbox (‹ Inbox). One question, three options with the recommended one pre-marked and labelled, "Other…" because the form allows it. Submit is <code>form submit</code>: the response is stored and posted to the requesting turn. "Later" leaves it in Inbox; a draft answer is saved (<code>form response save</code>). <span class="route">/[server]/[space]/chat/[id]?form=01a17f0c</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar chat">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Inbox</span></span></div>
+          <div class="title">Release notes for #955<span class="sub">Reviewer · Sonnet 5.5</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <div class="hstrip"><span class="pill live">live</span>Reviewer · Writing…<span class="ctx"><span class="ring" style="--p:8"></span>16k · 8%</span></div>
+        <main class="content">
+          <div class="thread">
+            <div class="turn">
+              <div class="form done">
+                <div class="fh"><svg class="ic"><use href="#i-success"/></svg>Which tab bar?<span class="pill done">answered</span></div>
+                <div class="fo"><span class="avatar xs c1">S</span><span>You · 11:06 — <b>Four tabs — Chats · Work · Inbox · Browse</b></span></div>
+                <div class="ff"><span class="note">Delivered to Reviewer's turn · View response</span></div>
+              </div>
+            </div>
+            <div class="turn">
+              <div class="byline"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="who">Reviewer</span><span class="mchip">Sonnet 5.5</span><span>now</span></div>
+              <div class="prose"><h2>Mobile</h2><ul><li>The native app has four tabs: Chats, Work, Inbox and Browse.</li><li>Readiness now counts only the providers a space uses (#955).</li></ul><p>Adding the credentials line next<span class="caret"></span></p></div>
+            </div>
+          </div>
+        </main>
+        <div class="liverow"><span class="spinner"></span><span class="lt"><b>Writing…</b><small>step 3 · 24s</small></span><span class="stopbtn"><i></i>Stop</span></div>
+        <div class="composer">
+          <div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><div class="box"><span class="ph">Queue a message…</span></div><span class="ib"><svg class="ic"><use href="#i-mic"/></svg></span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Answered — Android, dark</b>The card collapses to who answered, when, and what; "View response" opens the stored response with its frozen questions and delivery status (<code>form response get</code>). The header word moves from <code>waiting</code> to <code>live</code> as the answer wakes the turn. <span class="route">/[server]/[space]/chat/[id]</span></div>
+  </div>
+</div>
+
+<!-- ===================================================== 6 · HEADER & MENU -->
+<h3>Chat header, menu, and the entity chat</h3>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar chat">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Chats</span></span></div>
+          <div class="title">Design the mobile tab bar<span class="sub">Worker · Opus 5.5 1M</span></div>
+          <div class="trail"><span class="iconbtn filled"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <div class="hstrip">about<span class="chip"><svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app</span><span class="pill done">done</span><span class="ctx"><span class="ring" style="--p:31"></span>61k · 31%</span></div>
+        <main class="content">
+          <div class="thread">
+            <div class="turn me"><div class="bubble">Now the Android variant — 80dp bar with the active pill.</div></div>
+            <div class="turn"><div class="byline"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="who">Worker</span><span class="mchip">Opus 5.5 1M</span><span>13:22</span></div><div class="prose"><p>Both sketches are on the drawing.</p></div></div>
+          </div>
+        </main>
+        <div class="composer">
+          <div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><div class="box"><span class="ph">Message Worker…</span></div><span class="ib"><svg class="ic"><use href="#i-mic"/></svg></span></div>
+          <div class="picks"><span class="pk"><svg class="ic"><use href="#i-settings"/></svg>Worker</span><span class="pk"><svg class="ic"><use href="#i-sparkle"/></svg>Opus 5.5 1M · High</span><span class="pk"><svg class="ic"><use href="#i-key"/></svg>Auto</span></div>
+        </div>
+        <div class="scrim" style="background:transparent"></div>
+        <div class="menu" style="right:10px;top:46px;width:300px">
+          <div class="mi">Rename…<svg class="ic"><use href="#i-edit"/></svg></div>
+          <div class="mi">Pin<svg class="ic"><use href="#i-pin"/></svg></div>
+          <div class="mi sep">Switch model…<small>Opus 5.5 1M</small><svg class="ic"><use href="#i-sparkle"/></svg></div>
+          <div class="mi">Switch mode…<small>Worker</small><svg class="ic"><use href="#i-settings"/></svg></div>
+          <div class="mi">Credentials…<small>Auto</small><svg class="ic"><use href="#i-key"/></svg></div>
+          <div class="mi sep">Copy link<svg class="ic"><use href="#i-link"/></svg></div>
+          <div class="mi">Open on web<svg class="ic"><use href="#i-external"/></svg></div>
+          <div class="mi">Share…<svg class="ic"><use href="#i-share"/></svg></div>
+          <div class="mi sep destructive">Delete chat…<svg class="ic"><use href="#i-trash"/></svg></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Chat menu — iOS, light</b>From ⋯: rename, pin, switch model (<code>chat model</code>: the next turn claimed runs on it; the conversation carries across), switch mode (per turn), credentials, copy link and open on web (the same address on both), share. Delete confirms: "Delete “Design the mobile tab bar”? It leaves Chats for everyone in Atelier." — a soft delete, restorable. <span class="route">menu over /chat/[id] — no route</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar chat">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Doc</span></span></div>
+          <div class="title">New chat<span class="sub">TM8 Helper · Sonnet 5.5</span></div>
+          <div class="trail"></div>
+        </header>
+        <div class="hstrip">about<span class="chip lg"><svg class="ic"><use href="#i-doc"/></svg>The Back Contract</span></div>
+        <main class="content">
+          <div class="section-h">Earlier chats about this doc</div>
+          <div class="list lines">
+            <a class="row tall"><span class="avatar agent c2"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Explain the Back Contract to me</span><span class="s">TM8 Helper · Sun</span></span><svg class="ic" style="color:var(--ink-4)"><use href="#i-chevron-right"/></svg></a>
+          </div>
+          <div class="tinyhint" style="padding-top:12px"><svg class="ic"><use href="#i-info"/></svg>TM8 Helper is the doc default — Settings › Chat defaults</div>
+        </main>
+        <div class="composer">
+          <div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><div class="box">Which ruling does this overturn?<span class="caret"></span></div><span class="send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></div>
+          <div class="picks"><span class="pk"><svg class="ic"><use href="#i-settings"/></svg>Coordinator</span><span class="pk"><svg class="ic"><use href="#i-sparkle"/></svg>Sonnet 5.5 · Medium</span></div>
+        </div>
+        <div class="keyboard">
+          <div class="kr"><span class="k">q</span><span class="k">w</span><span class="k">e</span><span class="k">r</span><span class="k">t</span><span class="k">y</span><span class="k">u</span><span class="k">i</span><span class="k">o</span><span class="k">p</span></div>
+          <div class="kr"><span class="k">a</span><span class="k">s</span><span class="k">d</span><span class="k">f</span><span class="k">g</span><span class="k">h</span><span class="k">j</span><span class="k">k</span><span class="k">l</span></div>
+          <div class="kr"><span class="k w">⇧</span><span class="k">z</span><span class="k">x</span><span class="k">c</span><span class="k">v</span><span class="k">b</span><span class="k">n</span><span class="k">m</span><span class="k w">⌫</span></div>
+          <div class="kr"><span class="k w">?123</span><span class="k space"> </span><span class="k w" style="width:64px">↵</span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>"Chat about" from a doc — Android, light, keyboard up</b>The doc page's Chat about lands here: the about chip is the doc, the teammate is the doc kind's default, the composer opens focused with every pick as a chip — no settings card when the defaults resolve (task 01a11330). Earlier chats about the same doc (<code>chatIdsAbout</code>) sit above, one tap to continue. ← returns to the doc. <span class="route">/[server]/[space]/chat/new?about=01a0f3c2</span></div>
+  </div>
+</div>
+<div class="why">The header carries the chat's two kinds of state in two places: the <em>chat's</em> (title, teammate, model) in the bar, the <em>conversation's</em> (what it is about, whether a turn runs, how full the context is) in the strip under it, so a long title never pushes the live word off screen. Opening the about chip is a push to the entity's full page, never a peek (owner ruling 2026-10-18); Back returns to this paragraph. "Copy link" and "Share" copy the chat's own address because a sheet or menu is never the subject of a share (CONTRACT §4).</div>
+
+<!-- ===================================================== 7 · CHANNELS -->
+<h3>Channels — feed, thread, voice</h3>
+<p>Channels live under the Chats tab (the overview's IA). A feed is people and agents posting, not a turn-by-turn conversation, so it reads like one: bylines over left-aligned posts, follow-on posts from the same author without a repeated byline, day separators, threads as a reply footer. Threads are <em>replies</em>, not children — the 14:05 tree ruling does not apply inside a channel.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Chats</span></span></div>
+          <div class="title">#mobile<span class="sub">4 members · 2 teammates</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-voice"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="gap"></div>
+          <div class="day" style="padding:0 16px">Yesterday</div>
+          <div class="post"><span class="avatar sm c3">M</span><span class="pb"><span class="ph"><b>Marco</b>18:40</span><span class="tx">Pushed the 360dp drawer fixes. Before and after:</span><span class="imgs"><span class="img"></span><span class="img"></span></span><span class="reacts"><span class="rx me"><svg class="ic"><use href="#s-chat-like"/></svg>2</span></span></span></div>
+          <div class="day" style="padding:4px 16px 0">Today</div>
+          <div class="post"><span class="avatar sm c2">P</span><span class="pb"><span class="ph"><b>Priya</b>09:15</span><span class="tx"><span class="mention">@subhang</span> can you look at the tablet overflow?</span><span class="replies">2 replies <span>· 09:40 · Subhang, Worker</span></span></span></div>
+          <div class="post"><span class="avatar sm agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="pb"><span class="ph"><b>Worker</b>09:52</span><span class="tx">Filed it: <span class="chip"><svg class="ic"><use href="#i-task"/></svg>Desktop-shell reflow overflow</span></span><span class="reacts"><span class="rx"><svg class="ic"><use href="#i-star"/></svg>1</span><span class="rx"><svg class="ic"><use href="#s-chat-like"/></svg>3</span></span></span></div>
+          <div class="post follow"><span class="avatar sm agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="pb"><span class="attach"><svg class="ic"><use href="#i-image"/></svg><span class="n">tablet-768.png</span><span class="m">· 412 KB</span></span></span></div>
+          <div class="post"><span class="avatar sm c4">L</span><span class="pb"><span class="ph"><b>Lena</b>13:36</span><span class="tx">Standup in five, in <span class="chip"><svg class="ic"><use href="#i-voice"/></svg>Standup</span></span></span></div>
+        </main>
+        <div class="composer">
+          <div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><div class="box"><span class="ph">Message #mobile</span></div><span class="ib"><svg class="ic"><use href="#i-mic"/></svg></span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Channel feed — iOS, light</b>Human and agent posts by provenance shape, a mention highlighted, two image attachments, reactions in tm8's own three (like · dislike · star, counts from the post's counters; yours tinted), a thread footer with reply count, last reply and who replied, a voice-channel chip. Swipe a post right to reply in its thread. <span class="route">/[server]/[space]/channel/[id]</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar chat">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>#mobile</span></span></div>
+          <div class="title">Thread<span class="sub">#mobile · 2 replies</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-bell"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="post" style="padding-top:12px"><span class="avatar sm c2">P</span><span class="pb"><span class="ph"><b>Priya</b>09:15</span><span class="tx"><span class="mention">@subhang</span> can you look at the tablet overflow?</span></span></div>
+          <div class="day" style="padding:6px 16px">2 replies</div>
+          <div class="post"><span class="avatar sm c1">S</span><span class="pb"><span class="ph"><b>Subhang</b>09:31</span><span class="tx">Looking now — it is the 768 cut in <code style="font-family:var(--mono);font-size:var(--fs-foot)">shellFor</code>.</span><span class="reacts"><span class="rx"><svg class="ic"><use href="#s-chat-like"/></svg>1</span></span></span></div>
+          <div class="post"><span class="avatar sm agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="pb"><span class="ph"><b>Worker</b>09:40</span><span class="tx">I can take it. Filed <span class="chip"><svg class="ic"><use href="#i-task"/></svg>Desktop-shell reflow…</span> — want a session on it?</span></span></div>
+        </main>
+        <div class="composer">
+          <div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><div class="box"><span class="ph">Reply in thread</span></div><span class="ib"><svg class="ic"><use href="#i-mic"/></svg></span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Thread — Android, dark</b>The root post, then its replies in order; the composer replies to the root (<code>--reply-to</code>). The bell follows or mutes the thread. A cold link to <code>?msg=</code> opens here with ← returning to the channel feed, not out of the app. <span class="route">/[server]/[space]/channel/[id]?msg=01a17b9e</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Chats</span></span></div>
+          <div class="title">#mobile<span class="sub">4 members · 2 teammates</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-voice"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="post" style="padding-top:12px"><span class="avatar sm c4">L</span><span class="pb"><span class="ph"><b>Lena</b>13:36</span><span class="tx">Standup in five, in Standup</span></span></div>
+        </main>
+        <div class="scrim"></div>
+        <div class="sheet half">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="h">Standup</span><span class="pill live">connected</span></div>
+          <div class="sheet-b">
+            <div class="mfoot">Voice channel in Atelier · 3 in the room</div>
+            <div class="people" style="padding-top:18px">
+              <span class="pp talk"><span class="avatar lg c2">P</span>Priya</span>
+              <span class="pp"><span class="avatar lg c3">M</span><span class="mut"><svg class="ic"><use href="#i-minus"/></svg></span>Marco</span>
+              <span class="pp"><span class="avatar lg c1">S</span>You</span>
+            </div>
+            <div class="vbtns">
+              <span class="vb"><span><svg class="ic"><use href="#i-mic"/></svg></span>Mute</span>
+              <span class="vb"><span><svg class="ic"><use href="#i-phone"/></svg></span>Speaker</span>
+              <span class="vb leave"><span><svg class="ic"><use href="#i-close"/></svg></span>Leave</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Voice channel, joined — iOS, dark</b>Minimal by design: who is in the room (a ring on whoever speaks, a badge on the muted), Mute, Speaker, Leave. tm8 mints the room grant (<code>tm8 voice token</code> — a LiveKit access token, never audio bytes); presence and audio come from the media server. The sheet can be dragged down to a mini bar while you keep reading the feed. <span class="route">/[server]/[space]/e/[voiceChannelId] → sheet over its channel</span></div>
+  </div>
+</div>
+
+<!-- ===================================================== 8 · MESSAGES ON AN ANCHOR -->
+<h3>Messages on an anchor</h3>
+<p>Every entity can hold a discussion; a conversation is any anchor with messages on it. This screen lists every message on one task, doc or session, threaded, with reply and mention. Each message shows two facts, never one badge (tm8-ui law L7): the <b>record</b> — stored in the graph, or still queued on this phone — and the <b>delivery</b> to each live session on the anchor.</p>
+<div class="screen-strip">
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar chat">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Task</span></span></div>
+          <div class="title">Messages<span class="sub">TM8 Mobile app · 12</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-filter"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="msgrow"><span class="avatar sm agent c4"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="mb"><span class="mh"><b>Coordinator</b>13:31</span><span class="mt">Foundation written; eight lanes spawned.</span><span class="facets"><span class="pill done">stored</span><span class="pill info nodot">delivery · 7 of 8 delivered</span></span></span></div>
+          <div class="msgrow reply"><span class="avatar xs agent c3"><svg class="ic" style="width:11px;height:11px"><use href="#i-bot"/></svg></span><span class="mb"><span class="mh"><b>Opus 5.5 1M Teammate</b>13:52</span><span class="mt">Lane 03: repo truth read, drawing now.</span><span class="facets"><span class="pill done">stored</span><span class="pill done">delivered</span></span></span></div>
+          <div class="msgrow"><span class="avatar sm c1">S</span><span class="mb"><span class="mh"><b>Subhang</b>14:05</span><span class="mt">In the app the tree structure must be shown in lists.</span><span class="facets"><span class="pill done">stored</span><span class="pill failed">delivery failed · can send again</span></span><span class="btn xs outline sendagain"><svg class="ic" style="width:14px;height:14px"><use href="#i-send"/></svg>Send again</span></span></div>
+          <div class="msgrow"><span class="avatar sm c1">S</span><span class="mb"><span class="mh"><b>You</b>14:12</span><span class="mt">Lane 03: the session tree applies to chats too.</span><span class="facets"><span class="pill done">stored</span><span class="pill info">sending to session</span></span></span></div>
+        </main>
+        <div class="composer">
+          <div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><div class="box"><span class="ph">Message on this task</span></div><span class="ib"><svg class="ic"><use href="#i-mic"/></svg></span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Every message on a task — Android, light</b>Replies indent under their root. The record facet and the delivery facet are separate pills. A message to several sessions summarises "7 of 8 delivered"; tap for the targets. "Send again" appears only on a retryable failure and posts a <em>new</em> message — there is no delivery-only retry. A failure never greys out the message: the stored thing is the fact. <span class="route">/[server]/[space]/e/[id]/messages</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Messages</span></span></div>
+          <div class="title">Message<span class="sub">on TM8 Mobile app</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="msgrow" style="padding-top:14px"><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg></span><span class="mb"><span class="mh"><b>Coordinator</b>13:31 · v1 · 01a182d4</span><span class="mt">Foundation written; eight lanes spawned. Merge expected this afternoon.</span><span class="facets"><span class="lab">Record</span><span class="pill done">stored</span><span class="tinyc">13:31 on <span class="chip"><svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app</span></span></span></span></div>
+          <div class="section-h">Delivery · 7 of 8 delivered</div>
+          <div class="list">
+            <div class="tgt"><span class="kind-ic"><svg class="ic"><use href="#i-session"/></svg></span><span class="tm"><b>Lane 01 · foundation</b><small>13:31</small></span><span class="pill done">delivered</span></div>
+            <div class="tgt"><span class="kind-ic"><svg class="ic"><use href="#i-session"/></svg></span><span class="tm"><b>Lane 03 · chat</b><small>13:31</small></span><span class="pill done">delivered</span></div>
+            <div class="tgt"><span class="kind-ic"><svg class="ic"><use href="#i-session"/></svg></span><span class="tm"><b>Lane 04 · sessions</b><small>13:32</small></span><span class="pill done">delivered</span></div>
+            <div class="tgt"><span class="kind-ic"><svg class="ic"><use href="#i-session"/></svg></span><span class="tm"><b>Lane 07 · inbox</b><small>The target session is no longer live</small></span><span class="pill failed">failed</span></div>
+            <div class="tgt"><span class="kind-ic"><svg class="ic"><use href="#i-session"/></svg></span><span class="tm"><b>4 more delivered</b><small>lanes 02, 05, 06, 08</small></span><svg class="ic" style="color:var(--ink-4)"><use href="#i-chevron-down"/></svg></div>
+          </div>
+          <div class="mfoot" style="padding-top:10px">"Delivered" means the governed write to the session's terminal completed — not that the model read or obeyed it.</div>
+          <div class="btnrow" style="padding:14px 16px 0"><span class="btn sm"><svg class="ic"><use href="#i-reply"/></svg>Reply</span><span class="btn sm"><svg class="ic"><use href="#i-link"/></svg>Copy link</span><span class="btn sm"><svg class="ic"><use href="#i-send"/></svg>Send again</span></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Message detail — iOS, light</b>A message is an entity: author, version, id, its anchor as a chip, the record facet, then delivery <em>per target</em> with the server's own reason for the one that failed. "Send again" re-posts to the failed target as a new message. <span class="route">/[server]/[space]/e/[messageId]</span></div>
+  </div>
+</div>
+<div class="why">Delivery words are the web's, verbatim (<code>feed-model.ts</code>): <code>stored · waiting to send</code>, <code>sending to session</code>, <code>delivered</code> (the PTY write, nothing more), <code>delivery failed · can send again</code>, <code>delivery failed</code>, <code>delivery unknown</code> (a warning, never success), <code>delivery expired</code>, <code>delivery cancelled</code>. A message nobody attempted to deliver gets no delivery pill at all — "0 of 0" would state a measurement that never ran. The CLI agrees from the other side: <code>message send --wait settled</code> exiting 11 means stored-but-unsettled, not failed.</div>
+
+<!-- ===================================================== 9 · STATES -->
+<h3>States — empty, loading, unreachable, offline, model unavailable</h3>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large">
+          <div class="lead"><span class="spacebtn"><span class="mark" style="background:var(--info)">P</span>Playground<svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+          <div class="title hidden">Chats</div>
+          <div class="trail"><span class="iconbtn brand"><svg class="ic"><use href="#i-edit"/></svg></span></div>
+          <div class="big">Chats</div>
+        </header>
+        <main class="content">
+          <div class="empty" style="padding-top:72px"><svg class="ic"><use href="#i-chats"/></svg><div class="h">No chats in Playground yet</div><p>Ask a teammate anything. The first message creates the chat.</p></div>
+          <div class="chips" style="justify-content:center;padding:0 24px"><span class="chip lg">Summarise what changed this week</span><span class="chip lg">Plan the next task</span></div>
+        </main>
+        <div class="composer">
+          <div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><div class="box"><span class="ph">Message Worker…</span></div><span class="ib"><svg class="ic"><use href="#i-mic"/></svg></span></div>
+          <div class="picks"><span class="pk"><svg class="ic"><use href="#i-bot"/></svg>Worker</span><span class="pk"><svg class="ic"><use href="#i-sparkle"/></svg>Opus 5.5 · High</span><span class="pk"><svg class="ic"><use href="#i-project"/></svg>Scratch</span></div>
+        </div>
+        <nav class="tabbar">
+          <a class="tab on"><svg class="ic"><use href="#i-chats"/></svg>Chats</a>
+          <a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a>
+          <a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox</a>
+          <a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a>
+        </nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Empty — the cold-start composer (iOS, light)</b>A space with no chats is not a dead end: the empty state names the verb and the composer is already there with the default teammate, so the first message <em>is</em> <code>chat.start</code>. Playground links no project, so it works in Scratch. The suggestions only fill the field. <span class="route">/[server]/[space]/(tabs)/chats</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar">
+          <div class="lead"><span class="spacebtn"><span class="mark">A</span><svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+          <div class="title">Chats</div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="filters"><span class="f on">All</span><span class="f">Live</span><span class="f">Mine</span><span class="f">Unread</span></div>
+          <div class="skr"><span class="skeleton av"></span><span class="lines"><span class="skeleton sk-line w80"></span><span class="skeleton sk-line w40"></span></span></div>
+          <div class="skr"><span class="skeleton av"></span><span class="lines"><span class="skeleton sk-line w60"></span><span class="skeleton sk-line w40"></span></span></div>
+          <div class="skr"><span class="skeleton av"></span><span class="lines"><span class="skeleton sk-line w80"></span><span class="skeleton sk-line w60"></span></span></div>
+          <div class="skr"><span class="skeleton av"></span><span class="lines"><span class="skeleton sk-line w60"></span><span class="skeleton sk-line w40"></span></span></div>
+          <div class="skr"><span class="skeleton av"></span><span class="lines"><span class="skeleton sk-line w80"></span><span class="skeleton sk-line w40"></span></span></div>
+          <div class="skr"><span class="skeleton av"></span><span class="lines"><span class="skeleton sk-line w40"></span><span class="skeleton sk-line w60"></span></span></div>
+          <span class="fab ext" style="bottom:16px;opacity:.5"><svg class="ic"><use href="#i-edit"/></svg>New chat</span>
+        </main>
+        <nav class="tabbar">
+          <a class="tab on"><svg class="ic"><use href="#i-chats"/></svg>Chats</a>
+          <a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a>
+          <a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox</a>
+          <a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a>
+        </nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Loading — first read on a new server (Android, dark)</b>Only a server never read on this phone shows skeletons; every later open paints the cached list at once and refreshes underneath. A transcript opened cold draws its header from the list row (title, teammate, model) and skeleton bubbles below. New chat waits for the teammate list. <span class="route">/[server]/[space]/(tabs)/chats</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar chat">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Chats</span></span></div>
+          <div class="title">Design the mobile tab bar<span class="sub">Worker · Opus 5.5 1M</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <div class="hstrip">about<span class="chip"><svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app</span><span class="ctx unk"><span class="ring" style="--p:31"></span>61k · last known</span></div>
+        <main class="content">
+          <div class="banner block"><svg class="ic"><use href="#i-wifi-off"/></svg>This server could not be reached · saved 13:24<span class="act">Check again</span></div>
+          <div class="thread">
+            <div class="turn"><div class="byline"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="who">Worker</span><span class="mchip">Opus 5.5 1M</span><span>13:22</span></div>
+              <div class="prose"><p>Both sketches are on <span class="chip"><svg class="ic"><use href="#i-drawing"/></svg>Tab bar sketch</span>. The Android bar is 80dp with the active pill.</p></div>
+              <div class="receipt"><div class="rr"><span class="mk made">+</span><span class="ri"><svg class="ic"><use href="#i-drawing"/></svg></span><span class="rt"><b>Tab bar sketch — Android</b><small>drawing · 6 shapes</small></span><span></span></div></div>
+            </div>
+            <div class="turn me"><div class="bubble">Add the badge rules to the sketch.</div>
+              <div class="facets"><span class="pill pending">queued on this phone</span><span class="tinyc">sends when tm8.sh is back</span></div>
+            </div>
+          </div>
+        </main>
+        <div class="composer">
+          <div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><div class="box"><span class="ph">Message Worker…</span></div><span class="ib"><svg class="ic"><use href="#i-mic"/></svg></span></div>
+          <div class="picks"><span class="pk"><svg class="ic"><use href="#i-settings"/></svg>Worker</span><span class="pk"><svg class="ic"><use href="#i-sparkle"/></svg>Opus 5.5 1M · High</span><span class="pk"><svg class="ic"><use href="#i-key"/></svg>Auto</span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Server unreachable — cached transcript, queued turn (iOS, dark)</b>The phone is online but tm8.sh is not answering: the banner says so in the product's words and when the copy was saved; the transcript is this phone's cache; the context reads "last known". A message sent now is queued with its record facet "queued on this phone" — not stored, not failed — and posts with its original mutation id when the server answers. A device with no network says "You're offline" instead. <span class="route">/[server]/[space]/chat/[id]</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar chat">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Chats</span></span></div>
+          <div class="title">Triage platform alerts<span class="sub">Dispatcher · Opus 5 · acme-node</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <div class="hstrip"><span class="pill exited">exited</span><span class="ctx unk"><span class="ring" style="--p:0"></span>— not measured</span></div>
+        <main class="content">
+          <div class="thread">
+            <div class="turn"><div class="byline"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="who">Dispatcher</span><span class="mchip">Opus 5</span><span>Fri</span></div>
+              <div class="prose"><p>Three alerts were duplicates; I closed them and kept the disk-pressure one open.</p></div>
+            </div>
+          </div>
+          <div class="refusal" style="position:absolute;left:0;right:0;bottom:0;margin:12px"><div class="h">This chat's model is not available on acme-node</div><p>Claude Opus 5 is not in this server's catalog any more. Pick a model to continue; the conversation carries across models.</p><span class="btn sm brand" style="margin-top:10px">Choose a model</span></div>
+        </main>
+        <div class="composer">
+          <div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><div class="box"><span class="ph">Pick a model to send</span></div><span class="send off"><svg class="ic"><use href="#i-arrow-up"/></svg></span></div>
+          <div class="picks"><span class="pk bad"><svg class="ic"><use href="#i-warning"/></svg>Opus 5 · unavailable</span><span class="pk dis"><svg class="ic"><use href="#i-gauge"/></svg>Effort —</span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Model unavailable, effort undeclared — Android, light</b>On an older node a chat's model can leave the catalog: Send is disabled and the refusal says why and what to do (<code>chat model</code> moves it). The effort pick is disabled with the catalog's reason — "does not declare effort stops on this node" — because <code>efforts</code> absent means unknown, never "one level". The context meter reads "— not measured" until a request reports usage. <span class="route">/[server]/[space]/chat/[id]</span></div>
+  </div>
+</div>
+<div class="why">Offline is a state, not an error (principle 8). The cache is per server and per space; a queued message keeps the <code>clientMutationId</code> it was given on Send, so the server's idempotency makes a double post impossible when the queue drains. A queued turn is painted as an <em>optimistic</em> turn exactly as the web paints one before its ack (<code>appendOptimisticTurn</code>), with one more fact the web never needed: it may wait minutes, so it says so. Nothing here draws a count the node did not return — context "—", cost "not reported", unread absent.</div>
+
+<!-- ===================================================== SPECS -->
+<h3>Routes</h3>
+<table class="route-table">
+  <thead><tr><th style="width:44%">Route</th><th>Screen</th><th style="width:28%">Params · deep links</th></tr></thead>
+  <tbody>
+    <tr><td>/[server]/[space]/(tabs)/chats</td><td>Chats root: filters, rows, session trees</td><td><code>?f=all|live|mine|unread|pinned</code> — route state, survives reload (DEF-045). Unread only where the node counts it.</td></tr>
+    <tr><td>/[server]/[space]/chat/new</td><td>New chat (teammate, about, mode, model · effort, works in, project, credentials, first message)</td><td>Seed: <code>?teammate= &amp;model= &amp;mode= &amp;workdir=project|scratch &amp;project= &amp;about=</code>. Nothing is created until Send (<code>chat.start</code>).</td></tr>
+    <tr><td>/[server]/[space]/chat/[id]</td><td>Transcript + composer</td><td><code>?turn=&lt;messageId&gt;</code> scrolls to a turn; <code>?form=&lt;formId&gt;</code> scrolls to a form card (Inbox). <b>Proposed</b> params on the overview's route.</td></tr>
+    <tr><td>/[server]/[space]/channel/[id]</td><td>Channel feed</td><td><code>?msg=&lt;messageId&gt;</code> opens that post's thread as a push.</td></tr>
+    <tr><td>/[server]/[space]/e/[id]/messages</td><td>Every message on an anchor, threaded</td><td><code>?msg=</code> expands one thread in place.</td></tr>
+    <tr><td>/[server]/[space]/e/[id] (kind message)</td><td>Message detail: record + delivery per target</td><td>Up = the anchor's Messages (a message has no kind list, CONTRACT §5).</td></tr>
+    <tr><td>/[server]/[space]/e/[id] (kind chat · channel)</td><td>Redirect</td><td>To <code>chat/[id]</code> · <code>channel/[id]</code>, the overview's rule.</td></tr>
+    <tr><td>/[server]/[space]/e/[id] (kind voice_channel)</td><td>Voice sheet over its channel</td><td><b>Proposed</b>: no screen of its own; a cold link opens the channel with the sheet up.</td></tr>
+    <tr><td>/[server]/[space]/e/[id] (kind form)</td><td>Form answered full screen</td><td>A form not asked in a chat (a human's draft, a link) opens as its own page; one asked in a chat redirects to <code>chat/[id]?form=</code>.</td></tr>
+    <tr><td>tm8://&lt;host&gt;/s/&lt;space&gt;/e/&lt;chatId&gt; · https://&lt;host&gt;/#/s/&lt;space&gt;/e/&lt;chatId&gt;</td><td>Deep / universal link to a chat</td><td>Cold: stack is <code>[chats, chat/[id]]</code>, so Back lands on the Chats list (Back Contract).</td></tr>
+  </tbody>
+</table>
+
+<h3>Components</h3>
+<table class="spec">
+  <thead><tr><th style="width:20%">Component</th><th style="width:16%">Size</th><th>Behaviour</th><th style="width:22%">iOS · Android</th></tr></thead>
+  <tbody>
+    <tr><td class="code">ChatRow</td><td>68pt (90 with an about chip)</td><td>Agent avatar (rounded-square) with live dot; title; subtitle = liveness pill + the live sentence, or the last receipt as a sentence; about chip on its own line; time. Liveness = turn × runtime: streaming → <code>live</code>; open form or permission for you → <code>waiting</code>; stopped-continuable → <code>stopped</code>; error → <code>failed</code>; runtime stopped and idle → <code>exited</code>; idle and live runtime → no pill.</td><td>Same row; Android 48dp minimum tap, ripple.</td></tr>
+    <tr><td class="code">SessionTreeRows</td><td>52pt child, 20pt indent</td><td>A chat with <code>counters.sessions &gt; 0</code> shows "▾ N sessions" / "▸ N sessions · 1 waiting" in its subtitle; children nest with a hairline guide from the parent avatar, each with its own verdict word; tap a child pushes the session (lane 04). Expanded to depth 2 by default; collapse state in list memory.</td><td>Chevron is in the subtitle, not a leading column (most chats have no children).</td></tr>
+    <tr><td class="code">ChatHeader + strip</td><td>44pt / 56dp + 34pt</td><td>Bar: title, teammate · model. Strip: about chip, liveness word, context meter. Tap title → chat info.</td><td>iOS centered; Android left title, 17sp over a 12sp line.</td></tr>
+    <tr><td class="code">ContextMeter</td><td>16pt ring + label</td><td><code>48k · 24%</code> from <code>chat.context</code>; percent only with a known capacity; <code>— not measured</code> with the reason; <code>last known</code> when the runtime is cold or stopped. Tap → detail sheet.</td><td>—</td></tr>
+    <tr><td class="code">DaySeparator · NewSinceLine · JumpPill</td><td>16pt · 16pt · 32pt</td><td>Day names (Today, Yesterday, weekday, date); "New since you left" at this phone's last-seen turn; the pill appears when scrolled more than a screen above the live edge.</td><td>—</td></tr>
+    <tr><td class="code">UserBubble · OtherBubble · ThirdPartyTurn</td><td>max 86% · max 86% · 94%</td><td>Sidedness by author id. Third party (a <code>sourceEntityId</code> that is not this chat) renders in the middle lane, dashed, with "via ◆ source".</td><td>Bubble radius 18 / 20.</td></tr>
+    <tr><td class="code">AgentByline</td><td>22pt</td><td>Avatar, name, model chip, mode chip only when the turn's mode differs from the chat's, time.</td><td>—</td></tr>
+    <tr><td class="code">AnswerProse</td><td>16/22 callout</td><td>Markdown; code block with path and Copy; tables scroll sideways; any code span that is exactly an entity id becomes a chip; settled text never re-renders while the turn streams below it.</td><td>Text selection: iOS long-press; Android long-press with handles.</td></tr>
+    <tr><td class="code">ThinkingDisclosure</td><td>18pt</td><td>"Thought for 12s" (duration <b>proposed</b>; "Thought" without it); verbatim, italic, left-ruled.</td><td>—</td></tr>
+    <tr><td class="code">StepHeader · StepLines</td><td>20pt · 26pt</td><td>One header per turn: count, top two groups, failed, retried. Lines: glyph by category (doc, file, search, terminal, edit, globe, skill), state in the words (<code>…</code> running, <code>failed</code>, <code>Stopped while…</code>); reads and commands fold into counted lines; latest 5 while live.</td><td>—</td></tr>
+    <tr><td class="code">StepSheet · ToolCard</td><td>tall detent</td><td>Every step of the turn; a step expands into its card (command + 6 output lines + "Show all"; diff excerpt; graph write: operation, status, version). Masks credential-shaped strings.</td><td>iOS large detent; Android full-height sheet, back dismisses.</td></tr>
+    <tr><td class="code">TurnReceipt</td><td>36–48pt rows</td><td>Mark (+ → ✎ ⇢ · ✕), kind glyph or 40×28 thumbnail, title + one-line facts, state now. Nested 20pt under the row it belongs to. A session spawned onto a row's task is a pill in its facts. Past 6 rows shows 5 and "+N more: 1 task, 2 docs".</td><td>—</td></tr>
+    <tr><td class="code">UsageFootnote</td><td>11pt mono</td><td>in · cache read · cache write · out, each only if reported; then cost, or "cost not reported".</td><td>—</td></tr>
+    <tr><td class="code">LiveTurnRow</td><td>~52pt</td><td>Spinner, the now-sentence, mono meta (<code>step 4 · 1m 12s · last step 8s ago</code>), Stop. Announces phase changes only, never the ticking clock.</td><td>VoiceOver / TalkBack live region, throttled.</td></tr>
+    <tr><td class="code">Composer</td><td>40pt field, grows to 6 lines</td><td>＋ · field · mic (empty) or Send; tray above for files, images, entity refs; picks row (mode, model · effort, credentials). Return = newline. Draft kept per stack entry.</td><td>iOS rounded field; Android filled field, 48dp targets.</td></tr>
+    <tr><td class="code">TriggerPopover (<code>/</code>, <code>@</code>)</td><td>full width, ≤ 5 rows</td><td>Opens on a sigil at word start; prefix-of-any-word filter; arrow/tap commits; no focusable parts; closes on space or when the sigil is deleted.</td><td>Above the keyboard on both.</td></tr>
+    <tr><td class="code">VoiceCapture</td><td>~230pt panel</td><td>Hold the mic: waveform, live words; release inserts; slide up cancels. On-device recognition only.</td><td>iOS Speech · Android SpeechRecognizer.</td></tr>
+    <tr><td class="code">FormCard</td><td>width of the turn</td><td>Header with state word (<code>awaiting you</code> · <code>answered</code> · <code>closed</code> · <code>cancelled</code>), question, options (recommended labelled), Other, Submit / Later; answered collapses to the answer.</td><td>Radio rows 44pt / 48dp.</td></tr>
+    <tr><td class="code">ChannelPost · Reactions · ThreadFooter</td><td>—</td><td>Follow-on posts drop the byline; reactions are like · dislike · star with counts; thread footer: n replies · last · who.</td><td>—</td></tr>
+    <tr><td class="code">DeliveryFacets</td><td>22pt pills</td><td>Record pill + delivery pill; multi-target summary "n of m delivered"; Send again only on <code>failed_retryable</code>.</td><td>—</td></tr>
+    <tr><td class="code">VoiceSheet</td><td>half detent</td><td>Participants (speaking ring, muted badge), Mute, Speaker, Leave; drags down to a mini bar.</td><td>iOS audio session category playAndRecord; Android foreground service while joined.</td></tr>
+  </tbody>
+</table>
+
+<h3>Gestures &amp; haptics</h3>
+<table class="spec">
+  <thead><tr><th style="width:24%">Gesture</th><th>Where · result</th><th style="width:16%">iOS haptic</th><th style="width:20%">Android haptic</th></tr></thead>
+  <tbody>
+    <tr><td>Tap</td><td>Chat row, chip, receipt row, session pill → push; step line → step sheet</td><td>none</td><td>none</td></tr>
+    <tr><td>Long-press chat row</td><td>Preview + context menu (iOS); multi-select (Android)</td><td><code>impactMedium</code></td><td><code>LONG_PRESS</code></td></tr>
+    <tr><td>Swipe chat row trailing</td><td>Read · Pin · Archive; full swipe archives with Undo</td><td><code>impactLight</code> at threshold</td><td><code>GESTURE_THRESHOLD_ACTIVATE</code></td></tr>
+    <tr><td>Tap "▸ N sessions"</td><td>Expand / collapse a chat's session children in place</td><td><code>selection</code></td><td><code>CLOCK_TICK</code></td></tr>
+    <tr><td>Long-press the chevron</td><td>Expand / collapse every chat's children</td><td><code>impactMedium</code></td><td><code>LONG_PRESS</code></td></tr>
+    <tr><td>Pull to refresh</td><td>Chats, channel feed, messages</td><td><code>impactLight</code> at trigger</td><td><code>GESTURE_THRESHOLD_ACTIVATE</code></td></tr>
+    <tr><td>Re-tap the Chats tab</td><td>Pop to root, then scroll to top</td><td><code>selection</code></td><td><code>CLOCK_TICK</code></td></tr>
+    <tr><td>Send</td><td>Post or queue a message</td><td><code>impactLight</code></td><td><code>CONFIRM</code></td></tr>
+    <tr><td>Stop</td><td>Live row → <code>chat stop</code></td><td><code>impactMedium</code></td><td><code>CONFIRM</code></td></tr>
+    <tr><td>Turn finishes on screen</td><td>Receipt settles (once per turn, only while the chat is visible)</td><td><code>notificationSuccess</code></td><td><code>CONFIRM</code></td></tr>
+    <tr><td>Turn fails · write refused</td><td>Turn error / red receipt row appears</td><td><code>notificationError</code></td><td><code>REJECT</code></td></tr>
+    <tr><td>Tap step header · thinking</td><td>Open / fold every run · the reasoning</td><td><code>selection</code></td><td><code>CLOCK_TICK</code></td></tr>
+    <tr><td>Long-press a turn or post</td><td>Copy text · Copy link · Select · Reply (posts) · Open source (third party)</td><td><code>impactMedium</code></td><td><code>LONG_PRESS</code></td></tr>
+    <tr><td>Swipe a post right</td><td>Reply in its thread</td><td><code>impactLight</code> at threshold</td><td><code>GESTURE_THRESHOLD_ACTIVATE</code></td></tr>
+    <tr><td>Hold mic · release · slide up</td><td>Start capture · insert text · cancel</td><td><code>impactMedium</code> · <code>impactLight</code> · <code>notificationWarning</code></td><td><code>LONG_PRESS</code> · <code>GESTURE_END</code> · <code>REJECT</code></td></tr>
+    <tr><td>Drag effort slider</td><td>Snaps to each declared stop</td><td><code>selection</code> per stop</td><td><code>SEGMENT_TICK</code></td></tr>
+    <tr><td>Pick in <code>/</code> · <code>@</code> list</td><td>Commit the reference or mention</td><td><code>selection</code></td><td><code>CLOCK_TICK</code></td></tr>
+    <tr><td>Form option · Submit</td><td>Select · <code>form submit</code></td><td><code>selection</code> · <code>notificationSuccess</code></td><td><code>CLOCK_TICK</code> · <code>CONFIRM</code></td></tr>
+    <tr><td>Reaction tap</td><td>Like / dislike / star on, off</td><td><code>impactLight</code></td><td><code>TOGGLE_ON</code> · <code>TOGGLE_OFF</code></td></tr>
+    <tr><td>Mute · Leave (voice)</td><td>Toggle mic · leave the room</td><td><code>impactLight</code> · <code>impactMedium</code></td><td><code>TOGGLE_ON/OFF</code> · <code>CONFIRM</code></td></tr>
+    <tr><td>Edge swipe · predictive back</td><td>Pop the transcript; with a sheet up, Android back dismisses the sheet first</td><td>system</td><td>system</td></tr>
+    <tr><td>Drag a sheet's handle</td><td>Change detent, or dismiss</td><td><code>selection</code> per detent</td><td><code>SEGMENT_TICK</code></td></tr>
+  </tbody>
+</table>
+
+<div class="callout why"><b>Why the hero screen looks like this</b>Three web rulings carry over unchanged because they are about meaning: <b>the ledger, not the calls</b> (design ruling 1 and R8 — a turn says what happened to the graph, never which tools it called); <b>one receipt row per entity</b> (proposal 01a14a8d, approved by Subhang — made, moved, edited, linked, pending and failed folded into one row whose trailing word is the entity's state now); and <b>honest states never collapse</b> (L7). Two rulings are re-expressed natively: the owner's "opening an entity is always a full screen" stays (chips push), while the long-press preview the ruling left open becomes the iOS context-menu preview; the one-surface-at-a-time rule becomes stacks plus detented sheets, with the CONTRACT §4 third shape (a non-modal picker driven from the field) kept for <code>/</code> and <code>@</code>. One web behaviour is overturned: the phone shell had no tab bar and opened Chat as the drawer floor; here Chats is a tab root with its own stack, and the drawer's job moved to Browse (overview).</div>
+
+<div class="callout open"><b>Open questions for the owner</b>
+<ol style="margin:6px 0 0;padding-left:20px">
+  <li><b>Tool cards.</b> R8 (signed off) bans payloads in the transcript; this design keeps the ban inline and shows tool cards only in the step sheet on an explicit tap. Confirm the sheet may show the raw command and output (masked) — or should it show only the agent's own description, as the step line does?</li>
+  <li><b>Per-chat unread</b> (server). Widen <code>loadUnreadCounts</code> to chat anchors and write <code>read_marks</code> when a chat is opened; the primitive already groups over every anchor. Until then the dot, the Unread filter and "Mark as read" are absent.</li>
+  <li><b>Chat pins.</b> No server pin exists. Keep pins per device, or add a member preference so the desktop and phone agree?</li>
+  <li><b><code>@</code> and entity references in a chat</b> (server or convention). The chat wire carries no <code>mentionIds</code>. Proposed: write both as <code>tm8://</code> links in the body, the convention <code>/</code> already uses, so no wire change is needed — or add <code>mentionIds</code> to <code>chat send</code>?</li>
+  <li><b>Durations</b> (server). Project <code>message_parts.created_at</code> on the transcript read so "Thought for 12s", per-step times and the step-header clock can be drawn for turns this phone did not watch live.</li>
+  <li><b>Liveness word for an idle chat whose runtime exited.</b> This design says <code>exited</code> (the runtime is gone; the next message restarts it). The web header says "not running". One word for both?</li>
+  <li><b>Push for turn outcomes.</b> Should a turn that finishes or fails while the app is backgrounded notify (lane 07), and only for chats you started?</li>
+  <li><b>Voice presence.</b> Participants come from LiveKit, not tm8. Acceptable that the room list can disagree with tm8 for a few seconds?</li>
+</ol></div>
+</section>

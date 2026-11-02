@@ -1,0 +1,1249 @@
+<section class="doc-section" id="s-shell" data-title="App shell, servers &amp; spaces, onboarding, settings" data-lane="02 shell">
+<style>
+#s-shell .tbtn { display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 var(--s2); color: var(--brand); font-size: var(--fs-body); white-space: nowrap; }
+#s-shell .tbtn.b { font-weight: 600; }
+#s-shell .tbtn.off { color: var(--ink-4); }
+#s-shell .tbtn.d { color: var(--block); font-size: var(--fs-sub); min-height: 0; padding: 0; }
+#s-shell .caret { display: inline-block; width: 2px; height: 20px; background: var(--brand); vertical-align: middle; animation: s-shell-blink 1s steps(1) infinite; }
+#s-shell .input .caret { margin-left: -7px; }
+@keyframes s-shell-blink { 50% { opacity: 0; } }
+#s-shell .dots { letter-spacing: 2px; color: var(--ink); }
+#s-shell .grow { flex: 1 1 auto; }
+#s-shell .note { margin: 0; font-size: var(--fs-foot); line-height: var(--lh-foot); color: var(--ink-3); }
+#s-shell .note.pad { padding: var(--s2) var(--gutter) var(--s1); }
+#s-shell .note.c { text-align: center; }
+#s-shell .brandt { color: var(--brand) !important; }
+#s-shell .form { display: flex; flex-direction: column; gap: var(--s4); }
+#s-shell .form .field .help { line-height: 17px; }
+#s-shell .lead-p { font-size: var(--fs-sub); line-height: var(--lh-sub); color: var(--ink-2); }
+#s-shell .banner.r { border-radius: var(--r-sm); align-items: flex-start; line-height: 18px; }
+#s-shell .banner .ic { flex: 0 0 auto; margin-top: 1px; }
+#s-shell .row .s.w { white-space: normal; display: block; }
+#s-shell .row .trail .v { font-size: var(--fs-sub); color: var(--ink-3); white-space: nowrap; }
+#s-shell .row .trail .n { font-size: var(--fs-foot); color: var(--ink-3); white-space: nowrap; }
+#s-shell .row.dis .t, #s-shell .row.dis .kind-ic, #s-shell .row.dis .si { opacity: .45; }
+#s-shell .row.danger { justify-content: center; color: var(--block); font-weight: 500; }
+#s-shell .row .ck { color: var(--brand); width: 20px; height: 20px; }
+#s-shell .list.inset + .note.pad { padding-top: var(--s2); }
+/* welcome */
+#s-shell .wl { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: var(--s2); padding: 0 var(--s8); }
+#s-shell .logo { width: 88px; height: 88px; border-radius: 22px; background: var(--brand); color: var(--brand-ink); display: grid; place-items: center; font-size: 36px; font-weight: 800; letter-spacing: -0.04em; margin-bottom: var(--s3); }
+#s-shell .logo.sm { width: 56px; height: 56px; border-radius: 14px; font-size: 22px; margin: 0; }
+#s-shell .wl-tag { font-size: var(--fs-t3); line-height: var(--lh-t3); font-weight: 600; color: var(--ink); margin-top: var(--s2); }
+#s-shell .wl-sub { font-size: var(--fs-sub); line-height: var(--lh-sub); color: var(--ink-3); }
+#s-shell .cta { padding: 0 var(--gutter) var(--s3); display: flex; flex-direction: column; gap: var(--s3); }
+/* servers, spaces */
+#s-shell .sg { width: 32px; height: 32px; border-radius: 8px; background: var(--surface); color: var(--ink-2); display: grid; place-items: center; flex: 0 0 auto; }
+#s-shell .sg .ic { width: 18px; height: 18px; }
+#s-shell .phone[data-os="android"] .sheet .sg, #s-shell .sheet .sg { background: var(--active); }
+#s-shell .srv { display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--gutter) var(--s1); min-height: 52px; }
+#s-shell .srv.press { background: var(--hover); }
+#s-shell .srv .main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+#s-shell .srv .t { font-size: var(--fs-sub); font-weight: 700; color: var(--ink); }
+#s-shell .srv .s { font-size: var(--fs-foot); color: var(--ink-3); display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; }
+#s-shell .srv .pill, #s-shell .mini .pill { height: 20px; font-size: 11px; padding: 0 7px; }
+#s-shell .spm { width: 32px; height: 32px; border-radius: 9px; background: var(--active); color: var(--ink-2); display: grid; place-items: center; font-weight: 700; font-size: 14px; flex: 0 0 auto; }
+#s-shell .spm.on { background: var(--brand); color: var(--brand-ink); }
+#s-shell .row.sp { min-height: 52px; padding-top: 6px; padding-bottom: 6px; }
+#s-shell .cached .row .t, #s-shell .cached .spm { opacity: .6; }
+#s-shell .addsrv { color: var(--brand); font-weight: 500; font-size: var(--fs-body); }
+#s-shell .addsrv .ic { color: var(--brand); }
+#s-shell .srvcard { display: flex; gap: var(--s3); align-items: flex-start; margin: var(--s3) var(--gutter) 0; padding: var(--s3) var(--s4); border-radius: var(--r-md); background: var(--card); border: 1px solid var(--line); }
+#s-shell .content.pad .srvcard { margin: 0; }
+#s-shell .srvcard .main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+#s-shell .srvcard .main b { font-size: var(--fs-hl); color: var(--ink); }
+#s-shell .mono-s { font-family: var(--mono); font-size: 12.5px; line-height: 18px; color: var(--ink-3); overflow-wrap: anywhere; }
+#s-shell .srvcard .m { display: flex; align-items: center; gap: 8px; font-size: var(--fs-foot); color: var(--ink-3); flex-wrap: wrap; }
+#s-shell .reach { display: flex; gap: var(--s3); align-items: center; padding: var(--s3); border-radius: var(--r-md); background: var(--surface); }
+#s-shell .reach .rt { display: flex; flex-direction: column; font-size: var(--fs-foot); color: var(--ink-3); }
+#s-shell .reach .rt b { font-size: var(--fs-sub); color: var(--ink); font-weight: 600; }
+/* sign in */
+#s-shell .stay { display: flex; align-items: center; gap: var(--s3); }
+#s-shell .stay .main { flex: 1; display: flex; flex-direction: column; }
+#s-shell .stay .t { font-size: var(--fs-body); font-weight: 500; color: var(--ink); }
+#s-shell .stay .s { font-size: var(--fs-foot); color: var(--ink-3); }
+#s-shell .cells { display: flex; align-items: center; justify-content: center; gap: 5px; }
+#s-shell .cells i { font-style: normal; width: 28px; height: 38px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line-2); display: grid; place-items: center; font: 600 17px/1 var(--mono); color: var(--ink); }
+#s-shell .cells em { font-style: normal; color: var(--ink-4); padding: 0 2px; }
+#s-shell .cam { background: radial-gradient(120% 80% at 50% 30%, color-mix(in srgb, var(--term-fg) 16%, var(--term-bg)), var(--term-bg) 70%); display: flex; flex-direction: column; align-items: center; }
+#s-shell .camtop { align-self: stretch; display: flex; align-items: center; justify-content: space-between; padding: 0 var(--s2); color: var(--term-fg); }
+#s-shell .camtop b { font-size: var(--fs-hl); }
+#s-shell .camtop .tbtn, #s-shell .camtop .iconbtn { color: var(--term-fg); }
+#s-shell .vf { position: relative; width: 224px; height: 224px; margin-top: var(--s4); display: grid; place-items: center; }
+#s-shell .vf .cn { position: absolute; width: 36px; height: 36px; border: 4px solid var(--brand); }
+#s-shell .vf .a { left: 0; top: 0; border-right: 0; border-bottom: 0; border-radius: 12px 0 0 0; }
+#s-shell .vf .b { right: 0; top: 0; border-left: 0; border-bottom: 0; border-radius: 0 12px 0 0; }
+#s-shell .vf .c { left: 0; bottom: 0; border-right: 0; border-top: 0; border-radius: 0 0 0 12px; }
+#s-shell .vf .d { right: 0; bottom: 0; border-left: 0; border-top: 0; border-radius: 0 0 12px 0; }
+#s-shell .qr { width: 160px; height: 160px; padding: 12px; border-radius: 8px; background: var(--term-fg); color: var(--term-bg); fill: currentColor; stroke: none; shape-rendering: crispEdges; }
+#s-shell .camhint { margin: var(--s3) var(--s8) 0; text-align: center; font-size: var(--fs-foot); line-height: 18px; color: var(--term-fg); opacity: .8; }
+#s-shell .found { position: absolute; left: var(--s3); right: var(--s3); bottom: var(--s3); background: var(--card); color: var(--ink); border-radius: var(--r-xl); padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3); box-shadow: var(--sh-pop); }
+#s-shell .fh { display: flex; align-items: center; gap: var(--s3); }
+#s-shell .fh .main { flex: 1; display: flex; flex-direction: column; font-size: var(--fs-foot); color: var(--ink-3); }
+#s-shell .fh .main b { font-size: var(--fs-hl); color: var(--ink); }
+#s-shell .found .q { font-size: var(--fs-body); color: var(--ink); text-align: center; }
+#s-shell .sheet.kb { bottom: 260px; height: auto; padding-bottom: var(--s4); border-radius: var(--r-xl) var(--r-xl) 0 0; }
+#s-shell .scrim.kb { bottom: 260px; }
+#s-shell .sheet-b.pad { padding: 0 var(--gutter); display: flex; flex-direction: column; gap: var(--s3); }
+/* browse */
+#s-shell .section-h.tight { padding-top: var(--s3); }
+#s-shell .scope { text-transform: none; letter-spacing: 0; font-weight: 600; font-size: 11px; line-height: 18px; color: var(--ink-3); background: var(--idle-soft); border-radius: var(--r-pill); padding: 0 8px; }
+#s-shell .pins { display: flex; gap: var(--s2); padding: 0 var(--gutter) var(--s2); overflow: hidden; }
+#s-shell .pin { flex: 0 0 auto; display: flex; align-items: center; gap: var(--s2); height: 50px; padding: 0 var(--s3); border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--line); color: var(--ink); }
+#s-shell .pin .ic { width: 20px; height: 20px; color: var(--ink-2); }
+#s-shell .pin span { display: flex; flex-direction: column; }
+#s-shell .pin b { font-size: 14px; line-height: 18px; font-weight: 600; color: var(--ink); }
+#s-shell .pin i { font-style: normal; font-size: 12px; line-height: 16px; color: var(--ink-3); }
+#s-shell .pin.on { background: var(--brand-soft); border-color: transparent; }
+#s-shell .pin.on .ic, #s-shell .pin.on b { color: var(--brand); }
+#s-shell .tl .row { padding-top: 5px; padding-bottom: 5px; gap: 10px; }
+#s-shell .tl .row.d1::before { content: ""; position: absolute; left: calc(var(--gutter) + 9.5px); top: 0; bottom: 0; width: 1px; background: var(--line-2); }
+#s-shell .tl .row.d1.last::before { bottom: 50%; }
+#s-shell .tl .row.more { min-height: 36px; }
+#s-shell .tl .row.more .t { color: var(--brand); font-weight: 500; font-size: var(--fs-sub); }
+#s-shell .tl .tw .ic { color: var(--ink-3); }
+#s-shell .seeall { padding: var(--s2) var(--gutter); font-size: var(--fs-sub); color: var(--brand); font-weight: 500; }
+#s-shell .kgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 0 var(--gutter); }
+#s-shell .kt { background: var(--card); border-radius: 10px; padding: 7px 10px; display: flex; flex-direction: column; gap: 3px; min-height: 50px; }
+#s-shell .kt .top { display: flex; align-items: center; gap: 4px; }
+#s-shell .kt .top .ic { width: 18px; height: 18px; color: var(--ink-2); margin-right: auto; }
+#s-shell .kt .n { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+#s-shell .kt .u { font-size: 10.5px; font-weight: 700; line-height: 15px; color: var(--brand); background: var(--brand-soft); border-radius: 999px; padding: 0 5px; }
+#s-shell .kt b { font-size: 13px; font-weight: 600; line-height: 16px; color: var(--ink); }
+#s-shell .phone[data-os="android"] .content:not(.grouped) .kt { background: var(--surface); }
+#s-shell .topbar.sv { display: flex; align-items: center; gap: var(--s1); padding: 0 var(--s1); background: var(--surface); }
+#s-shell .topbar.sv .sf { flex: 1 1 auto; font-size: var(--fs-body); color: var(--ink); display: flex; align-items: center; }
+#s-shell .pm { width: 22px; height: 22px; border-radius: 50%; position: relative; flex: 0 0 auto; }
+#s-shell .pm.out { background: var(--block); }
+#s-shell .pm.in { background: var(--run); }
+#s-shell .pm::before, #s-shell .pm.in::after { content: ""; position: absolute; left: 5px; right: 5px; top: 10px; height: 2px; border-radius: 1px; background: var(--paper); }
+#s-shell .pm.in::after { left: 10px; right: auto; width: 2px; top: 5px; height: 12px; }
+/* tab shell */
+#s-shell .stackpop .mh { padding: 10px var(--s4) 6px; font-size: var(--fs-c1); font-weight: 600; letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--ink-3); }
+#s-shell .stackpop .mi { justify-content: flex-start; gap: var(--s3); font-size: var(--fs-sub); }
+#s-shell .stackpop .mi .tt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+#s-shell .stackpop .mi .x { margin-left: auto; font-size: var(--fs-c1); color: var(--ink-3); flex: 0 0 auto; }
+#s-shell .stackpop .mi.here { background: var(--hover); font-weight: 600; }
+#s-shell .tabbar .tab.press { opacity: .7; }
+/* settings */
+#s-shell .si { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; flex: 0 0 auto; }
+#s-shell .si .ic { width: 18px; height: 18px; }
+#s-shell .si.info { background: var(--info-soft); color: var(--info); }
+#s-shell .si.run { background: var(--run-soft); color: var(--run); }
+#s-shell .si.brand { background: var(--brand-soft); color: var(--brand); }
+#s-shell .si.merged { background: var(--merged-soft); color: var(--merged); }
+#s-shell .si.wait { background: var(--wait-soft); color: var(--wait); }
+#s-shell .si.idle { background: var(--idle-soft); color: var(--ink-2); }
+#s-shell .acct { margin-top: var(--s2); }
+#s-shell .roles { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+#s-shell .roles .pill { height: 20px; font-size: 11px; }
+#s-shell .sw { width: 30px; height: 30px; border-radius: 8px; flex: 0 0 auto; box-shadow: inset 0 0 0 1px var(--line-2); }
+#s-shell .sw.neutral { background: linear-gradient(135deg, var(--paper) 50%, var(--ink) 50%); }
+#s-shell .sw.atelier { background: linear-gradient(135deg, color-mix(in srgb, var(--brand) 22%, var(--paper)) 50%, var(--ink-2) 50%); }
+#s-shell .aa { color: var(--ink-2); font-weight: 600; font-size: 24px; }
+#s-shell .aa small { font-size: 14px; margin-right: 2px; }
+#s-shell .appicons { display: flex; gap: var(--s5); padding: var(--s1) var(--gutter) var(--s3); }
+#s-shell .ai { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
+#s-shell .ai i { width: 58px; height: 58px; border-radius: 14px; display: grid; place-items: center; font-style: normal; font-weight: 800; font-size: 21px; letter-spacing: -0.04em; }
+#s-shell .ai.gold i { background: var(--brand); color: var(--brand-ink); }
+#s-shell .ai.ink i { background: var(--ink); color: var(--paper); }
+#s-shell .ai.paper i { background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-2); }
+#s-shell .ai.on i { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--brand); }
+#s-shell .warnbox { margin: var(--s3) var(--gutter) 0; padding: var(--s3); border-radius: var(--r-md); background: var(--wait-soft); color: var(--ink-2); font-size: var(--fs-foot); line-height: var(--lh-foot); display: flex; gap: var(--s2); }
+#s-shell .warnbox .ic { color: var(--wait); width: 18px; height: 18px; flex: 0 0 auto; }
+#s-shell .opt { display: flex; align-items: center; gap: var(--s3); padding: var(--s3); border-radius: var(--r-md); border: 1px solid var(--line-2); }
+#s-shell .opt.on { border-color: var(--brand); background: var(--brand-soft); }
+#s-shell .opt .main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+#s-shell .opt .t { font-size: var(--fs-sub); font-weight: 600; color: var(--ink); }
+#s-shell .opt .s { font-size: var(--fs-foot); line-height: 17px; color: var(--ink-3); }
+#s-shell .inv { margin: 0 var(--gutter); display: flex; flex-direction: column; gap: 6px; }
+#s-shell .inv .ih { display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: var(--ink); }
+#s-shell .about-h { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: var(--s4) 0 var(--s1); font-size: var(--fs-foot); color: var(--ink-3); }
+#s-shell .about-h b { font-size: var(--fs-hl); color: var(--ink); margin-top: 6px; }
+#s-shell .mini-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding: var(--s4) var(--s6); font-size: var(--fs-foot); color: var(--ink-3); }
+#s-shell .mini-empty b { font-size: var(--fs-sub); color: var(--ink); }
+#s-shell .mini-empty .ic { width: 28px; height: 28px; color: var(--ink-4); }
+#s-shell .sk-row .skeleton.sq { width: 32px; height: 32px; border-radius: 8px; flex: 0 0 auto; }
+#s-shell .sk-row .main { gap: 6px; }
+#s-shell .q2 { font-size: var(--fs-t2); line-height: var(--lh-t2); font-weight: 700; color: var(--ink); }
+#s-shell .linkbox { display: flex; flex-direction: column; gap: 4px; padding: var(--s3); border-radius: var(--r-md); background: var(--surface); }
+/* document-level pieces */
+#s-shell .rcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin: 14px 0 24px; font-family: var(--ui); }
+#s-shell .rcards .card { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sub); color: var(--ink); }
+#s-shell .rcards .rh { display: flex; align-items: center; gap: 8px; }
+#s-shell .rcards .rh .v { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+#s-shell .rcards .rt { font-weight: 600; font-size: var(--fs-sub); }
+#s-shell .rcards .d { font-size: 13px; line-height: 18px; color: var(--ink-3); }
+#s-shell .rcards .acts { display: flex; gap: 8px; margin-top: 4px; }
+#s-shell .phone[data-size="360"] .keyboard .kr { gap: 4px; }
+#s-shell .phone[data-size="360"] .keyboard .k { width: 30px; }
+#s-shell .phone[data-size="360"] .keyboard .k.w { width: 40px; }
+#s-shell .phone[data-size="360"] .keyboard .k.space { width: 168px; }
+</style>
+<header>
+  <div class="lane-eyebrow">02 · Shell</div>
+  <h2>App shell, servers &amp; spaces, onboarding, settings</h2>
+  <p class="lede">Everything around the graph: how a phone finds a tm8 node, signs in, picks a space, moves between servers and spaces, and where every destination that is not a tab lives. New against the web phone shell: many servers in one app, each with its own sealed sign-in and an honest reachability word; a switcher where the web phone had none (DEF-003); four tab stacks kept per (server, space) instead of a drawer that reset the stack; Browse as the drawer turned into a screen, with its trees; and Settings grouped by who a change reaches — this phone, you, the space, the server.</p>
+</header>
+
+<div class="diagram">
+  <div class="label">First run, end to end</div>
+  <div class="lane-row">
+    <div class="box"><b>Welcome</b><small>/welcome — also the no-servers state</small></div><span class="arr">→</span>
+    <div class="box"><b>Add a server</b><small>URL · name · reachability verdict</small></div><span class="arr">→</span>
+    <div class="box"><b>Choose how to sign in</b><small>password · invite · QR, code, passkey (proposed)</small></div><span class="arr">→</span>
+    <div class="box"><b>Sign in</b><small>auth.login → tm8s_ pass, sealed on the device</small></div><span class="arr">→</span>
+    <div class="box"><b>Choose a space</b><small>auth.space.enter (+ space password)</small></div><span class="arr">→</span>
+    <div class="box brand"><b>Tabs</b><small>Chats · Work · Inbox · Browse</small></div>
+  </div>
+</div>
+
+<h3>First run: welcome and adding a server</h3>
+<p>On this phone a server is three facts: a name, an origin and a sealed pass. The list of servers lives on the device and is the switcher's list. Nothing is sent anywhere until the first URL is typed.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <div class="wl">
+          <div class="logo">t8</div>
+          <div class="h1">tm8</div>
+          <div class="wl-tag">A shared work graph for people and their AI agents.</div>
+          <div class="wl-sub">Add the tm8 server you work on to see its spaces, chats, sessions and everything they make. Nothing leaves this phone until you do.</div>
+        </div>
+        <div class="cta">
+          <span class="btn primary block">Add a server</span>
+          <span class="btn outline block"><svg class="ic"><use href="#i-qr"/></svg>Scan a QR from your tm8</span>
+          <div class="note c">The QR is in tm8 on your computer: Settings → Sign-ins &amp; devices → Sign in a phone.</div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Welcome — first run, and the no-servers state</b>One line of what tm8 is, and two ways in. The same screen comes back whenever the last server is removed: having no servers is a place to start, not an error. The QR way in is <em>proposed</em> (see Sign in). <span class="route">/welcome</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="tbtn">Cancel</span></div>
+          <div class="title">Add a server</div>
+          <div class="trail"><span class="tbtn b off">Next</span></div>
+        </header>
+        <main class="content pad form">
+          <div class="lead-p">Connect a tm8 node. Its spaces join the switcher as a group of their own.</div>
+          <div class="field"><label>Server URL</label><div class="input focus"><span>https://tm8.acme.dev</span><i class="caret"></i></div><div class="help">https:// is required off your own network — your password travels to the server.</div></div>
+          <div class="field"><label>Name</label><div class="input"><span>acme-node</span></div><div class="help">Lowercase letters, numbers or hyphens, starting with a letter.</div></div>
+          <div class="reach"><span class="spinner"></span><span class="rt"><b>Checking tm8.acme.dev…</b><span>Asking /health whether a tm8 node answers</span></span></div>
+        </main>
+        <div class="keyboard"><div class="kr"><span class="k">q</span><span class="k">w</span><span class="k">e</span><span class="k">r</span><span class="k">t</span><span class="k">y</span><span class="k">u</span><span class="k">i</span><span class="k">o</span><span class="k">p</span></div><div class="kr"><span class="k">a</span><span class="k">s</span><span class="k">d</span><span class="k">f</span><span class="k">g</span><span class="k">h</span><span class="k">j</span><span class="k">k</span><span class="k">l</span></div><div class="kr"><span class="k w"><svg class="ic sm"><use href="#i-arrow-up"/></svg></span><span class="k">z</span><span class="k">x</span><span class="k">c</span><span class="k">v</span><span class="k">b</span><span class="k">n</span><span class="k">m</span><span class="k w"><svg class="ic sm"><use href="#i-arrow-left"/></svg></span></div><div class="kr"><span class="k w">123</span><span class="k">.</span><span class="k">/</span><span class="k w" style="width:64px">.com</span><span class="k w" style="width:72px">go</span></div></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Add a server — typing and checking</b>The URL comes first. A name is suggested from the host and held to the web's rule <code>^[a-z][a-z0-9-]{0,62}$</code> (AddServerDialog). The check starts as soon as the URL is a valid origin and says what it is doing while it runs. Next stays off until a verdict arrives. URL keyboard up. <span class="route">/add-server</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Add a server</span></span></div>
+          <div class="title">Sign in<span class="sub">acme-node</span></div>
+          <div class="trail"></div>
+        </header>
+        <main class="content">
+          <div class="srvcard"><span class="sg"><svg class="ic"><use href="#i-server"/></svg></span><span class="main"><b>acme-node</b><span class="mono-s">https://tm8.acme.dev</span><span class="m"><span class="pill run">online</span>tm8-server · contract 0.1.0</span></span></div>
+          <div class="section-h">How do you sign in?</div>
+          <div class="list lines">
+            <div class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-key"/></svg></span><span class="main"><span class="t">Username and password</span><span class="s">Checked by acme-node over TLS</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-link"/></svg></span><span class="main"><span class="t">Join with an invite</span><span class="s">Makes your account and joins</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-qr"/></svg></span><span class="main"><span class="t">Scan the QR from tm8</span><span class="s">On your computer: Sign in a phone</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-hash"/></svg></span><span class="main"><span class="t">Enter a pairing code</span><span class="s">One-time, lasts 10 minutes</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row tall dis"><span class="kind-ic"><svg class="ic"><use href="#i-lock"/></svg></span><span class="main"><span class="t">Passkey</span><span class="s">acme-node doesn't offer passkeys</span></span></div>
+          </div>
+          <div class="note pad">No account? acme-node's admin creates one — tm8 never opens self-registration.</div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Choose how to sign in</b>Android, dark. The verdict card stays at the top, so you always see which node is about to receive your password. Only the methods the node offers are live; the others say why. Today's nodes offer the password and invites. QR, pairing code and passkey are <em>proposed facade widenings</em> (no <code>auth.device.*</code> or WebAuthn op exists yet); on a node without them this screen skips straight to the password. <span class="route">/sign-in/[server]</span></div>
+  </div>
+</div>
+
+<h4>The reachability card — every verdict</h4>
+<p>One component and seven verdicts, drawn at device size. The verdict comes from <code>GET /health</code> (<code>ok</code>, <code>server: 'tm8-server'</code>, <code>contractVersion</code>, <code>db</code>), from TLS, and from comparing contract versions. The words match the <code>server</code> kind's "Reachable" fact: Reachable · Offline · Unreachable · Not checked yet.</p>
+<div class="rcards">
+  <div class="card"><div class="rh"><span class="spinner"></span><span class="rt">Checking tm8.acme.dev…</span></div><div class="d">Asking /health whether a tm8 node answers. Gives up after 8 s and says "offline", never a blank.</div></div>
+  <div class="card"><div class="rh"><span class="pill run">online</span><span class="v">contract 0.1.0</span></div><div class="rt">tm8-server · database ok</div><div class="d">Certificate valid. Next: choose how to sign in.</div></div>
+  <div class="card"><div class="rh"><span class="pill wait">offline</span></div><div class="rt">This server could not be reached</div><div class="d">Nothing answered at tm8.acme.dev. It may be off, or reachable only on its own network. If you add it anyway it waits in the switcher, marked offline.</div><div class="acts"><span class="btn sm">Check again</span><span class="btn sm ghost">Add it anyway</span></div></div>
+  <div class="card"><div class="rh"><span class="pill error">not a tm8 node</span></div><div class="rt">Something else answered</div><div class="d">tm8.acme.dev replied, but /health did not say <span class="mono">server: tm8-server</span>. Check the address — a path or a proxy page is the usual cause.</div><div class="acts"><span class="btn sm">Edit URL</span></div></div>
+  <div class="card"><div class="rh"><span class="pill error">unreachable</span><span class="v">TLS</span></div><div class="rt">Certificate not trusted</div><div class="d">The certificate for tm8.acme.dev expired on 2026-10-20. TM8 Mobile will not send a password over it, and there is no "continue anyway".</div><div class="acts"><span class="btn sm">Edit URL</span></div></div>
+  <div class="card"><div class="rh"><span class="pill wait">update needed</span><span class="v">e.g. 0.2.0 &gt; 0.1.0</span></div><div class="rt">This app is too old for acme-node</div><div class="d">acme-node speaks a newer contract than this app. Update TM8 Mobile to sign in; nothing on acme-node changes until you do.</div><div class="acts"><span class="btn sm">Open the store</span></div></div>
+  <div class="card"><div class="rh"><span class="pill wait">node too old</span><span class="v">e.g. 0.0.9 &lt; 0.1.0</span></div><div class="rt">acme-node is too old for this app</div><div class="d">Ask its admin to update tm8. Spaces already cached stay readable; writes wait.</div></div>
+</div>
+<table class="spec">
+  <thead><tr><th style="width:18%">Input</th><th style="width:36%">Rule</th><th>Copy shown</th></tr></thead>
+  <tbody>
+    <tr><td class="code">URL shape</td><td>http(s) origin only: no path, query, hash or credentials (web rule)</td><td>"Enter an http(s) Server origin with no path or credentials." (verbatim from the web)</td></tr>
+    <tr><td class="code">http off-LAN</td><td>http is allowed only for private addresses (10.*, 172.16–31.*, 192.168.*, *.local), and then with a warning; https everywhere else. The password is sent to the server in the request body (review F8).</td><td>"Use https:// — http is only allowed on your own network." · on a LAN address: "Your password will cross this network unencrypted."</td></tr>
+    <tr><td class="code">127.0.0.1</td><td>On a phone, loopback is the phone itself</td><td>"127.0.0.1 is this phone. To reach tm8 on your computer, use its network address." (Exempt in the simulator.)</td></tr>
+    <tr><td class="code">Name</td><td><code>^[a-z][a-z0-9-]{0,62}$</code>, unique on this phone</td><td>"Name must start with a letter and use lowercase letters, numbers, or hyphens." (verbatim) · "acme-node is already on this phone."</td></tr>
+  </tbody>
+</table>
+<div class="why">The web reaches other nodes through the local node's relay (<code>/v2/server-connections/&lt;name&gt;/proxy</code>), because a page may only talk to its own origin and the server deliberately refuses every cross-origin preflight. An app has no origin, so it talks to each node directly and keeps the registry on the device. The rules for names and URLs stay the web's, because the registry has the same shape. Adding a server no longer needs a space. On the web, <code>servers.add</code> files a <code>server</code> entity in a space; on the phone the list is yours alone, and sharing a server with a space is a separate, explicit act.</div>
+
+<h3>Sign in, and choosing a space</h3>
+<div class="screen-strip">
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Back</span></span></div>
+          <div class="title">Sign in<span class="sub">tm8.sh · https://tm8.sh</span></div>
+          <div class="trail"></div>
+        </header>
+        <main class="content pad form" style="gap:12px">
+          <div class="banner block r"><svg class="ic"><use href="#i-error"/></svg><span><strong>Sign-in failed</strong> — the server refused that handle and password.</span></div>
+          <div class="field"><label>Username</label><div class="input"><span>subhang</span></div></div>
+          <div class="field"><label>Password</label><div class="input focus err"><span class="dots">••••••••••</span><i class="caret"></i><span class="grow"></span><svg class="ic"><use href="#i-eye"/></svg></div></div>
+          <div class="stay"><span class="main"><span class="t">Stay signed in on this phone</span><span class="s">90 days, sealed in the Android Keystore</span></span><span class="switch on"></span></div>
+          <span class="btn primary block">Sign in</span>
+          <div class="note c">Forgot it? Only tm8.sh's admin can set a new one.</div>
+        </main>
+        <div class="keyboard"><div class="kr"><span class="k">q</span><span class="k">w</span><span class="k">e</span><span class="k">r</span><span class="k">t</span><span class="k">y</span><span class="k">u</span><span class="k">i</span><span class="k">o</span><span class="k">p</span></div><div class="kr"><span class="k">a</span><span class="k">s</span><span class="k">d</span><span class="k">f</span><span class="k">g</span><span class="k">h</span><span class="k">j</span><span class="k">k</span><span class="k">l</span></div><div class="kr"><span class="k w"><svg class="ic sm"><use href="#i-arrow-up"/></svg></span><span class="k">z</span><span class="k">x</span><span class="k">c</span><span class="k">v</span><span class="k">b</span><span class="k">n</span><span class="k">m</span><span class="k w"><svg class="ic sm"><use href="#i-arrow-left"/></svg></span></div><div class="kr"><span class="k w">?123</span><span class="k space">space</span><span class="k w">go</span></div></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Sign in — password, refused, keyboard up</b>Username, not email: <code>auth.login</code> takes a username and a password, and email is profile data. A wrong user and a wrong password get one message, because the server merges them on purpose (failures.ts). There is no attempt counter, because nothing enforces one, and no reset link, because <code>auth password</code> requires the current password. With "Stay signed in" on, the app signs in as a <code>cli</code>-kind session (90 days) sealed in the Keystore/Keychain. With it off, it uses a <code>browser</code>-kind session (30 days) held in memory and revoked on sign-out. <span class="route">/sign-in/[server]/password</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <main class="content cam">
+          <div class="camtop"><span class="tbtn">Cancel</span><b>Scan to sign in</b><span class="iconbtn"><svg class="ic"><use href="#i-zap"/></svg></span></div>
+          <div class="vf"><i class="cn a"></i><i class="cn b"></i><i class="cn c"></i><i class="cn d"></i><svg class="qr" viewBox="0 0 25 25"><path fill-rule="evenodd" d="M0 0h7v7H0z M1 1v5h5V1z M2 2h3v3H2z M18 0h7v7h-7z M19 1v5h5V1z M20 2h3v3h-3z M0 18h7v7H0z M1 19v5h5v-5z M2 20h3v3H2z M9 0h1v1H9z M11 0h2v1h-2z M14 1h1v2h-1z M9 2h2v1H9z M12 3h1v1h-1z M10 4h1v2h-1z M8 6h1v1H8z M10 6h1v1h-1z M12 6h1v1h-1z M14 5h2v1h-2z M0 8h1v1H0z M2 8h3v1H2z M6 8h1v2H6z M9 8h2v2H9z M13 8h1v1h-1z M15 8h2v1h-2z M19 8h1v1h-1z M21 8h2v1h-2z M24 8h1v2h-1z M1 10h2v1H1z M4 10h1v1H4z M8 11h1v1H8z M11 11h3v1h-3z M16 10h1v2h-1z M18 10h2v1h-2z M22 11h1v1h-1z M0 12h1v2H0z M3 12h2v1H3z M7 13h2v1H7z M10 13h1v1h-1z M13 13h1v2h-1z M15 12h1v1h-1z M17 13h2v1h-2z M20 12h2v2h-2z M23 13h2v1h-2z M2 15h1v1H2z M5 15h2v1H5z M9 15h3v1H9z M15 15h1v1h-1z M18 15h1v2h-1z M21 15h2v1h-2z M24 15h1v1h-1z M8 17h2v1H8z M12 17h1v2h-1z M14 17h2v1h-2z M20 17h1v1h-1z M22 17h2v2h-2z M9 19h1v2H9z M11 20h2v1h-2z M14 19h1v1h-1z M16 19h2v2h-2z M19 20h2v1h-2z M24 20h1v1h-1z M8 22h1v1H8z M10 22h2v1h-2z M13 22h1v2h-1z M15 23h3v1h-3z M19 22h1v1h-1z M21 23h2v2h-2z M24 23h1v2h-1z M9 24h3v1H9z M18 24h1v1h-1z"/></svg></div>
+          <div class="camhint">In tm8 on your computer: Settings → Sign-ins &amp; devices → Sign in a phone</div>
+          <div class="found">
+            <div class="fh"><span class="sg"><svg class="ic"><use href="#i-server"/></svg></span><span class="main"><b>tm8.sh</b><span>https://tm8.sh</span></span><span class="pill run">online</span></div>
+            <div class="q">Sign in this phone as <b>@subhang</b>?</div>
+            <div class="cells"><i>K</i><i>7</i><i>Q</i><i>F</i><em>–</em><i>2</i><i>9</i><i>X</i><i>M</i></div>
+            <div class="note c">Single use · expires in 9 min · tm8.sh keeps only its hash</div>
+            <div class="btnrow"><span class="btn">Not me</span><span class="btn brand">Sign in</span></div>
+          </div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Scan the QR, or type its code — proposed</b>This copies the shape of <code>tm8 link grant</code>: the web's Sign-ins &amp; devices shows a QR holding the origin and a one-time code (single use, 10 minutes, only the hash stored). The app shows <em>which server and which account</em> before anything is redeemed, and the same cells take a typed code. Needs a facade widening (<code>auth.device.grant</code>/<code>.redeem</code>); until it ships, both doors stay off. <span class="route">/sign-in/scan · /sign-in/[server]/code</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large">
+          <div class="lead"></div>
+          <div class="title hidden">Choose a space</div>
+          <div class="trail"></div>
+          <div class="big">Choose a space</div>
+        </header>
+        <main class="content grouped">
+          <div class="banner run"><svg class="ic"><use href="#i-success"/></svg>Signed in to tm8.sh as subhang · until 26 Jan 2027</div>
+          <div class="section-h">Your spaces on tm8.sh</div>
+          <div class="list inset lines">
+            <div class="row tall"><span class="spm on">A</span><span class="main"><span class="t">Atelier</span><span class="s">Owner · 4 members</span></span><span class="trail"><span class="badge">3</span><span class="n">9 unread</span><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row tall"><span class="spm">P</span><span class="main"><span class="t">Playground</span><span class="s">Member · 3 members</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+          </div>
+          <div class="section-h">Not here?</div>
+          <div class="list inset lines">
+            <div class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-link"/></svg></span><span class="main"><span class="t">Join with an invite</span><span class="s">Paste a code or open its /join link</span></span></div>
+            <div class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-share"/></svg></span><span class="main"><span class="t">Ask an admin to invite you</span><span class="s">Shares your handle @subhang</span></span></div>
+          </div>
+          <div class="note pad">Spaces are joined by invite; tm8 has no join requests. Switch any time from the space button.</div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Choose a space</b>After sign-in. Each space has its mark, your role and its member count (from <code>spaces.list</code>). Atelier shows 3 Needs-you and 9 unread. Playground shows <em>nothing</em> — <code>unreadTotal</code> is null on <code>spaces.list</code> and its lazy <code>spaces.navigation</code> read has not run, and absent is not zero. The ask-to-join state is the invite door plus a share sheet: no join-request op exists. <span class="route">/sign-in/[server]/spaces</span></div>
+  </div>
+</div>
+
+<div class="screen-strip scale75">
+  <div class="shot">
+    <div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large"><div class="lead"></div><div class="title hidden">Choose a space</div><div class="trail"></div><div class="big">Choose a space</div></header>
+        <main class="content grouped">
+          <div class="section-h">Your spaces on tm8.sh</div>
+          <div class="list inset lines"><div class="row tall"><span class="spm on">A</span><span class="main"><span class="t">Atelier</span><span class="s">Owner · 4 members</span></span></div></div>
+        </main>
+        <div class="scrim kb"></div>
+        <div class="sheet kb">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="h">Atelier asks for its space password</span></div>
+          <div class="sheet-b pad">
+            <div class="note">This is on top of your tm8.sh sign-in. The server checks it; this phone never keeps it.</div>
+            <div class="input focus"><span class="dots">•••••••</span><i class="caret"></i></div>
+            <div class="btnrow"><span class="btn">Cancel</span><span class="btn primary">Enter Atelier</span></div>
+          </div>
+        </div>
+        <div class="keyboard"><div class="kr"><span class="k">q</span><span class="k">w</span><span class="k">e</span><span class="k">r</span><span class="k">t</span><span class="k">y</span><span class="k">u</span><span class="k">i</span><span class="k">o</span><span class="k">p</span></div><div class="kr"><span class="k">a</span><span class="k">s</span><span class="k">d</span><span class="k">f</span><span class="k">g</span><span class="k">h</span><span class="k">j</span><span class="k">k</span><span class="k">l</span></div><div class="kr"><span class="k w"><svg class="ic sm"><use href="#i-arrow-up"/></svg></span><span class="k">z</span><span class="k">x</span><span class="k">c</span><span class="k">v</span><span class="k">b</span><span class="k">n</span><span class="k">m</span><span class="k w"><svg class="ic sm"><use href="#i-arrow-left"/></svg></span></div><div class="kr"><span class="k w">123</span><span class="k space">space</span><span class="k w">go</span></div></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    </div>
+    <div class="cap"><b>Space password — the real second gate</b>tm8 has no 2FA. Its only second step is the space password (W5): <code>auth.space.enter</code> answers <code>space_password_required</code>. A wrong one gets "That space password was refused."; a locked login gets "An admin locked your login to Atelier." <span class="route">/[server]/[space]/enter</span></div>
+  </div>
+
+  <div class="shot">
+    <div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large">
+          <div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier<svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+          <div class="title hidden">Work</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-filter"/></svg></span></div>
+          <div class="big">Work</div>
+        </header>
+        <main class="content">
+          <div class="section-h">Working · 3</div>
+          <div class="list lines">
+            <div class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill working">working</span>2 live sessions</span></span></div>
+            <div class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Bridge as an entity</span><span class="s"><span class="pill working">working</span>Coordinator</span></span></div>
+          </div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab on"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox</a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+        <div class="scrim"></div>
+        <div class="sheet" style="height:auto">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="h">tm8.sh signed you out</span></div>
+          <div class="sheet-b pad">
+            <div class="note">Your session ended on the server: it expired, or it was revoked from another device. What you were looking at stays where it is.</div>
+            <div class="input"><span>subhang</span></div>
+            <div class="input"><span class="dots">••••••••••</span></div>
+            <span class="btn primary block"><span class="spinner"></span>Signing in to tm8.sh…</span>
+            <span class="btn ghost block">Sign in as someone else</span>
+          </div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    </div>
+    <div class="cap"><b>Signed out by the server · signing in</b>When <code>auth.session.get</code> or any call returns unauthenticated, a sheet comes up over the cached screen; the stacks are not reset. The loading state says what it is doing (DEF-038). Being unreachable never signs you out — reachability and the session are different facts. <span class="route">/sign-in/[server]/password (sheet)</span></div>
+  </div>
+</div>
+<div class="why">Every rule here comes from the node, not from a pattern library. <code>auth.login</code> mints a <code>tm8s_</code> pass that is returned exactly once. The app seals it in the iOS Keychain or the Android Keystore, keyed by server, and never puts it in AsyncStorage. Session lifetimes are the server's own: <code>browser</code> 30 days, <code>cli</code> 90 days, <code>link</code> 90 days (<code>SESSION_TTL_MS</code>). That is where "90 days" comes from. Only <code>browser</code> and <code>cli</code> pass the human-only doors (<code>HUMAN_AUTH_KINDS</code>) that space links, credentials and servers require, so the app uses <code>cli</code> rather than inventing a kind. Under <code>TM8_SPACE_SESSIONS=enforce</code>, entering each space mints a pinned session with <code>auth.space.enter</code>, as the web does.</div>
+
+<h3>Servers &amp; spaces — the switcher</h3>
+<p>The space button at the top left of every tab root opens one sheet: every server on this phone, the spaces on each, which servers answer, and what needs you where. Anatomy — <span class="mono">/spaces</span>, iOS light, with acme-node offline and local signed out:</p>
+<div class="anatomy">
+  <div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large">
+          <div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier<svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+          <div class="title hidden">Chats</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span></div>
+          <div class="big">Chats</div>
+        </header>
+        <main class="content">
+          <div class="list lines">
+            <div class="row tall"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Design the mobile tab bar</span><span class="s"><span class="pill live">live</span>Worker is writing…</span></span></div>
+            <div class="row tall"><span class="avatar agent c2"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Why does the PTY recheck fail closed?</span><span class="s">TM8 Helper</span></span></div>
+          </div>
+        </main>
+        <nav class="tabbar"><a class="tab on"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+        <div class="scrim"></div>
+        <div class="sheet" style="height:86%">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="h">Servers &amp; spaces</span><span class="tbtn">Edit</span></div>
+          <div class="sheet-b">
+            <div class="srv"><span class="sg"><svg class="ic"><use href="#i-server"/></svg></span><span class="main"><span class="t">tm8.sh</span><span class="s"><span class="pill run">online</span>synced now · subhang</span></span><span class="iconbtn muted"><svg class="ic"><use href="#i-more"/></svg></span></div>
+            <div class="list">
+              <div class="row sp sel"><span class="spm on">A</span><span class="main"><span class="t">Atelier</span><span class="s">Owner · 9 unread</span></span><span class="trail"><span class="badge">3</span><svg class="ic ck"><use href="#i-check"/></svg></span></div>
+              <div class="row sp"><span class="spm">P</span><span class="main"><span class="t">Playground</span><span class="s">Member</span></span></div>
+            </div>
+            <div class="srv"><span class="sg"><svg class="ic"><use href="#i-server"/></svg></span><span class="main"><span class="t">acme-node</span><span class="s"><span class="pill wait">offline</span>last synced 12:58</span></span><span class="iconbtn muted"><svg class="ic"><use href="#i-more"/></svg></span></div>
+            <div class="list cached">
+              <div class="row sp"><span class="spm">P</span><span class="main"><span class="t">Platform</span><span class="s">cached 12:58 · read-only</span></span><span class="trail"><span class="badge muted">1</span></span></div>
+              <div class="row sp"><span class="spm">M</span><span class="main"><span class="t">Mobile</span><span class="s">cached 12:58 · read-only</span></span></div>
+            </div>
+            <div class="srv"><span class="sg"><svg class="ic"><use href="#i-server"/></svg></span><span class="main"><span class="t">local</span><span class="s"><span class="pill exited">signed out</span>127.0.0.1:4611</span></span><span class="btn xs">Sign in</span></div>
+            <div class="row addsrv"><svg class="ic"><use href="#i-plus"/></svg>Add a server</div>
+          </div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <span class="an" data-n="1" style="left:214px;top:146px"></span>
+    <span class="an" data-n="2" style="left:344px;top:166px"></span>
+    <span class="an" data-n="3" style="left:128px;top:247px"></span>
+    <span class="an" data-n="4" style="left:345px;top:294px"></span>
+    <span class="an" data-n="5" style="left:292px;top:314px"></span>
+    <span class="an" data-n="6" style="left:160px;top:434px"></span>
+    <span class="an" data-n="7" style="left:110px;top:596px"></span>
+    <span class="an" data-n="8" style="left:168px;top:657px"></span>
+  </div>
+  <ol class="legend">
+    <li><b>Grabber and detents.</b> The sheet opens at medium with one server and at large otherwise. Swipe down, tap the scrim, or press Android Back to dismiss — the sheet goes before the screen does.</li>
+    <li><b>Edit.</b> Reorder servers and the spaces under each. The order belongs to this phone and is never written to a server.</li>
+    <li><b>Server header.</b> Its name, its reachability word (online · offline · unreachable · signed out · update needed) and when it last synced. ⋯ or a long-press opens the server menu.</li>
+    <li><b>Active space.</b> Brand mark and a check. Tapping another row switches space and dismisses the sheet; nothing in the old space is thrown away (see below).</li>
+    <li><b>Counts, honestly.</b> Red badge = Needs you (lane 07's count); grey text = unread from <code>spaces.navigation</code>. Playground draws nothing because nobody has counted it yet. A zero would claim a measurement nobody took.</li>
+    <li><b>An offline server.</b> Its spaces still open from cache, read-only. Writes queue with a pending pill (v2, per lane 08), and the cached badge turns grey: last known, not live.</li>
+    <li><b>Signed out.</b> A server with no pass lists no spaces, only "Sign in". A server needing an update reads "update needed" here and opens its card.</li>
+    <li><b>Add a server.</b> The first-run flow, presented over the sheet; on success, the new server's spaces appear in place.</li>
+  </ol>
+</div>
+
+<div class="screen-strip">
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="spacebtn"><span class="mark">A</span><svg class="ic"><use href="#i-chevron-down"/></svg></span></div><div class="title">Chats</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span></div></header>
+        <main class="content">
+          <div class="banner"><svg class="ic"><use href="#i-wifi-off"/></svg>No server could be reached · showing what was cached at 13:12</div>
+          <div class="list lines"><div class="row tall"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Design the mobile tab bar</span><span class="s">Worker · cached</span></span></div></div>
+        </main>
+        <nav class="tabbar"><a class="tab on"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox</a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+        <div class="scrim"></div>
+        <div class="sheet" style="height:76%">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="h">Servers &amp; spaces</span><span class="tbtn">Edit</span></div>
+          <div class="sheet-b">
+            <div class="srv"><span class="sg"><svg class="ic"><use href="#i-server"/></svg></span><span class="main"><span class="t">tm8.sh</span><span class="s"><span class="pill wait">offline</span>cached 13:12</span></span></div>
+            <div class="list cached">
+              <div class="row sp"><span class="spm on">A</span><span class="main"><span class="t">Atelier</span><span class="s">Owner · read-only</span></span><span class="trail"><svg class="ic ck"><use href="#i-check"/></svg></span></div>
+              <div class="row sp"><span class="spm">P</span><span class="main"><span class="t">Playground</span><span class="s">Member · read-only</span></span></div>
+            </div>
+            <div class="srv press"><span class="sg"><svg class="ic"><use href="#i-server"/></svg></span><span class="main"><span class="t">acme-node</span><span class="s"><span class="pill wait">offline</span>cached 12:58</span></span></div>
+            <div class="list cached">
+              <div class="row sp"><span class="spm">P</span><span class="main"><span class="t">Platform</span><span class="s">read-only</span></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="menu" style="right:12px;top:226px;width:250px">
+          <div class="mi">Server details<svg class="ic"><use href="#i-info"/></svg></div>
+          <div class="mi">Check reachability<svg class="ic"><use href="#i-refresh"/></svg></div>
+          <div class="mi">Notifications<svg class="ic"><use href="#i-bell"/></svg></div>
+          <div class="mi">Sign out<svg class="ic"><use href="#i-lock"/></svg></div>
+          <div class="mi destructive">Remove from this phone<svg class="ic"><use href="#i-trash"/></svg></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>All servers offline · long-press a server</b>Android, dark: an M3 bottom sheet with 28dp corners. The phone has a network but no server answers, so the banner and every header say so, and the cached spaces still open. If the phone itself has no network, the words change to "No connection" and "not checked": an unchecked server is never called offline. Long-press acme-node for its menu. <span class="route">/spaces</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Task</span></span></div><div class="title">Pull request<span class="sub">Atelier · tm8.sh</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share-android"/></svg></span></div></header>
+        <main class="content">
+          <div class="ent-head"><span class="eyebrow"><svg class="ic"><use href="#i-pr"/></svg>Pull request · #955</span><div class="title">R1/S7b: readiness per used provider</div><div class="meta"><span class="pill merged">merged</span>github.com/subhangR/tm8</div></div>
+          <div class="section-h">Linked</div>
+          <div class="chips"><span class="chip"><svg class="ic"><use href="#i-task"/></svg>Readiness per used provider</span></div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab on press"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+        <div class="scrim" style="bottom:80px;opacity:.55"></div>
+        <div class="menu stackpop" style="left:12px;bottom:88px;width:290px">
+          <div class="mh">Work · 3 screens</div>
+          <div class="mi here"><svg class="ic"><use href="#i-pr"/></svg><span class="tt">#955 R1/S7b: readiness per used provider</span><span class="x">here</span></div>
+          <div class="mi"><svg class="ic"><use href="#i-task"/></svg><span class="tt">Readiness per used provider</span><span class="x">Task</span></div>
+          <div class="mi"><svg class="ic"><use href="#i-work"/></svg><span class="tt">Work</span><span class="x">root</span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>The tab shell — long-press the active tab</b>Android, light. A long-press on the active tab lists that tab's stack, top first (cap 12); tapping an entry pops back to it, one destination and never a jump forward. Re-tapping the active tab pops to the root, and at the root it scrolls to the top. Inbox carries its badge. The iOS bar is drawn in Browse ① below. <span class="route">/[server]/[space]/(tabs)/work › …</span></div>
+  </div>
+</div>
+<div class="why">This is a sheet because it is temporary and over your place (CONTRACT §4). It has no address of its own worth sharing, so it is never the subject of a share. The web phone shell had no space switcher and no sign-out at all, and every tap census scored it healthy (DEF-003); this sheet fixes that. Counts follow the drawer's ruling 5: <code>SpaceSummary.unreadTotal</code> is null on <code>spaces.list</code> by design, the measured number is a lazy per-space <code>spaces.navigation</code> read, and an absent number draws nothing. Offline is a state, not an error (principle 8): a server's word comes from the <code>server</code> kind's own vocabulary, and the cache stays usable.</div>
+
+<h3>Switching space — stacks per (server, space)</h3>
+<div class="diagram">
+  <div class="label">Stack sets, one per (server, space) — four tab stacks each</div>
+  <div class="lane-row">
+    <div class="box brand"><b>tm8.sh · Atelier</b><small>Chats [root] · Work [root › Task › PR #955] · Inbox [root] · Browse [root › Settings]</small></div><span class="arr">⇄</span>
+    <div class="box"><b>tm8.sh · Playground</b><small>Chats [root › Design the mobile tab bar] · Work [root] · Inbox [root] · Browse [root]</small></div><span class="arr">⇄</span>
+    <div class="box"><b>acme-node · Platform</b><small>offline — rebuilt from cache: route + scroll per screen, read-only</small></div>
+  </div>
+</div>
+<ul>
+  <li><b>What a switch does.</b> The whole set of four stacks is swapped. You stay on the same tab. In the space you go to, you land where you last left that tab, or at its root the first time. Switching back to Atelier finds Work exactly where it was, PR #955 two screens deep, with its scroll position kept.</li>
+  <li><b>Memory.</b> The three most recent sets stay mounted but frozen. Older ones are kept as routes plus scroll offsets and rebuilt when you return. The stack cap of 12 applies per stack.</li>
+  <li><b>Transition.</b> Tab content cross-fades over 180ms (<code>--dur-base</code>) with no slide, because nothing moved in the stack. The space button's mark morphs, badges are read again, and the haptic is <code>selection</code> / <code>SEGMENT_TICK</code>. Under enforce, <code>auth.space.enter</code> runs first, and a space password sheet can interrupt the switch.</li>
+  <li><b>Back never crosses a switch.</b> Back walks the current set's stack. On Android at a tab root it goes to Chats, then exits. A cold link into another space switches the set and opens <span class="mono">[kind's tab root, entity]</span> there (lane 07).</li>
+  <li><b>Across sets.</b> Inbox's "All servers" segment is the one view that reads every set. The space button carries a dot when another (server, space) has a <em>known</em> Needs-you count; unknown draws no dot.</li>
+</ul>
+<div class="why">This overturns the web phone's ruling that a drawer destination resets the stack to <span class="mono">[Chat, destination]</span> (CONTRACT §5, ruling 3). There is no drawer any more: each tab owns a stack. Keying the stacks per (server, space) means a switch never destroys your place, which matters most when two servers are in play. The rest of the Back Contract is unchanged: open pushes, the cap is 12, sheets dismiss first, and nothing jumps several levels.</div>
+<div class="callout warn"><b>Tablet — not in scope</b>The web ruled tablet-768 a known, accepted failure (CONTRACT §1); the open task "Desktop-shell reflow overflow (tablet-768)" owns it. The app ships phone layouts only. On iPad and Android tablets it runs the phone layout at phone width, with no split view, until a tablet arrangement is designed.</div>
+
+<h3>Browse — the drawer, as a screen</h3>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large">
+          <div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier<svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+          <div class="title hidden">Browse</div>
+          <div class="trail"><span class="avatar sm c1">S</span></div>
+          <div class="big">Browse</div>
+        </header>
+        <main class="content">
+          <div class="search"><svg class="ic"><use href="#i-search"/></svg>Search Atelier</div>
+          <div class="section-h tight">Pinned<span class="more">Edit</span></div>
+          <div class="pins">
+            <span class="pin on"><svg class="ic"><use href="#i-session"/></svg><span><b>Sessions</b><i>17</i></span></span>
+            <span class="pin"><svg class="ic"><use href="#i-doc"/></svg><span><b>Docs</b><i>23</i></span></span>
+            <span class="pin"><svg class="ic"><use href="#i-pr"/></svg><span><b>Pull requests</b><i>4</i></span></span>
+            <span class="pin"><svg class="ic"><use href="#i-artifact"/></svg><span><b>Artifacts</b><i>2</i></span></span>
+          </div>
+          <div class="list tree tl">
+            <div class="row" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="avatar sm agent c4"><svg class="ic sm"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill live">live</span>Coordinator · 42 min</span></span></div>
+            <div class="row d1" style="--depth:1"><span class="tw"></span><span class="avatar sm agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Mobile design lane 02 — app shell, servers &amp; spaces</span><span class="s"><span class="pill live">live</span>Opus 5.5 1M Teammate</span></span></div>
+            <div class="row d1" style="--depth:1"><span class="tw"></span><span class="avatar sm agent c2"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Mobile design lane 03 — chat</span><span class="s"><span class="pill live">live</span>Fable 5.1 1M Teammate</span></span></div>
+            <div class="row d1 last more" style="--depth:1"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="main"><span class="t">6 more · 6 live</span></span></div>
+            <div class="row" style="--depth:0"><span class="tw"></span><span class="avatar sm agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Security lane A</span><span class="s"><span class="pill waiting">waiting</span>Worker · push to origin</span></span></div>
+            <div class="row" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="avatar sm agent c1"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Facade audit</span><span class="s"><span class="pill exited">exited</span>swarm01 · 3 children · none live</span></span></div>
+          </div>
+          <div class="seeall">See all 17 sessions</div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab on"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Browse ① — search, pinned, and a tree</b>Pinned tiles match your desktop rail pins. The selected tile previews its kind as a <em>tree</em> (owner ruling 2026-10-28): sessions are grouped by root session, with launched children nested to depth 2, with 2 children shown inline and then a "N more · status" row, as on the Work tab. Each row has its own liveness word and a 20pt indent with a guide line. A collapsed parent states its children ("3 children · none live"), and your collapse is remembered per list. See all opens the full list. The avatar at top right opens your account. <span class="route">/[server]/[space]/(tabs)/browse</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="spacebtn"><span class="mark">A</span><svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+          <div class="title">Browse</div>
+          <div class="trail"><span class="avatar sm c1">S</span></div>
+        </header>
+        <main class="content grouped fade-bottom">
+          <div class="section-h tight">Work</div>
+          <div class="kgrid">
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-task"/></svg><span class="n">48</span><span class="u">3</span></span><b>Tasks</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-loop"/></svg><span class="n">1</span></span><b>Loops</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-project"/></svg><span class="n">2</span></span><b>Projects</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-collection"/></svg><span class="n">1</span></span><b>Collections</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-story"/></svg><span class="n">2</span></span><b>Stories</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-craft"/></svg><span class="n">1</span></span><b>Crafts</b></div>
+          </div>
+          <div class="section-h tight">Talk</div>
+          <div class="kgrid">
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-message"/></svg></span><b>Messages</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-channel"/></svg><span class="n">3</span></span><b>Channels</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-voice"/></svg><span class="n">1</span></span><b>Voice channels</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-chat"/></svg><span class="n">14</span><span class="u">2</span></span><b>Chats</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-form"/></svg><span class="n">1</span><span class="u">1</span></span><b>Forms</b></div>
+          </div>
+          <div class="section-h tight">Knowledge</div>
+          <div class="kgrid">
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-doc"/></svg><span class="n">23</span></span><b>Docs</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-file"/></svg><span class="n">6</span></span><b>Files</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-drawing"/></svg><span class="n">1</span></span><b>Drawings</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-style"/></svg><span class="n">1</span></span><b>Styles</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-graph"/></svg><span class="n">1</span></span><b>Graphs</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-memory"/></svg><span class="n">1</span></span><b>Memories</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-skill"/></svg><span class="n">2</span></span><b>Skills</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-spell"/></svg><span class="n">1</span></span><b>Spells</b></div>
+          </div>
+          <div class="section-h tight">Code</div>
+          <div class="kgrid">
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-pr"/></svg><span class="n">4</span></span><b>Pull requests</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-commit"/></svg><span class="n">31</span></span><b>Commits</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-worktree"/></svg><span class="n">8</span></span><b>Worktrees</b></div>
+          </div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab on"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Browse ② — every kind, grouped</b>Scrolled; dark. The six groups and their order come from the kind registry (<code>tm8 kind list</code>), and the labels are the web's own. Each tile shows a total and, in brand, the unseen count from <code>spaces.counts</code>. Messages has no number: it is counted per anchor, not per space. At larger Dynamic Type the grid drops to two columns, then to a list. <span class="route">/[server]/[space]/(tabs)/browse</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="spacebtn"><span class="mark">A</span><svg class="ic"><use href="#i-chevron-down"/></svg></span></div><div class="title">Browse</div><div class="trail"><span class="avatar sm c1">S</span></div></header>
+        <main class="content">
+          <div class="section-h tight">Runtime</div>
+          <div class="kgrid">
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-tool"/></svg><span class="n">2</span></span><b>Tools</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-mcp"/></svg><span class="n">2</span></span><b>Connectors</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-session"/></svg><span class="n">17</span></span><b>Sessions</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-credential"/></svg><span class="n">2</span></span><b>Credentials</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-container"/></svg><span class="n">2</span></span><b>Containers</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-artifact"/></svg><span class="n">2</span></span><b>Artifacts</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-space-link"/></svg></span><b>Space links</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-server"/></svg></span><b>Servers</b></div>
+          </div>
+          <div class="section-h tight">People</div>
+          <div class="kgrid">
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-member"/></svg><span class="n">4</span></span><b>Members</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-team-member"/></svg><span class="n">9</span></span><b>Teammates</b></div>
+            <div class="kt"><span class="top"><svg class="ic"><use href="#i-profile"/></svg><span class="n">1</span></span><b>Interaction profiles</b></div>
+          </div>
+          <div class="section-h tight">Projects</div>
+          <div class="list lines">
+            <div class="row"><span class="kind-ic"><svg class="ic"><use href="#i-project"/></svg></span><span class="main"><span class="t">tm8</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row"><span class="kind-ic"><svg class="ic"><use href="#i-project"/></svg></span><span class="main"><span class="t">tm8-hub</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row"><span class="kind-ic"><svg class="ic"><use href="#i-sparkle"/></svg></span><span class="main"><span class="t">Craft mode</span></span><span class="trail"><span class="v">Mobile craft</span></span></div>
+            <div class="row"><span class="kind-ic"><svg class="ic"><use href="#i-help"/></svg></span><span class="main"><span class="t">Help</span></span></div>
+            <div class="row"><span class="kind-ic"><svg class="ic"><use href="#i-settings"/></svg></span><span class="main"><span class="t">Settings</span></span><span class="trail"><span class="v">tm8.sh</span></span></div>
+          </div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab on"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Browse ③ — the end of the scroll</b>Android, dark, with the M3 navigation bar: active pill, and a badge on Inbox. Space links and Servers draw no count, because Atelier has none and <code>spaces.counts</code> leaves a kind absent rather than zero. Last come the projects sessions launch in, the Craft mode door, Help and Settings. <span class="route">/[server]/[space]/(tabs)/browse</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar sv"><span class="iconbtn"><svg class="ic"><use href="#i-arrow-left"/></svg></span><span class="sf">cred<i class="caret"></i></span><span class="iconbtn"><svg class="ic"><use href="#i-close"/></svg></span></header>
+        <main class="content">
+          <div class="row tall"><span class="kind-ic"><svg class="ic" style="color:var(--brand)"><use href="#i-search"/></svg></span><span class="main"><span class="t brandt">Search Atelier for “cred”</span><span class="s">Every entity, message and doc</span></span><span class="trail"><svg class="ic"><use href="#i-arrow-right"/></svg></span></div>
+          <div class="section-h tight">Kinds</div>
+          <div class="list lines"><div class="row"><span class="kind-ic"><svg class="ic"><use href="#i-credential"/></svg></span><span class="main"><span class="t">Credentials</span><span class="s">Runtime</span></span><span class="trail"><span class="v">2</span></span></div></div>
+          <div class="section-h tight">Settings</div>
+          <div class="list lines">
+            <div class="row"><span class="kind-ic"><svg class="ic"><use href="#i-key"/></svg></span><span class="main"><span class="t">Space credentials</span><span class="s">Everyone in this space</span></span></div>
+            <div class="row"><span class="kind-ic"><svg class="ic"><use href="#i-key"/></svg></span><span class="main"><span class="t">Agent logins</span><span class="s">Only you · tm8.sh</span></span></div>
+            <div class="row dis"><span class="kind-ic"><svg class="ic"><use href="#i-server"/></svg></span><span class="main"><span class="t">Credentials &amp; fallback</span><span class="s">Node admins · opens on desktop</span></span></div>
+          </div>
+        </main>
+        <div class="keyboard"><div class="kr"><span class="k">q</span><span class="k">w</span><span class="k">e</span><span class="k">r</span><span class="k">t</span><span class="k">y</span><span class="k">u</span><span class="k">i</span><span class="k">o</span><span class="k">p</span></div><div class="kr"><span class="k">a</span><span class="k">s</span><span class="k">d</span><span class="k">f</span><span class="k">g</span><span class="k">h</span><span class="k">j</span><span class="k">k</span><span class="k">l</span></div><div class="kr"><span class="k w"><svg class="ic sm"><use href="#i-arrow-up"/></svg></span><span class="k">z</span><span class="k">x</span><span class="k">c</span><span class="k">v</span><span class="k">b</span><span class="k">n</span><span class="k">m</span><span class="k w"><svg class="ic sm"><use href="#i-arrow-left"/></svg></span></div><div class="kr"><span class="k w">?123</span><span class="k space">space</span><span class="k w"><svg class="ic sm"><use href="#i-search"/></svg></span></div></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Browse search — keyboard up over a long Browse</b>Typing filters Browse's own destinations in place, matching kind labels and the web's settings keywords ("api key", "token", "credentials"…). The first row hands the text to lane 07's search modal, where entities are searched. <span class="route">/[server]/[space]/(tabs)/browse?q=</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large"><div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier<svg class="ic"><use href="#i-chevron-down"/></svg></span></div><div class="title hidden">Browse</div><div class="trail"></div><div class="big">Browse</div></header>
+        <main class="content"><div class="search"><svg class="ic"><use href="#i-search"/></svg>Search Atelier</div></main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox</a><a class="tab on"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+        <div class="scrim"></div>
+        <div class="sheet" style="height:86%">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="h">Pin kinds</span><span class="tbtn b">Done</span></div>
+          <div class="sheet-b">
+            <div class="note pad">Pinned kinds lead Browse, in this order, and match your desktop rail pins.</div>
+            <div class="section-h tight">Pinned</div>
+            <div class="list lines">
+              <div class="row"><span class="pm out"></span><span class="kind-ic"><svg class="ic"><use href="#i-session"/></svg></span><span class="main"><span class="t">Sessions</span></span><span class="trail"><svg class="ic"><use href="#i-grip"/></svg></span></div>
+              <div class="row"><span class="pm out"></span><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">Docs</span></span><span class="trail"><svg class="ic"><use href="#i-grip"/></svg></span></div>
+              <div class="row"><span class="pm out"></span><span class="kind-ic"><svg class="ic"><use href="#i-pr"/></svg></span><span class="main"><span class="t">Pull requests</span></span><span class="trail"><svg class="ic"><use href="#i-grip"/></svg></span></div>
+              <div class="row"><span class="pm out"></span><span class="kind-ic"><svg class="ic"><use href="#i-artifact"/></svg></span><span class="main"><span class="t">Artifacts</span></span><span class="trail"><svg class="ic"><use href="#i-grip"/></svg></span></div>
+            </div>
+            <div class="section-h tight">Work</div>
+            <div class="list lines">
+              <div class="row"><span class="pm in"></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Tasks</span></span></div>
+              <div class="row"><span class="pm in"></span><span class="kind-ic"><svg class="ic"><use href="#i-loop"/></svg></span><span class="main"><span class="t">Loops</span></span></div>
+              <div class="row"><span class="pm in"></span><span class="kind-ic"><svg class="ic"><use href="#i-project"/></svg></span><span class="main"><span class="t">Projects</span></span></div>
+              <div class="row"><span class="pm in"></span><span class="kind-ic"><svg class="ic"><use href="#i-story"/></svg></span><span class="main"><span class="t">Stories</span></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Pin kinds</b>A sheet using the iOS edit-list pattern: remove (red), add (green), drag the grip to reorder. Changes write the same pin store as the desktop rail, so a pin set here shows on the desktop too. Every kind is listed, grouped as in Browse. <span class="route">/[server]/[space]/browse/pin-kinds</span></div>
+  </div>
+</div>
+<div class="why">Browse is the web drawer as a screen. Owner ruling 2 (2026-08-19) made the drawer the desktop rail itself — same labels, same marks — and Browse keeps that: no word here is new. The drawer's trees survive as the pinned preview, and the owner's ruling of 2026-10-28 ("the tree structure is not shown in the list — in the app it must be shown") makes them real trees: expanded to depth 2, chevrons on parents, a guide line, and a count summary when collapsed. The ☰ unseen dot of ruling 5 becomes per-tile unseen counts plus the Inbox badge. Absent is not zero: a kind missing from <code>spaces.counts</code>, or a counts read that failed, draws nothing. The overview fixes six groups (the registry's own). The desktop rail uses five (Work · Library · Agents &amp; People · Code · Admin) — see open questions.</div>
+
+<h3>Settings</h3>
+<p>Settings pushes onto the Browse stack. It is grouped the way the web's 2026-10-18 redesign groups it: by who a change reaches, with the scope written on each group. "This browser" becomes "This phone".</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Browse</span></span></div><div class="title hidden">Settings</div><div class="trail"></div><div class="big">Settings</div></header>
+        <main class="content grouped fade-bottom">
+          <div class="list inset acct"><div class="row tall"><span class="avatar lg c1">S</span><span class="main"><span class="t">Subhang</span><span class="s">@subhang · tm8.sh</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div></div>
+          <div class="section-h tight">Space · Atelier<span class="scope">Everyone in this space</span></div>
+          <div class="list inset lines">
+            <div class="row"><span class="si run"><svg class="ic"><use href="#i-users"/></svg></span><span class="main"><span class="t">Members &amp; invites</span></span><span class="trail"><span class="v">4 · 1 invite</span><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row"><span class="si brand"><svg class="ic"><use href="#i-credential"/></svg></span><span class="main"><span class="t">Space credentials</span></span><span class="trail"><span class="v">2</span><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row"><span class="si info"><svg class="ic"><use href="#i-space-link"/></svg></span><span class="main"><span class="t">Linked spaces</span></span><span class="trail"><span class="v">none</span><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row"><span class="si merged"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Agents &amp; tools</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row"><span class="si wait"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Work model</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row"><span class="si idle"><svg class="ic"><use href="#i-more"/></svg></span><span class="main"><span class="t">More space settings</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+          </div>
+          <div class="section-h tight">This phone<span class="scope">Only this phone</span></div>
+          <div class="list inset lines">
+            <div class="row"><span class="si idle"><svg class="ic"><use href="#i-server"/></svg></span><span class="main"><span class="t">Servers</span></span><span class="trail"><span class="v">3</span><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row"><span class="si idle"><svg class="ic"><use href="#i-sun"/></svg></span><span class="main"><span class="t">Appearance</span></span><span class="trail"><span class="v">System</span><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row"><span class="si idle"><svg class="ic"><use href="#i-bell"/></svg></span><span class="main"><span class="t">Notifications</span></span><span class="trail"><span class="v">Needs you</span><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row"><span class="si idle"><svg class="ic"><use href="#i-info"/></svg></span><span class="main"><span class="t">About</span></span><span class="trail"><span class="v">1.0.0</span><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+          </div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab on"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Settings root</b>The account card leads to Account (per server). Next: the active space's settings, then this phone's. Below the fold: "Server · tm8.sh — node admins only", whose sections open on desktop with an honest refusal and a copy-link way out (phone-sections.ts). <span class="route">/settings</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Settings</span></span></div><div class="title">Account</div><div class="trail"></div></header>
+        <main class="content grouped">
+          <div class="segmented"><span class="seg on">tm8.sh</span><span class="seg">acme-node</span><span class="seg">local</span></div>
+          <div class="list inset"><div class="row tall"><span class="avatar lg c1">S</span><span class="main"><span class="t">Subhang</span><span class="s">@subhang · email not set</span><span class="roles"><span class="pill brand nodot">Owner · Atelier</span><span class="pill info nodot">Node admin</span></span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div></div>
+          <div class="section-h tight">Sign-ins &amp; devices<span class="scope">Only you</span></div>
+          <div class="list inset lines">
+            <div class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-phone"/></svg></span><span class="main"><span class="t">iPhone · TM8 Mobile</span><span class="s">cli · until 26 Jan</span></span><span class="pill live">this one</span></div>
+            <div class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-globe"/></svg></span><span class="main"><span class="t">Browser session</span><span class="s">browser · used 12:58</span></span><span class="tbtn d">Revoke</span></div>
+            <div class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-terminal"/></svg></span><span class="main"><span class="t">tm8 CLI</span><span class="s">cli · used Mon</span></span><span class="tbtn d">Revoke</span></div>
+          </div>
+          <div class="list inset lines" style="margin-top:16px">
+            <div class="row dis"><span class="kind-ic"><svg class="ic"><use href="#i-key"/></svg></span><span class="main"><span class="t">Passkeys</span><span class="s">tm8.sh doesn't offer passkeys</span></span></div>
+            <div class="row"><span class="main"><span class="t">Change password</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row"><span class="main"><span class="t">Agent logins · MCP tokens</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+          </div>
+          <div class="list inset" style="margin-top:16px"><div class="row danger">Sign out of tm8.sh</div></div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab on"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Account — per server</b>One account per server, chosen with the segmented control. Identity comes from <code>identity.get</code>: email is null here, so it says "not set". Sign-ins &amp; devices come from <code>auth.sessions.list</code>, and Revoke uses <code>auth.sessions.revoke</code>, which takes that sign-in's pinned space sessions with it. Passkeys are disabled with their reason (no WebAuthn op). Sign out calls <code>auth.logout</code>, then forgets the sealed pass. <span class="route">/settings/account/[server]</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Servers</span></span></div><div class="title">acme-node</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content">
+          <div class="section-h">Server</div>
+          <dl class="kv" style="padding:0 16px"><dt>Name</dt><dd>acme-node</dd><dt>Address</dt><dd>https://tm8.acme.dev</dd><dt>Account</dt><dd>subhang · until 26 Jan</dd><dt>Reachable</dt><dd>Offline</dd><dt>Last checked</dt><dd>13:12</dd><dt>Node</dt><dd>tm8-server · contract 0.1.0 (12:58)</dd><dt>Spaces</dt><dd>Platform · Mobile</dd></dl>
+          <div class="section-h">On this phone</div>
+          <div class="list lines">
+            <div class="row"><span class="main"><span class="t">Notifications from acme-node</span></span><span class="switch on"></span></div>
+            <div class="row"><span class="main"><span class="t">Check reachability</span></span></div>
+            <div class="row"><span class="main"><span class="t">Sign out of acme-node</span></span></div>
+            <div class="row"><span class="main"><span class="t" style="color:var(--block)">Remove from this phone</span></span></div>
+          </div>
+        </main>
+        <div class="scrim"></div>
+        <div class="dialog"><div class="d-b"><div class="h">Remove acme-node?</div><div class="note" style="color:var(--ink-2)">Platform and Mobile, their cached screens and your sealed sign-in leave this phone. acme-node is offline, so the sign-in can't be revoked there now: it lapses on 26 Jan, or you can revoke it from Sign-ins &amp; devices on the web.</div></div><div class="d-a"><span>Cancel</span><span class="destructive">Remove</span></div></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Server detail · remove</b>Facts use the <code>server</code> kind's words (Name, Address, Account, Reachable, Last checked), plus the node's contract version from /health. Remove is destructive and says exactly what leaves the phone. It also says, honestly, what cannot happen while the node is offline. <span class="route">/settings/servers/[server]</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Settings</span></span></div><div class="title">Appearance</div><div class="trail"></div></header>
+        <main class="content grouped">
+          <div class="section-h tight">Theme</div>
+          <div class="list inset lines">
+            <div class="row"><span class="main"><span class="t">Follow system</span></span><span class="trail"><svg class="ic ck"><use href="#i-check"/></svg></span></div>
+            <div class="row"><span class="main"><span class="t">Light</span></span></div>
+            <div class="row"><span class="main"><span class="t">Dark</span></span></div>
+          </div>
+          <div class="section-h tight">Style<span class="scope">Your tm8.sh account</span></div>
+          <div class="list inset lines">
+            <div class="row tall"><span class="sw neutral"></span><span class="main"><span class="t">Neutral</span><span class="s">tm8's default · system type</span></span><span class="trail"><svg class="ic ck"><use href="#i-check"/></svg></span></div>
+            <div class="row tall"><span class="sw atelier"></span><span class="main"><span class="t">Atelier</span><span class="s">Paper and ink · published in Atelier</span></span></div>
+          </div>
+          <div class="section-h tight">Text size</div>
+          <div class="list inset"><div class="row tall"><span class="main"><span class="t">Follows your phone</span><span class="s w">Dynamic Type: every screen reflows, nothing is fixed-size. Change it in iOS Settings → Accessibility → Larger Text.</span></span><span class="aa"><small>A</small>A</span></div></div>
+          <div class="section-h tight">App icon</div>
+          <div class="appicons"><span class="ai gold on"><i>t8</i>Gold</span><span class="ai ink"><i>t8</i>Ink</span><span class="ai paper"><i>t8</i>Paper</span></div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab on"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Appearance</b>Theme belongs to this phone. Style is saved to your account with <code>identity.stylePrefs.set</code>, so it follows you to the web: Neutral by default (owner ruling 2026-10-14), plus any space style published with <code>styles.push</code>. Text size is never an in-app slider: it reads Dynamic Type (iOS) and font scale (Android), and every component is specified to reflow. <span class="route">/settings/appearance</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Settings</span></span></div><div class="title">Notifications</div><div class="trail"></div></header>
+        <main class="content grouped">
+          <div class="list inset acct"><div class="row"><span class="main"><span class="t">Allow notifications</span><span class="s">On in iOS Settings</span></span><span class="switch on"></span></div></div>
+          <div class="section-h tight">tm8.sh</div>
+          <div class="list inset lines">
+            <div class="row"><span class="spm on">A</span><span class="main"><span class="t">Atelier</span></span><span class="trail"><span class="v">Needs you only</span><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row"><span class="spm">P</span><span class="main"><span class="t">Playground</span></span><span class="trail"><span class="v">Everything</span><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+          </div>
+          <div class="section-h tight">acme-node</div>
+          <div class="list inset lines">
+            <div class="row"><span class="spm">P</span><span class="main"><span class="t">Platform</span></span><span class="trail"><span class="v">Off</span><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row"><span class="spm">M</span><span class="main"><span class="t">Mobile</span></span><span class="trail"><span class="v">Needs you only</span><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+          </div>
+          <div class="section-h tight">Quiet hours</div>
+          <div class="list inset lines">
+            <div class="row"><span class="main"><span class="t">Quiet hours</span><span class="s">22:00 – 07:30</span></span><span class="switch on"></span></div>
+            <div class="row"><span class="main"><span class="t">Permission requests ring</span></span><span class="switch on"></span></div>
+          </div>
+          <div class="list inset" style="margin-top:16px"><div class="row"><span class="main"><span class="t brandt">Send a test notification</span></span></div></div>
+        </main>
+        <div class="notice"><span class="app">t8</span><span class="nb"><div class="t">tm8.sh · Atelier</div><div class="s">Test notification — Needs you will look like this.</div></span><span class="time">now</span></div>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab on"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Notifications — proposed</b>Per server and per space: Needs you only · Everything · Off, plus quiet hours with a break-through for permission requests (a session waiting on you). The test notification is on screen. <em>Proposed</em>: no device-registration or notification-level op exists today, and lanes 07/08 define the push path. Until then the screen is drawn disabled, with that reason. <span class="route">/settings/notifications</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Settings</span></span></div><div class="title">Members &amp; invites<span class="sub">Atelier · tm8.sh</span></div><div class="trail"></div></header>
+        <main class="content">
+          <div class="section-h">Members · 4</div>
+          <div class="list lines">
+            <div class="row"><span class="avatar c1">S</span><span class="main"><span class="t">Subhang</span><span class="s">@subhang · you</span></span><span class="pill brand nodot">Owner</span></div>
+            <div class="row"><span class="avatar c2">P</span><span class="main"><span class="t">Priya</span><span class="s">@priya</span></span><span class="pill info nodot">Admin</span></div>
+            <div class="row"><span class="avatar c3">M</span><span class="main"><span class="t">Marco</span><span class="s">@marco</span></span><span class="pill idle nodot">Member</span></div>
+            <div class="row"><span class="avatar c4">L</span><span class="main"><span class="t">Lena</span><span class="s">@lena</span></span><span class="pill idle nodot">Member</span></div>
+          </div>
+          <div class="note pad">Agents are teammates, not members; they hold no role and appear only in Teammates.</div>
+          <div class="section-h">Invites · 1</div>
+          <div class="inv"><div class="ih">Member invite<span class="pill live">live</span></div><div class="mono-s">tm8.sh/join/••••••7QF2</div><div class="note">Made by Subhang · expires 4 Nov · single use</div><div class="btnrow"><span class="btn sm">Copy</span><span class="btn sm">Share</span><span class="btn sm danger">Revoke</span></div></div>
+          <div class="fab ext"><svg class="ic"><use href="#i-plus"/></svg>Create invite link</div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Members &amp; invites</b>Android, dark. Roles from <code>spaces.members.list</code>; an admin taps a row to change a role (<code>spaces.members.updateRole</code>). The agents line is the web's, verbatim. An invite link is a secret, so it is masked until you copy or share it. "Create invite link" is the web's verb; admins only, and it is disabled with a reason for members. <span class="route">/settings/space/[server]/[space]/members</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Settings</span></span></div><div class="title">Space credentials<span class="sub">Atelier · tm8.sh</span></div><div class="trail"></div></header>
+        <main class="content grouped">
+          <div class="banner run"><svg class="ic"><use href="#i-success"/></svg><span>Ready to launch: this space has a credential your launch will use for each provider it needs.</span></div>
+          <div class="section-h tight">In this space · 2</div>
+          <div class="list inset lines">
+            <div class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-credential"/></svg></span><span class="main"><span class="t">Anthropic — space default</span><span class="s">Claude (Anthropic)<span class="pill brand nodot">space default</span></span><span class="s w">Every member · owned by Subhang · can launch</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-credential"/></svg></span><span class="main"><span class="t">OpenAI — subhang</span><span class="s">Codex (OpenAI) · Only me (private)</span><span class="s w">You can launch with it. Only its owner can change it.</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+          </div>
+          <div class="section-h tight">Launches may use</div>
+          <div class="list inset"><div class="row"><span class="main"><span class="t">Yours · Space · Node</span><span class="s">in that order</span></span></div></div>
+          <div class="list inset" style="margin-top:16px"><div class="row"><span class="main"><span class="t brandt">Add a credential on the web</span></span><span class="trail"><svg class="ic"><use href="#i-external"/></svg></span></div></div>
+          <div class="note pad">This phone never shows or takes a secret. Keys are pasted on the web, where the vendor checks them before anything is stored.</div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab on"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Space credentials</b>Status and list, as the web phone draws them (its "status" tag): provider, label, the space-default marker, and who may launch on each. The readiness line is the web's, verbatim. Adding a credential or replacing a key links out to the web; the policy can be changed only by a space admin, on the web. <span class="route">/settings/space/[server]/[space]/credentials</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Settings</span></span></div><div class="title">Space links<span class="sub">Playground · tm8.sh</span></div><div class="trail"></div></header>
+        <main class="content grouped">
+          <div class="warnbox"><svg class="ic"><use href="#i-info"/></svg><span>Everyone in Playground can see this link exists. While you're signed in on it, agents working for you here can act in the linked space as you.</span></div>
+          <div class="section-h tight">Links from Playground</div>
+          <div class="list inset"><div class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-space-link"/></svg></span><span class="main"><span class="t">Platform · acme-node</span><span class="s">Your sign-in: Signed out</span></span></div></div>
+          <div class="section-h tight">Links into Playground</div>
+          <div class="note pad">No other space links into this one.</div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox</a><a class="tab on"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+        <div class="scrim"></div>
+        <div class="sheet" style="height:auto">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="h">Sign in to Platform on acme-node</span></div>
+          <div class="sheet-b pad">
+            <div class="opt on"><span class="kind-ic"><svg class="ic"><use href="#i-zap"/></svg></span><span class="main"><span class="t">Use this phone's acme-node sign-in</span><span class="s">acme-node grants a one-time code and tm8.sh claims it. Nothing to type.</span></span></div>
+            <div class="opt"><span class="kind-ic"><svg class="ic"><use href="#i-hash"/></svg></span><span class="main"><span class="t">Enter a pairing code</span><span class="s">The code tm8 link grant printed on acme-node</span></span></div>
+            <div class="note">tm8.sh stores your session for Platform sealed, for 90 days. Agents you launch in Playground use it; nobody else can.</div>
+            <span class="btn primary block">Sign in</span>
+          </div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Space links — signing in across servers</b>The P8 warning comes first, as on the web. Because the phone is signed in to both servers, it can run the whole W9c exchange in one tap: <code>spaceLinks.inbound.grant</code> on acme-node, then <code>spaceLinks.login {pairingCode}</code> on tm8.sh. The manual code stays as a fallback. "Grant a pairing code" (on Platform's own Links into) and an admin's Revoke work the same way. This needs <code>TM8_REMOTE_SPACE_LINKS</code> on both nodes, and the build still refuses agent calls through it (<code>remote_links_disabled</code>). <span class="route">/settings/space/[server]/[space]/links</span></div>
+  </div>
+</div>
+
+<div class="screen-strip scale75">
+  <div class="shot">
+    <div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Settings</span></span></div><div class="title">Servers</div><div class="trail"><span class="tbtn b">Done</span></div></header>
+        <main class="content grouped">
+          <div class="note pad">This phone's servers, in switcher order. Adding one here never adds it to a space.</div>
+          <div class="list inset lines">
+            <div class="row tall"><span class="pm out"></span><span class="sg"><svg class="ic"><use href="#i-server"/></svg></span><span class="main"><span class="t">tm8.sh</span><span class="s"><span class="pill run">online</span>subhang</span></span><span class="trail"><svg class="ic"><use href="#i-grip"/></svg></span></div>
+            <div class="row tall"><span class="pm out"></span><span class="sg"><svg class="ic"><use href="#i-server"/></svg></span><span class="main"><span class="t">acme-node</span><span class="s"><span class="pill wait">offline</span>subhang</span></span><span class="trail"><svg class="ic"><use href="#i-grip"/></svg></span></div>
+            <div class="row tall"><span class="pm out"></span><span class="sg"><svg class="ic"><use href="#i-server"/></svg></span><span class="main"><span class="t">local</span><span class="s"><span class="pill exited">signed out</span>127.0.0.1:4611</span></span><span class="trail"><svg class="ic"><use href="#i-grip"/></svg></span></div>
+          </div>
+          <div class="list inset" style="margin-top:16px"><div class="row"><span class="pm in"></span><span class="main"><span class="t brandt">Add a server</span></span></div></div>
+          <div class="section-h tight">Spaces on tm8.sh</div>
+          <div class="list inset lines">
+            <div class="row"><span class="spm on">A</span><span class="main"><span class="t">Atelier</span></span><span class="trail"><svg class="ic"><use href="#i-grip"/></svg></span></div>
+            <div class="row"><span class="spm">P</span><span class="main"><span class="t">Playground</span></span><span class="trail"><svg class="ic"><use href="#i-grip"/></svg></span></div>
+          </div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    </div>
+    <div class="cap"><b>Servers — manage</b>The switcher's list as a pushed screen in edit mode: remove, reorder, add. Tap a row for server detail. <span class="route">/settings/servers</span></div>
+  </div>
+
+  <div class="shot">
+    <div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Settings</span></span></div><div class="title">Agents &amp; tools<span class="sub">Atelier · tm8.sh</span></div><div class="trail"></div></header>
+        <main class="content grouped">
+          <div class="section-h tight">Interaction profiles</div>
+          <div class="list inset lines">
+            <div class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-profile"/></svg></span><span class="main"><span class="t">core-default</span><span class="s"><span class="pill run">active</span>space default</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row"><span class="main"><span class="t brandt">Propose a change</span></span><span class="trail"><svg class="ic"><use href="#i-external"/></svg></span></div>
+          </div>
+          <div class="section-h tight">Connectors</div>
+          <div class="list inset lines">
+            <div class="row sk-row"><span class="skeleton sq"></span><span class="main"><span class="skeleton sk-line w60"></span><span class="skeleton sk-line w40"></span></span></div>
+            <div class="row sk-row"><span class="skeleton sq"></span><span class="main"><span class="skeleton sk-line w40"></span><span class="skeleton sk-line w60"></span></span></div>
+          </div>
+          <div class="note pad">Reading connectors from tm8.sh…</div>
+          <div class="section-h tight">Chat defaults</div>
+          <div class="list inset"><div class="row"><span class="main"><span class="t">New chats start with</span><span class="s">Worker · Opus 5.5</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    </div>
+    <div class="cap"><b>Agents &amp; tools — loading</b>Profiles listed by lifecycle (draft · active · retired). Admins set the default (<code>spaces.interactionProfile.setDefault</code>); proposing a change goes to the web. The Connectors list (github, linear) is still loading here, and says so. A connector's detail belongs to lane 04. <span class="route">…/[space]/agents</span></div>
+  </div>
+
+  <div class="shot">
+    <div class="phone-wrap">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Settings</span></span></div><div class="title">Work model<span class="sub">Atelier · tm8.sh</span></div><div class="trail"></div></header>
+        <main class="content">
+          <div class="section-h">Task axes<span class="scope">read-only here</span></div>
+          <div class="list lines">
+            <div class="row tall"><span class="main"><span class="t">Status</span><span class="s w">Open · Pulled · Working · In review · Blocked · Done · Cancelled</span></span></div>
+            <div class="row tall"><span class="main"><span class="t">Priority</span><span class="s w">Low · Medium · High · Urgent</span></span></div>
+          </div>
+          <div class="section-h">Custom kinds</div>
+          <div class="mini-empty"><svg class="ic"><use href="#i-sparkle"/></svg><b>No custom kinds yet</b>A custom kind gives Atelier an entity of its own: name and icon here, fields on the web.<span class="btn sm brand">New kind</span></div>
+          <div class="list lines"><div class="row dis"><span class="main"><span class="t">Workflows</span><span class="s">Opens on desktop · copy link</span></span></div></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    </div>
+    <div class="cap"><b>Work model — empty state</b>Task axes are read-only on the phone, as on the web phone. Custom kinds: the list, plus naming a new kind. Authoring its fields stays on desktop. <span class="route">…/[space]/work-model</span></div>
+  </div>
+
+  <div class="shot">
+    <div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Settings</span></span></div><div class="title">About</div><div class="trail"></div></header>
+        <main class="content grouped">
+          <div class="about-h"><div class="logo sm">t8</div><b>TM8 Mobile</b><span>1.0.0 (214) · Expo SDK 54 · RN 0.81</span></div>
+          <div class="section-h tight">Node health</div>
+          <div class="list inset lines">
+            <div class="row"><span class="main"><span class="t">tm8.sh</span><span class="s">contract 0.1.0 · database ok</span></span><span class="pill run">online</span></div>
+            <div class="row"><span class="main"><span class="t">acme-node</span><span class="s">last answered 12:58</span></span><span class="pill wait">offline</span></div>
+            <div class="row"><span class="main"><span class="t">local</span><span class="s">e.g. contract 0.0.9</span></span><span class="pill wait">update needed</span></div>
+          </div>
+          <div class="list inset lines" style="margin-top:16px">
+            <div class="row"><span class="main"><span class="t">Diagnostics</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            <div class="row"><span class="main"><span class="t">Export logs</span></span><span class="trail"><svg class="ic"><use href="#i-share"/></svg></span></div>
+            <div class="row"><span class="main"><span class="t">Licences</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+          </div>
+          <div class="note pad">Logs never carry a token, a password or a message body.</div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    </div>
+    <div class="cap"><b>About</b>Version, health of each node (from /health), diagnostics, logs with secrets stripped, and licences. A node needing an update reads that here too. <span class="route">/settings/about</span></div>
+  </div>
+</div>
+
+<table class="spec">
+  <thead><tr><th style="width:22%">Section</th><th style="width:16%">Scope</th><th>On the phone</th><th style="width:26%">Source</th></tr></thead>
+  <tbody>
+    <tr><td class="code">Profile · Sign-ins &amp; devices · Change password</td><td>Only you</td><td>Edit name and avatar; list and revoke sign-ins; change password (the current one is required — there is no reset)</td><td><code>identity.profile.update</code> · <code>auth.sessions.*</code> · <code>auth.password.change</code></td></tr>
+    <tr><td class="code">Agent logins · MCP tokens</td><td>Only you</td><td>Status and revoke; minting and login terminals open on desktop</td><td>web settings: credentials, mcp-tokens</td></tr>
+    <tr><td class="code">Members &amp; invites</td><td>Everyone here</td><td>Members with roles; role change (admins); create, share and revoke invite links</td><td><code>spaces.members.*</code> · <code>spaces.invites.*</code></td></tr>
+    <tr><td class="code">Space credentials</td><td>Everyone here</td><td>Status and list; never a secret; add and rekey link out</td><td><code>credentials.space.list/readiness</code></td></tr>
+    <tr><td class="code">Linked spaces</td><td>Everyone here (your own row)</td><td>Sign in / again / out, Allow spawn, Remove me; cross-server sign-in in one tap</td><td><code>spaceLinks.*</code> · W9c</td></tr>
+    <tr><td class="code">Agents &amp; tools</td><td>Everyone here</td><td>Interaction profiles (list, default), connectors (list only), chat defaults</td><td><code>interactionProfiles.*</code> · lane 04 owns connector detail</td></tr>
+    <tr><td class="code">Work model</td><td>Everyone here</td><td>Task axes read-only; custom kinds list + name/icon create; workflows on desktop</td><td><code>spaces.taskAxes.list</code></td></tr>
+    <tr><td class="code">More space settings</td><td>Everyone here</td><td>Space profile, session sharing, chat defaults, All configuration (read-only); Sidebar menu, Linked projects and Danger zone list but open on desktop</td><td>phone-sections.ts <code>DESKTOP_ONLY_SECTIONS</code></td></tr>
+    <tr><td class="code">Servers · Appearance · Notifications · About</td><td>This phone</td><td>Device registry, theme, style (saved to account), push levels (proposed), diagnostics</td><td>device · <code>identity.stylePrefs.*</code></td></tr>
+    <tr><td class="code">Server · tm8.sh</td><td>Node admins only</td><td>Credentials &amp; fallback, Filesystem access, Accounts, Configuration — listed; open on desktop</td><td>web node-admin</td></tr>
+  </tbody>
+</table>
+<div class="why">The grouping follows the web's settings redesign (2026-10-18): Account, Space, Server, each with a scope chip saying who a change reaches. The phone adds "This phone" for what never leaves the device. One divergence: the web puts Linked spaces under Account, because every sign-in on a link is yours. The phone lists it with the space it links from, because that is whose links it lists — and every row still says "Your sign-in". Secrets are never shown or taken. A credential's "secret never leaves the server", and the web's setup dialog checks a key with the vendor before storing it, so the phone links out rather than offering a paste box on a phone keyboard. Rows that open only on desktop still list, with an honest refusal (phone-sections.ts): a row that disappeared would read as "this space has no such thing".</div>
+
+<h3>A link to a server this phone doesn't know</h3>
+<div class="screen-strip">
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="iconbtn"><svg class="ic"><use href="#i-close"/></svg></span></div><div class="title">Open link</div><div class="trail"></div></header>
+        <main class="content pad form" style="gap:14px">
+          <div class="linkbox"><span class="eyebrow"><svg class="ic"><use href="#i-link"/></svg>Link</span><span class="mono-s">https://tm8.acme.dev/#/s/01a17c55…/e/01a1830f…</span></div>
+          <div class="q2">This link points at acme-node. Add it to open the link?</div>
+          <div class="note">This phone isn't connected to tm8.acme.dev yet. The name comes from Playground's servers.</div>
+          <div class="srvcard"><span class="sg"><svg class="ic"><use href="#i-server"/></svg></span><span class="main"><b>acme-node</b><span class="mono-s">https://tm8.acme.dev</span><span class="m"><span class="pill run">online</span>tm8-server · contract 0.1.0</span></span></div>
+          <span class="btn brand block">Add acme-node and sign in</span>
+          <span class="btn outline block">Open in the browser instead</span>
+          <div class="note">After you sign in, the link opens where it points, and Back lands on its list. What it is stays unread until then.</div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Add a server from a link</b>Lane 07 maps links; this screen keeps the link while you add the server. The node has no name op of its own, so the name comes from a <code>server</code> entity in a space you belong to, or else from the host. The title of the target is not shown, because it can't be read before sign-in. <span class="route">/add-server?url=&amp;then=</span></div>
+  </div>
+</div>
+
+<h3>States</h3>
+<table class="spec">
+  <thead><tr><th style="width:24%">State</th><th style="width:26%">Where drawn</th><th>What it says / does</th></tr></thead>
+  <tbody>
+    <tr><td class="code">No servers</td><td>Welcome</td><td>The first-run screen; returns after the last server is removed.</td></tr>
+    <tr><td class="code">Checking · online · offline · not a tm8 node · TLS · update needed · node too old</td><td>Reachability cards; Add a server</td><td>One component, seven verdicts; there is never a blank card or a "continue anyway".</td></tr>
+    <tr><td class="code">One server offline</td><td>Switcher anatomy</td><td>Spaces open from cache, read-only; queued writes are v2 (lane 08).</td></tr>
+    <tr><td class="code">All servers offline</td><td>Android switcher</td><td>"No server could be reached · showing what was cached at 13:12"; with no network: "No connection", "not checked".</td></tr>
+    <tr><td class="code">Signed out · signed out by the server</td><td>Switcher (local); sheet over Work</td><td>"Sign in" row; "tm8.sh signed you out", with the place kept.</td></tr>
+    <tr><td class="code">Sign-in loading · refused</td><td>Sheet; Password screen</td><td>"Signing in to tm8.sh…"; "Sign-in failed — the server refused that handle and password."</td></tr>
+    <tr><td class="code">Space password</td><td>Sheet above keyboard</td><td>required / refused / locked by an admin.</td></tr>
+    <tr><td class="code">Counts unknown</td><td>Choose a space, switcher, Browse</td><td>Draw nothing — never "0"; no dot on the space button.</td></tr>
+    <tr><td class="code">Loading</td><td>Agents &amp; tools; Browse tiles</td><td>Skeleton rows with a line saying what is being read (DEF-038); tile counts show a skeleton until <code>spaces.counts</code> answers.</td></tr>
+    <tr><td class="code">Empty</td><td>Work model; Space links</td><td>"No custom kinds yet" + New kind; "No other space links into this one."</td></tr>
+  </tbody>
+</table>
+
+<h3>Routes</h3>
+<table class="route-table">
+  <thead><tr><th style="width:40%">Route</th><th>Screen</th><th style="width:32%">Params · notes</th></tr></thead>
+  <tbody>
+    <tr><td>/welcome</td><td>Welcome; no-servers state</td><td>shown whenever the device registry is empty</td></tr>
+    <tr><td>/add-server</td><td>Add a server: URL, name, verdict</td><td><code>?url=</code> prefill (QR, link) · <code>?then=</code> link to open after sign-in</td></tr>
+    <tr><td>/sign-in/[server]</td><td>Choose how to sign in</td><td>[server] = this phone's name for the node</td></tr>
+    <tr><td>/sign-in/[server]/password</td><td>Username + password</td><td>stay signed in → <code>kind: cli</code> (90 d)</td></tr>
+    <tr><td>/sign-in/scan · /sign-in/[server]/code</td><td>QR · pairing code</td><td><em>proposed</em> — <code>auth.device.*</code></td></tr>
+    <tr><td>/sign-in/[server]/invite/[code]</td><td>Join with an invite</td><td><code>auth.invite.resolve</code> → <code>auth.invite.signup</code>; <span class="mono">https://&lt;host&gt;/join/&lt;code&gt;</span> maps here (lane 07)</td></tr>
+    <tr><td>/sign-in/[server]/spaces</td><td>Choose a space</td><td>choosing replaces the stack with the tabs</td></tr>
+    <tr><td>/[server]/[space]/enter</td><td>Space password (sheet)</td><td>only on <code>space_password_required</code></td></tr>
+    <tr><td>/spaces</td><td>Servers &amp; spaces (sheet)</td><td>over any tab root; never the subject of a share</td></tr>
+    <tr><td>/[server]/[space]/(tabs)/browse</td><td>Browse root</td><td><code>?pin=&lt;slug&gt;</code> selects the previewed tree · <code>?q=</code> filter</td></tr>
+    <tr><td>/[server]/[space]/browse/pin-kinds</td><td>Pin kinds (sheet)</td><td>writes the desktop rail pins</td></tr>
+    <tr><td>/settings</td><td>Settings root</td><td>pushes on the Browse stack</td></tr>
+    <tr><td>/settings/account/[server]</td><td>Account</td><td>one per server</td></tr>
+    <tr><td>/settings/servers · /settings/servers/[server]</td><td>Servers · server detail</td><td>device registry</td></tr>
+    <tr><td>/settings/appearance · /notifications · /about</td><td>This phone</td><td>notifications <em>proposed</em></td></tr>
+    <tr><td>/settings/space/[server]/[space]/{members, credentials, links, agents, work-model, more}</td><td>Space sections</td><td><em>proposed refinement</em> of the overview's /settings/…; the web's <span class="mono">#/s/&lt;space&gt;/settings/&lt;section&gt;</span> (and space-admin/) maps here</td></tr>
+  </tbody>
+</table>
+
+<h3>Components</h3>
+<table class="spec">
+  <thead><tr><th style="width:20%">Component</th><th style="width:16%">Size</th><th>Behaviour</th><th style="width:22%">Platform</th></tr></thead>
+  <tbody>
+    <tr><td class="code">SpaceButton</td><td>36pt tall; mark 26pt</td><td>Tab roots, top left. Tap opens the sheet; long-press shows recent (server, space) pairs; a dot appears when another known scope needs you.</td><td>iOS: mark + name + chevron · Android: mark + chevron</td></tr>
+    <tr><td class="code">ServersSpacesSheet</td><td>medium / large detents</td><td>Server sections, Edit, pull to re-probe every server, Add a server</td><td>iOS sheet + grabber · M3 modal sheet 28dp</td></tr>
+    <tr><td class="code">ServerHeader</td><td>52pt</td><td>Glyph, name, reachability pill (word always shown), synced/cached time, ⋯ menu</td><td>same</td></tr>
+    <tr><td class="code">SpaceRow</td><td>52pt; mark 32pt</td><td>Active = brand mark + check; red badge = Needs you, grey = unread; absent draws nothing; cached rows dimmed</td><td>same</td></tr>
+    <tr><td class="code">ReachabilityCard</td><td>full width</td><td>Seven verdicts (above); its own actions</td><td>same</td></tr>
+    <tr><td class="code">SignInMethodRow</td><td>64pt</td><td>Icon tile, title, how; disabled-with-reason when the node lacks it</td><td>chevron · none</td></tr>
+    <tr><td class="code">CodeCells</td><td>8 × 28×38pt, 4–4</td><td>Paste fills; auto-advance; also shown read-only from a QR</td><td>mono digits</td></tr>
+    <tr><td class="code">PinnedTile + TreePreview</td><td>tile 50pt; rows 48–58pt</td><td>Tile selects the tree below; tree per lane 01's tree row: 20pt/depth, guide line, chevron, collapsed summary</td><td>same</td></tr>
+    <tr><td class="code">KindTile</td><td>⅓ width × 50pt</td><td>Glyph, total, unseen badge, label wraps to 2 lines; 2 columns at xxxLarge, list at AX sizes</td><td>card on grouped · surface on Android</td></tr>
+    <tr><td class="code">StackPopover</td><td>≤ 290pt wide, ≤ 12 rows</td><td>From long-press on the active tab (or on iOS Back): the stack top first; tap pops to it</td><td>iOS menu · M3 menu</td></tr>
+    <tr><td class="code">SettingsGroup + ScopeTag</td><td>header 38pt; rows 44/48</td><td>The scope chip words are the web's: Only you · Everyone in this space · Node admins only; plus Only this phone</td><td>inset grouped · flat lists</td></tr>
+    <tr><td class="code">DestructiveDialog</td><td>270pt · 312dp</td><td>Says what leaves and what cannot be undone or revoked now</td><td>iOS alert · M3 dialog</td></tr>
+  </tbody>
+</table>
+
+<h3>Gestures &amp; haptics</h3>
+<table class="spec">
+  <thead><tr><th style="width:30%">Gesture</th><th>Result</th><th style="width:28%">Haptic (iOS · Android)</th></tr></thead>
+  <tbody>
+    <tr><td>Tap space button</td><td>Servers &amp; spaces sheet</td><td>impactLight · CONTEXT_CLICK</td></tr>
+    <tr><td>Long-press space button</td><td>Recent spaces menu</td><td>impactMedium · LONG_PRESS</td></tr>
+    <tr><td>Tap a space row</td><td>Switch; sheet dismisses; content cross-fades</td><td>selection · SEGMENT_TICK</td></tr>
+    <tr><td>Long-press a server header</td><td>Server menu</td><td>impactMedium · LONG_PRESS</td></tr>
+    <tr><td>Edit → drag grip</td><td>Reorder servers/spaces (device order)</td><td>selection per slot · DRAG_START, SEGMENT_TICK</td></tr>
+    <tr><td>Pull down in sheet / Browse / settings lists</td><td>Re-probe servers / re-read counts</td><td>impactLight at threshold · GESTURE_END</td></tr>
+    <tr><td>Swipe sheet down · Android Back · tap scrim</td><td>Dismiss the sheet before any pop</td><td>none</td></tr>
+    <tr><td>Re-tap active tab</td><td>Pop to root; at root, scroll to top</td><td>selection · CLOCK_TICK</td></tr>
+    <tr><td>Long-press active tab (or iOS Back)</td><td>Stack popover; tap pops to that screen</td><td>impactMedium · LONG_PRESS</td></tr>
+    <tr><td>Tap pinned tile</td><td>Preview its tree</td><td>selection · SEGMENT_TICK</td></tr>
+    <tr><td>Tap / long-press tree chevron</td><td>Toggle / expand or collapse all under it (remembered)</td><td>selection · CLOCK_TICK / impactMedium · LONG_PRESS</td></tr>
+    <tr><td>Verdict arrives</td><td>online → next step; any refusal → card</td><td>impactLight · CONFIRM / notificationWarning · REJECT</td></tr>
+    <tr><td>Sign in</td><td>Success → space; refused → banner, password field shakes</td><td>notificationSuccess · CONFIRM / notificationError · REJECT</td></tr>
+    <tr><td>QR recognised</td><td>Camera locks; confirm card</td><td>notificationSuccess · CONFIRM</td></tr>
+    <tr><td>Switches · checkmark rows</td><td>Stay signed in, notifications, theme, style</td><td>system · TOGGLE_ON/OFF, SEGMENT_TICK</td></tr>
+    <tr><td>Swipe a sign-in row left</td><td>Revoke (confirmed)</td><td>impactLight at reveal · GESTURE_START</td></tr>
+    <tr><td>Remove / sign out (confirmed)</td><td>Done</td><td>notificationSuccess · CONFIRM</td></tr>
+    <tr><td>Edge swipe (iOS) · predictive back (Android)</td><td>Pop one screen; never crosses a space switch</td><td>system</td></tr>
+  </tbody>
+</table>
+
+<div class="callout ruling"><b>Decisions other lanes build on</b>(1) Stacks are kept per (server, space); a switch swaps the set of four, and a cold link into another space switches first (lanes 07, 08). (2) The space button sits on every tab root: tap opens the sheet, long-press shows recent spaces, and a dot appears only for a <em>known</em> Needs-you elsewhere (lanes 03, 05, 07). (3) The Inbox tab badge is lane 07's Needs-you count for the active space; absent means no badge, never "0". (4) The app signs in as <code>kind: cli</code>, labelled with the device name, and seals the pass in Keychain/Keystore; pinned space sessions are minted per switch (lane 08). (5) The Browse search field filters destinations, and its first row hands the text to lane 07's search modal. (6) Settings pushes on the Browse stack; space sections live at <span class="mono">/settings/space/[server]/[space]/…</span>. (7) The server registry is device-local; a <code>server</code> entity page offers "Add to this phone" when the node is missing from it.</div>
+
+<div class="callout open"><b>Open questions for the owner</b>
+1 · Session kind for the app: <code>cli</code> (90 days, admitted by the human-only doors) as drawn, or a new <code>mobile</code> kind, which means widening <code>HUMAN_AUTH_KINDS</code>, a security predicate?<br>
+2 · Device sign-in: approve an <code>auth.device.grant/redeem</code> facade widening (web: "Sign in a phone" → QR + 8-char code, single use, 10 min)? Passkeys would need WebAuthn ops. tm8 has no 2FA; the space password is the only second gate.<br>
+3 · Pinned space sessions: seal them in the Keychain too (a space password asked once per sign-in) or hold them in memory like the web (asked on every cold start)?<br>
+4 · Browse groups: the registry's six (as the overview fixes) or the desktop rail's five? The drawer ruling says "same order as desktop".<br>
+5 · Push: no device-registration or notification-level op exists. Notifications is drawn proposed; who owns the op (lane 07/08 + server)?<br>
+6 · Unread counts for spaces other than the active one cost an <code>auth.space.enter</code> each under enforce. Would a gate-callable batch <code>spaces.navigation</code> be acceptable?<br>
+7 · Custom kinds: the web phone rules them desktop-only; this design lists them and lets you name a new one on the phone. Keep it?<br>
+8 · LAN discovery (Bonjour <code>_tm8._tcp</code>) for a tm8 on your own computer, since 127.0.0.1 on a phone is the phone itself?</div>
+</section>

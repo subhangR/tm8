@@ -1,0 +1,946 @@
+<section class="doc-section" id="s-knowledge" data-title="Knowledge, media and people: docs, files, drawings, graphs, artifacts, memories, skills, spells, members, teammates" data-lane="06 knowledge">
+<style>
+/* lane 06 — knowledge. Tokens only; the two hex groups below are SAMPLE CONTENT (the Atelier style's own palette on its style page). */
+/* doc.css styles every .doc-section p/ul/ol/code (#303030, light code chip); inside a phone that leaks into dark screens — re-inherit (kit gap, reported) */
+#s-knowledge .phone .prose p, #s-knowledge .phone .prose ul, #s-knowledge .phone .prose ol, #s-knowledge .phone .prose li { color: inherit; max-width: none; }
+#s-knowledge .phone .refusal p, #s-knowledge .phone .empty p { color: var(--ink-3); max-width: none; }
+#s-knowledge .phone code { font-family: var(--mono); font-size: 12px; background: var(--surface); color: var(--ink-2); padding: 1px 5px; border-radius: 4px; }
+#s-knowledge .ent-head .meta .dot::before { content: "·"; color: var(--ink-4); }
+#s-knowledge .kn-prog { flex: 0 0 2px; height: 2px; background: var(--line); position: relative; z-index: 2; }
+#s-knowledge .kn-prog > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--brand); }
+#s-knowledge .kn-tb { flex: 0 0 49px; display: flex; align-items: center; justify-content: space-between; padding: 0 var(--s3); border-top: 1px solid var(--line); background: var(--paper); position: relative; z-index: 2; }
+#s-knowledge .kn-tb .tb { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 var(--s2); color: var(--brand); font-size: var(--fs-sub); font-weight: 500; }
+#s-knowledge .kn-tb .tb .ic { width: 22px; height: 22px; }
+#s-knowledge .kn-tb .tb .n { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+#s-knowledge .kn-tb .tb.primary { font-weight: 600; }
+#s-knowledge .kn-doc { padding: 0 var(--gutter) var(--s4); }
+#s-knowledge .kn-doc h2 { font-size: var(--fs-t3); line-height: var(--lh-t3); margin: var(--s4) 0 var(--s2); }
+#s-knowledge .kn-doc h2:first-child { margin-top: var(--s3); }
+#s-knowledge .kn-doc ul { margin-bottom: var(--s3); }
+#s-knowledge .kn-code { margin: var(--s2) 0 var(--s3); border-radius: var(--r-sm); background: var(--surface); border: 1px solid var(--line); overflow: hidden; }
+#s-knowledge .kn-code .ch { display: flex; align-items: center; justify-content: space-between; height: 30px; padding: 0 2px 0 12px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: var(--fs-c1); color: var(--ink-3); }
+#s-knowledge .kn-code .cp { display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px; font-family: var(--ui); font-size: var(--fs-foot); font-weight: 600; color: var(--brand); }
+#s-knowledge .kn-code .cp .ic { width: 14px; height: 14px; }
+#s-knowledge .kn-code pre { margin: 0; padding: 10px 12px; background: transparent; border-radius: 0; font-size: 12.5px; line-height: 18px; color: var(--ink-2); }
+#s-knowledge .tk-k { color: var(--info); } #s-knowledge .tk-s { color: var(--run); } #s-knowledge .tk-c { color: var(--ink-4); font-style: italic; } #s-knowledge .tk-n { color: var(--merged); } #s-knowledge .tk-f { color: var(--brand); }
+#s-knowledge .kn-tw { position: relative; margin: var(--s2) 0 var(--s3); border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+#s-knowledge .kn-tw table { width: 400px; border-collapse: collapse; font-size: var(--fs-foot); line-height: var(--lh-foot); }
+#s-knowledge .kn-tw th, #s-knowledge .kn-tw td { border: 0; border-bottom: 1px solid var(--line); padding: 7px 10px; text-align: left; white-space: nowrap; }
+#s-knowledge .kn-tw th { background: var(--surface); font-weight: 600; color: var(--ink-2); }
+#s-knowledge .kn-tw tr:last-child td { border-bottom: 0; }
+#s-knowledge .kn-tw::after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 44px; background: linear-gradient(to right, transparent, var(--paper) 80%); }
+#s-knowledge .kn-tw .sc { position: absolute; right: 4px; top: 6px; z-index: 1; font-size: var(--fs-c2); font-weight: 600; color: var(--ink-3); }
+#s-knowledge .kn-mm { margin: var(--s2) 0 var(--s3); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--card); overflow: hidden; }
+#s-knowledge .kn-mm .stage { position: relative; height: 128px; }
+#s-knowledge .kn-mm .nd { position: absolute; padding: 5px 10px; border: 1.5px solid var(--ink-3); border-radius: 6px; background: var(--surface); font-size: 13px; line-height: 16px; font-weight: 500; color: var(--ink); white-space: nowrap; }
+#s-knowledge .kn-mm .nd.on { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); }
+#s-knowledge .kn-mm .ar { position: absolute; background: var(--ink-3); }
+#s-knowledge .kn-mm .ar.h { height: 1.5px; } #s-knowledge .kn-mm .ar.v { width: 1.5px; }
+#s-knowledge .kn-mm .ar.h::after { content: ""; position: absolute; right: -1px; top: -3.5px; border: 4px solid transparent; border-left: 6px solid var(--ink-3); border-right: 0; }
+#s-knowledge .kn-mm .ar.v::after { content: ""; position: absolute; bottom: -1px; left: -3.5px; border: 4px solid transparent; border-top: 6px solid var(--ink-3); border-bottom: 0; }
+#s-knowledge .kn-mm .ar.dash { background: none; border-top: 1.5px dashed var(--brand); height: 0; }
+#s-knowledge .kn-mm .lb { position: absolute; font: 500 11px/14px var(--mono); color: var(--ink-3); background: var(--card); padding: 0 3px; }
+#s-knowledge .kn-mm .mc { display: flex; justify-content: space-between; align-items: center; height: 30px; padding: 0 10px; border-top: 1px solid var(--line); font-size: var(--fs-c1); color: var(--ink-3); }
+#s-knowledge .kn-mmfail { margin: var(--s3) var(--gutter); padding: var(--s3) var(--s4); border-radius: var(--r-md); border: 1px dashed var(--line-2); background: var(--surface); }
+#s-knowledge .kn-mmfail .h { font-weight: 600; font-size: var(--fs-sub); display: flex; align-items: center; gap: 6px; }
+#s-knowledge .kn-mmfail .h .ic { width: 18px; height: 18px; color: var(--wait); }
+#s-knowledge .kn-mmfail p { margin: 4px 0 10px; font-size: var(--fs-foot); color: var(--ink-3); }
+#s-knowledge .kn-mmfail code { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+#s-knowledge .kn-ol .row { min-height: 46px; padding-top: 4px; padding-bottom: 4px; }
+#s-knowledge .kn-ol .row .t { font-size: var(--fs-callout); font-weight: 400; }
+#s-knowledge .kn-ol .row.l1 .t { font-weight: 600; }
+#s-knowledge .kn-ol .row.l3 { padding-left: 64px; }
+#s-knowledge .kn-ol .row.on { background: var(--brand-soft); }
+#s-knowledge .kn-ol .row.on .t { color: var(--brand); font-weight: 600; }
+#s-knowledge .kn-ol .num { flex: 0 0 18px; color: var(--ink-4); font-size: var(--fs-foot); font-variant-numeric: tabular-nums; }
+#s-knowledge .kn-ol .here { font-size: var(--fs-c1); font-weight: 600; color: var(--brand); white-space: nowrap; }
+#s-knowledge .kn-ed { padding: var(--s3) var(--gutter); font-size: var(--fs-body); line-height: 26px; color: var(--ink); }
+#s-knowledge .kn-ed .ln { margin: 0 0 6px; }
+#s-knowledge .kn-ed .mk { color: var(--ink-4); font-weight: 400; }
+#s-knowledge .kn-ed .hd { font-size: var(--fs-t3); line-height: 28px; font-weight: 700; }
+#s-knowledge .kn-ed .sel { background: var(--brand-soft); border-radius: 2px; }
+#s-knowledge .kn-ed .q { color: var(--brand); font-weight: 600; }
+#s-knowledge .kn-ed.dim { opacity: .45; }
+#s-knowledge .kn-ed .chip { height: 24px; vertical-align: -4px; }
+#s-knowledge .kn-caret { display: inline-block; width: 2px; height: 21px; margin-left: 1px; background: var(--brand); vertical-align: -4px; animation: s-knowledge-blink 1s steps(1) infinite; }
+@keyframes s-knowledge-blink { 50% { opacity: 0; } }
+#s-knowledge .kn-blk { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px dashed var(--line-2); border-radius: var(--r-sm); background: var(--surface); font-size: var(--fs-foot); line-height: 18px; color: var(--ink-2); }
+#s-knowledge .kn-blk .ic { width: 16px; height: 16px; color: var(--ink-3); }
+#s-knowledge .kn-blk .ml { margin-left: auto; color: var(--brand); font-weight: 600; }
+#s-knowledge .kn-fmt { flex: 0 0 44px; display: flex; align-items: center; gap: 1px; padding: 0 4px; background: var(--surface); border-top: 1px solid var(--line); position: relative; z-index: 2; }
+#s-knowledge .kn-fmt .fb { width: 38px; height: 36px; display: grid; place-items: center; border-radius: 8px; color: var(--ink-2); font-size: 17px; font-weight: 700; line-height: 1; }
+#s-knowledge .kn-fmt .fb.i { font-style: italic; font-weight: 500; font-family: Georgia, serif; }
+#s-knowledge .kn-fmt .fb.on { background: var(--brand-soft); color: var(--brand); }
+#s-knowledge .kn-fmt .fb .ic { width: 20px; height: 20px; }
+#s-knowledge .kn-fmt .sp { flex: 1 1 auto; }
+#s-knowledge .kn-fmt .sep { width: 1px; height: 22px; background: var(--line-2); margin: 0 3px; }
+#s-knowledge .phone[data-os="android"] .kn-fmt { flex-basis: 48px; }
+#s-knowledge .phone[data-os="android"] .kn-fmt .fb { width: 35px; height: 40px; border-radius: 20px; }
+#s-knowledge .phone[data-os="android"] .keyboard .k { width: 29px; }
+#s-knowledge .phone[data-os="android"] .keyboard .k.w { width: 42px; }
+#s-knowledge .phone[data-os="android"] .keyboard .k.space { width: 150px; }
+#s-knowledge .phone[data-os="android"][data-theme="dark"] .keyboard { background: var(--surface); }
+#s-knowledge .phone[data-os="android"][data-theme="dark"] .keyboard .k { background: var(--line-2); color: var(--ink); }
+#s-knowledge .phone[data-os="android"][data-theme="dark"] .keyboard .k.w { background: var(--active); }
+#s-knowledge .keyboard .k.ret { width: 88px; font-size: 14px; background: var(--brand); color: var(--brand-ink); }
+#s-knowledge .phone[data-os="android"] .keyboard .k.ret { width: 52px; border-radius: 20px; }
+#s-knowledge .kn-saved { display: inline-flex !important; align-items: center; gap: 5px; }
+#s-knowledge .kn-saved::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--run); }
+#s-knowledge .kn-saved.wait::before { background: var(--wait); } #s-knowledge .kn-saved.info::before { background: var(--info); }
+#s-knowledge .topbar .title .kn-saved { justify-content: center; }
+#s-knowledge .phone[data-os="android"] .topbar .title .kn-saved { justify-content: flex-start; }
+#s-knowledge .kn-done { color: var(--brand); font-weight: 600; font-size: var(--fs-body); padding: 0 var(--s2); min-height: 44px; display: inline-flex; align-items: center; }
+#s-knowledge .kn-done.off { color: var(--ink-4); }
+#s-knowledge .kn-pop { position: absolute; left: var(--s3); right: var(--s3); bottom: var(--s2); z-index: 5; background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--sh-pop); overflow: hidden; }
+#s-knowledge .kn-pop .ph-h { padding: 8px 12px 4px; font-size: var(--fs-c1); font-weight: 600; letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--ink-3); }
+#s-knowledge .kn-pop .row { min-height: 48px; padding: 6px 12px; }
+#s-knowledge .kn-pop .row .t { font-size: var(--fs-sub); }
+#s-knowledge .kn-pop .row .s { font-size: var(--fs-foot); line-height: var(--lh-foot); }
+#s-knowledge .kn-pop .row.sel { background: var(--brand-soft); }
+#s-knowledge .kn-pop .ft { padding: 7px 12px; font-size: var(--fs-c1); color: var(--ink-3); border-top: 1px solid var(--line); display: flex; gap: 6px; align-items: center; }
+#s-knowledge .kn-pop .ft .ic { width: 14px; height: 14px; }
+#s-knowledge .kn-cf { margin: var(--s3) var(--gutter) 0; padding: var(--s3); border-radius: var(--r-md); background: var(--info-soft); display: flex; gap: 10px; }
+#s-knowledge .kn-cf > .ic { color: var(--info); width: 20px; height: 20px; margin-top: 1px; }
+#s-knowledge .kn-cf b { display: block; font-size: var(--fs-sub); color: var(--ink); }
+#s-knowledge .kn-cf p { margin: 2px 0 10px; font-size: var(--fs-foot); line-height: var(--lh-foot); color: var(--ink-2); }
+#s-knowledge .kn-cf .btnrow .btn { min-height: 34px; font-size: var(--fs-foot); }
+#s-knowledge .kn-hunk { margin: 0 var(--gutter) var(--s3); border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; font-size: var(--fs-foot); line-height: var(--lh-foot); }
+#s-knowledge .kn-hunk .hh { padding: 6px 10px; background: var(--surface); color: var(--ink-3); font-family: var(--mono); font-size: var(--fs-c1); }
+#s-knowledge .kn-hunk .dl, #s-knowledge .kn-hunk .ad, #s-knowledge .kn-hunk .cx { display: flex; gap: 8px; padding: 6px 10px; color: var(--ink); }
+#s-knowledge .kn-hunk .dl { background: var(--block-soft); } #s-knowledge .kn-hunk .ad { background: var(--run-soft); }
+#s-knowledge .kn-hunk .who { flex: 0 0 44px; font-size: var(--fs-c2); font-weight: 700; letter-spacing: .03em; text-transform: uppercase; padding-top: 2px; }
+#s-knowledge .kn-hunk .dl .who { color: var(--block); } #s-knowledge .kn-hunk .ad .who { color: var(--run); } #s-knowledge .kn-hunk .cx .who { color: var(--ink-4); }
+#s-knowledge .kn-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 10px; padding: var(--s1) var(--gutter) var(--s2); }
+#s-knowledge .kn-tile { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+#s-knowledge .kn-tile .th { height: 92px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); display: grid; place-items: center; position: relative; overflow: hidden; color: var(--ink-3); }
+#s-knowledge .kn-tile .th > .ic { width: 28px; height: 28px; stroke-width: 1.5; }
+#s-knowledge .kn-tile .ext { position: absolute; left: 6px; bottom: 6px; font: 700 9.5px/1 var(--mono); color: var(--ink-3); background: var(--card); padding: 3px 5px; border-radius: 4px; letter-spacing: .04em; }
+#s-knowledge .kn-tile .nm { font-size: var(--fs-foot); line-height: 16px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#s-knowledge .kn-tile .mt { font-size: var(--fs-c2); line-height: 13px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#s-knowledge .kn-tile .play { position: absolute; width: 30px; height: 30px; border-radius: 50%; background: var(--scrim); display: grid; place-items: center; color: var(--paper); }
+#s-knowledge .kn-tile .play .ic { width: 14px; height: 14px; fill: currentColor; }
+#s-knowledge .im-shot { position: absolute; inset: 8px 22px -14px; border-radius: 10px; background: var(--paper); border: 1.5px solid var(--ink-3); }
+#s-knowledge .im-shot::before { content: ""; position: absolute; left: 8px; right: 8px; top: 12px; height: 4px; border-radius: 2px; background: var(--line-2); box-shadow: 0 10px 0 var(--line-2), 0 20px 0 var(--line-2), 0 30px 0 var(--line-2); }
+#s-knowledge .im-trace { position: absolute; left: 14px; top: 26px; width: 56px; height: 46px; border: 3px solid var(--brand); border-color: var(--brand) transparent transparent var(--brand); border-radius: 50% 0 0 0; }
+#s-knowledge .im-tabs { position: absolute; left: 18px; right: 18px; bottom: 10px; height: 16px; display: flex; gap: 4px; }
+#s-knowledge .im-tabs i { flex: 1; border-radius: 3px; background: var(--line-2); } #s-knowledge .im-tabs i:first-child { background: var(--brand); }
+#s-knowledge .im-pal { position: absolute; inset: 0; display: flex; }
+#s-knowledge .im-pal i { flex: 1; }
+#s-knowledge .im-flow { position: absolute; left: 14px; right: 14px; top: 18px; bottom: 18px; }
+#s-knowledge .im-flow i { position: absolute; width: 30px; height: 18px; border-radius: 4px; border: 1.5px solid var(--info); background: var(--info-soft); }
+#s-knowledge .im-poster { position: absolute; inset: 0; background: linear-gradient(160deg, var(--brand-soft), var(--active) 60%, var(--line-2)); }
+#s-knowledge .kn-black { background: var(--term-bg); }
+#s-knowledge .kn-black .ph-status { color: var(--term-fg); }
+#s-knowledge .kn-black .ph-home::before { background: var(--term-fg); }
+#s-knowledge .kn-viewer { background: var(--term-bg); color: var(--term-fg); }
+#s-knowledge .kn-ovl { position: absolute; left: 0; right: 0; z-index: 3; display: flex; align-items: center; gap: 4px; padding: 0 6px; color: var(--term-fg); }
+#s-knowledge .kn-ovl.top { top: 0; height: 52px; background: linear-gradient(to bottom, var(--scrim), transparent); }
+#s-knowledge .kn-ovl.bot { bottom: 0; height: 60px; justify-content: space-around; background: linear-gradient(to top, var(--scrim), transparent); }
+#s-knowledge .kn-ovl .iconbtn { color: var(--term-fg); }
+#s-knowledge .kn-ovl .tt { flex: 1; min-width: 0; text-align: center; font-size: var(--fs-sub); font-weight: 600; line-height: 18px; }
+#s-knowledge .kn-ovl .tt small { display: block; font-size: var(--fs-c1); font-weight: 400; color: var(--term-dim); }
+#s-knowledge .kn-bigimg { position: absolute; left: -70px; right: -70px; top: 110px; height: 560px; border-radius: 26px; background: var(--paper); border: 3px solid var(--line-2); overflow: hidden; }
+#s-knowledge .kn-bigimg .bar { position: absolute; left: 22px; right: 22px; height: 14px; border-radius: 7px; background: var(--active); }
+#s-knowledge .kn-bigimg .trc { position: absolute; left: 24px; top: 150px; width: 210px; height: 230px; border: 7px solid var(--brand); border-color: var(--brand) transparent transparent var(--brand); border-radius: 60% 0 0 0; opacity: .9; }
+#s-knowledge .kn-bigimg .dotp { position: absolute; width: 34px; height: 34px; border-radius: 50%; background: var(--brand); opacity: .55; }
+#s-knowledge .kn-zoom { position: absolute; left: 50%; top: 70px; transform: translateX(-50%); z-index: 3; padding: 4px 10px; border-radius: var(--r-pill); background: var(--scrim); color: var(--term-fg); font-size: var(--fs-c1); font-weight: 600; font-variant-numeric: tabular-nums; }
+/* the page is the document, not chrome: it stays paper-white in dark mode */
+#s-knowledge .phone[data-theme="dark"] .kn-page { filter: invert(1) hue-rotate(180deg); }
+#s-knowledge .kn-pdf { position: absolute; inset: 0 0 72px; background: var(--surface); display: flex; justify-content: center; padding-top: 16px; }
+#s-knowledge .kn-page { width: 318px; height: 470px; background: var(--card); box-shadow: var(--sh-md); border-radius: 2px; padding: 26px 24px; position: relative; }
+#s-knowledge .kn-page .l { height: 6px; border-radius: 3px; background: var(--line-2); margin: 0 0 9px; }
+#s-knowledge .kn-page .l.h { height: 11px; width: 62%; background: var(--ink-3); margin: 14px 0 12px; }
+#s-knowledge .kn-page .l.s { width: 70%; } #s-knowledge .kn-page .l.m { width: 86%; }
+#s-knowledge .kn-page .box { height: 70px; border: 1.5px solid var(--line-2); border-radius: 6px; margin: 10px 0 14px; background: var(--surface); }
+#s-knowledge .kn-page .pn { position: absolute; bottom: 12px; left: 0; right: 0; text-align: center; font-size: 9px; color: var(--ink-4); }
+#s-knowledge .kn-pill { position: absolute; z-index: 3; padding: 4px 10px; border-radius: var(--r-pill); background: var(--ink); color: var(--paper); font-size: var(--fs-c1); font-weight: 600; font-variant-numeric: tabular-nums; opacity: .86; }
+#s-knowledge .kn-pstrip { position: absolute; left: 0; right: 0; bottom: 0; height: 72px; display: flex; gap: 7px; align-items: center; padding: 0 12px; background: var(--paper); border-top: 1px solid var(--line); overflow: hidden; }
+#s-knowledge .kn-pstrip .pg { flex: 0 0 34px; height: 46px; border: 1px solid var(--line-2); border-radius: 3px; background: var(--card); position: relative; }
+#s-knowledge .kn-pstrip .pg::before { content: ""; position: absolute; left: 5px; right: 5px; top: 7px; height: 3px; background: var(--line-2); box-shadow: 0 6px 0 var(--line-2), 0 12px 0 var(--line-2), 0 18px 0 var(--line-2); }
+#s-knowledge .kn-pstrip .pg.on { outline: 2px solid var(--brand); outline-offset: 1px; }
+#s-knowledge .kn-cv { font-family: var(--mono); font-size: 12px; line-height: 18px; padding: 8px 0; background: var(--surface); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+#s-knowledge .kn-cv .cl { display: flex; }
+#s-knowledge .kn-cv .gn { flex: 0 0 32px; text-align: right; padding-right: 10px; color: var(--ink-4); }
+#s-knowledge .kn-cv .cx { flex: 1 1 auto; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; padding-right: 12px; color: var(--ink-2); }
+#s-knowledge .kn-cv .cx.wr { color: var(--ink-2); }
+#s-knowledge .kn-cv .wrap-mark { color: var(--ink-4); }
+#s-knowledge .kn-poster { height: 212px; position: relative; background: linear-gradient(160deg, var(--brand-soft), var(--active) 55%, var(--line-2)); display: grid; place-items: center; overflow: hidden; }
+#s-knowledge .kn-poster .ph { position: absolute; left: 50%; top: 18px; width: 92px; height: 186px; margin-left: -46px; border-radius: 16px; border: 3px solid var(--ink-3); background: var(--paper); }
+#s-knowledge .kn-poster .ph::after { content: ""; position: absolute; left: 6px; right: 6px; bottom: 8px; height: 12px; border-radius: 3px; background: linear-gradient(90deg, var(--brand) 25%, var(--line-2) 25% 50%, var(--active) 50% 75%, var(--line-2) 75%); }
+#s-knowledge .kn-playbig { width: 64px; height: 64px; border-radius: 50%; background: var(--scrim); display: grid; place-items: center; color: var(--term-fg); position: relative; z-index: 1; }
+#s-knowledge .kn-playbig .ic { width: 26px; height: 26px; fill: currentColor; margin-left: 3px; }
+#s-knowledge .kn-srcs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 0 var(--gutter) var(--s3); }
+#s-knowledge .kn-srcs .o { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 0 12px; border-radius: var(--r-md); background: var(--surface); font-size: var(--fs-foot); font-weight: 600; color: var(--ink); }
+#s-knowledge .phone[data-os="android"] .kn-srcs .o { background: var(--card); }
+#s-knowledge .kn-srcs .o .ic { width: 26px; height: 26px; color: var(--brand); }
+#s-knowledge .kn-up .row { min-height: 56px; }
+#s-knowledge .kn-up .progress { margin-top: 6px; height: 4px; }
+#s-knowledge .kn-up .bad .s { color: var(--block); white-space: normal; }
+#s-knowledge .kn-canvas { position: absolute; inset: 0; background-color: var(--paper); background-image: radial-gradient(var(--line-2) 1px, transparent 1.3px); background-size: 20px 20px; overflow: hidden; }
+#s-knowledge .kn-canvas .sk { position: absolute; border: 2.25px solid var(--ink-2); border-radius: 26px 30px 24px 32px / 30px 24px 32px 26px; }
+#s-knowledge .kn-canvas .ln { position: absolute; height: 2.25px; background: var(--ink-3); border-radius: 2px; }
+#s-knowledge .kn-canvas .tx { position: absolute; font-style: italic; color: var(--ink-2); font-size: 15px; line-height: 18px; white-space: nowrap; }
+#s-knowledge .kn-canvas .tx.br { color: var(--brand); }
+#s-knowledge .kn-canvas .hl { position: absolute; height: 18px; border-radius: 6px; background: var(--wait); opacity: .35; }
+#s-knowledge .kn-canvas .rg { position: absolute; border: 2.25px solid var(--brand); border-radius: 50%; }
+#s-knowledge .kn-canvas .sel { position: absolute; border: 1.5px dashed var(--info); }
+#s-knowledge .kn-canvas .sel::before, #s-knowledge .kn-canvas .sel::after { content: ""; position: absolute; width: 8px; height: 8px; background: var(--card); border: 1.5px solid var(--info); }
+#s-knowledge .kn-canvas .sel::before { left: -5px; top: -5px; } #s-knowledge .kn-canvas .sel::after { right: -5px; bottom: -5px; }
+#s-knowledge .kn-pencil { position: absolute; left: 10px; right: 10px; bottom: 12px; z-index: 4; display: flex; align-items: center; gap: 2px; padding: 4px 6px; border-radius: 20px; background: var(--card); box-shadow: var(--sh-pop); border: 1px solid var(--line); }
+#s-knowledge .kn-pencil .tl { width: 38px; height: 44px; display: grid; place-items: center; color: var(--ink-3); border-radius: 12px; }
+#s-knowledge .kn-pencil .tl .ic { width: 22px; height: 22px; }
+#s-knowledge .kn-pencil .tl.on { color: var(--ink); background: var(--hover); }
+#s-knowledge .kn-pencil .sep { width: 1px; height: 26px; background: var(--line-2); margin: 0 4px; }
+#s-knowledge .kn-pencil .sw { width: 22px; height: 22px; border-radius: 50%; margin: 0 3px; flex: 0 0 auto; box-shadow: 0 0 0 1px var(--line-2); }
+#s-knowledge .kn-pencil .sw.on { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--ink-2); }
+#s-knowledge .kn-hint { position: absolute; left: 50%; transform: translateX(-50%); z-index: 4; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--r-pill); background: var(--card); border: 1px solid var(--line); box-shadow: var(--sh-md); font-size: var(--fs-c1); font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+#s-knowledge .kn-hint .ic { width: 14px; height: 14px; }
+#s-knowledge .kn-gc { position: absolute; inset: 0; background-color: var(--paper); background-image: radial-gradient(var(--line-2) 1px, transparent 1.3px); background-size: 18px 18px; overflow: hidden; }
+#s-knowledge .kn-gc svg.edges { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+#s-knowledge .kn-gc svg.edges path { stroke: var(--ink-4); stroke-width: 1.5; fill: none; }
+#s-knowledge .kn-gc svg.edges path.on { stroke: var(--brand); stroke-width: 2; }
+#s-knowledge .gn { position: absolute; display: flex; align-items: center; gap: 7px; padding: 6px 9px 6px 6px; border-radius: 10px; background: var(--card); border: 1px solid var(--line-2); box-shadow: var(--sh-sm); max-width: 168px; }
+#s-knowledge .gn .gi { width: 26px; height: 26px; border-radius: 7px; background: var(--surface); display: grid; place-items: center; color: var(--ink-2); flex: 0 0 auto; }
+#s-knowledge .gn .gi .ic { width: 15px; height: 15px; }
+#s-knowledge .gn .gb { min-width: 0; display: flex; flex-direction: column; }
+#s-knowledge .gn .gt { font-size: 12.5px; line-height: 15px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#s-knowledge .gn .gk { font-size: 10.5px; line-height: 13px; color: var(--ink-3); white-space: nowrap; }
+#s-knowledge .gn.sel { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+#s-knowledge .gn.sel .gi { background: var(--brand-soft); color: var(--brand); }
+#s-knowledge .gn.root .gi { background: var(--run-soft); color: var(--run); }
+#s-knowledge .gn.fold { border-style: dashed; background: var(--surface); box-shadow: none; }
+#s-knowledge .gn.hub { border-width: 2px; }
+#s-knowledge .gn .deg { margin-left: 4px; font: 700 10px/16px var(--mono); padding: 0 5px; border-radius: 8px; background: var(--wait-soft); color: var(--wait); }
+#s-knowledge .el { position: absolute; font: 500 10px/14px var(--mono); color: var(--ink-3); background: var(--paper); padding: 0 3px; border-radius: 3px; white-space: nowrap; }
+#s-knowledge .el.on { color: var(--brand); }
+#s-knowledge .kn-gctl { position: absolute; right: 12px; z-index: 3; display: flex; flex-direction: column; gap: 8px; }
+#s-knowledge .kn-gctl .iconbtn { width: 40px; height: 40px; background: var(--card); border: 1px solid var(--line); box-shadow: var(--sh-md); border-radius: 12px; }
+#s-knowledge .kn-gctl .iconbtn .ic { width: 20px; height: 20px; }
+#s-knowledge .kn-gbar { position: absolute; left: 0; right: 0; top: 0; z-index: 3; display: flex; align-items: center; gap: 8px; padding: 8px var(--gutter); }
+#s-knowledge .kn-gbar .segmented { margin: 0; flex: 1 1 auto; background: var(--active); }
+#s-knowledge .kn-gbar .chip { flex: 0 0 auto; background: var(--card); }
+#s-knowledge .kn-frame { margin: 0 var(--gutter); height: 300px; border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--line-2); background: var(--term-bg); position: relative; color: var(--term-fg); }
+#s-knowledge .kn-frame .nav { display: flex; align-items: center; gap: 12px; padding: 12px 14px; font-size: 11px; color: var(--term-dim); }
+#s-knowledge .kn-frame .nav b { color: var(--term-fg); font-size: 13px; letter-spacing: .06em; margin-right: auto; }
+#s-knowledge .kn-frame .hero { padding: 18px 16px 0; }
+#s-knowledge .kn-frame .hero .k { font: 600 10px/1 var(--mono); letter-spacing: .14em; color: var(--term-cursor); }
+#s-knowledge .kn-frame .hero .h { margin-top: 10px; font-size: 25px; line-height: 29px; font-weight: 800; letter-spacing: -0.02em; }
+#s-knowledge .kn-frame .hero .p { margin-top: 8px; font-size: 12px; line-height: 17px; color: var(--term-dim); }
+#s-knowledge .kn-frame .cta { display: inline-block; margin-top: 14px; padding: 8px 14px; border-radius: 8px; background: var(--term-cursor); color: var(--term-bg); font-size: 12px; font-weight: 700; }
+#s-knowledge .kn-frame .term { margin: 16px 16px 0; border-radius: 8px; border: 1px solid var(--term-dim); padding: 8px 10px; font-size: 10.5px; line-height: 15px; }
+#s-knowledge .kn-fs { position: absolute; right: 8px; top: 8px; width: 34px; height: 34px; border-radius: 10px; background: var(--scrim); color: var(--term-fg); display: grid; place-items: center; }
+#s-knowledge .kn-fs .ic { width: 18px; height: 18px; }
+#s-knowledge .kn-revbar { display: flex; align-items: center; gap: 8px; padding: 0 var(--gutter) var(--s3); }
+#s-knowledge .kn-rev { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 10px 0 12px; border-radius: var(--r-pill); border: 1px solid var(--line-2); font-size: var(--fs-foot); font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+#s-knowledge .kn-rev .ic { width: 14px; height: 14px; color: var(--ink-3); }
+#s-knowledge .kn-kv { padding: 0 var(--gutter); }
+#s-knowledge .kn-kv .kv { font-size: var(--fs-foot); line-height: var(--lh-foot); gap: 6px 14px; }
+#s-knowledge .kn-kv .kv dd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#s-knowledge .kn-kv .kv dd.wrap { white-space: normal; }
+#s-knowledge .kn-kv .mono { font-size: 12px; }
+#s-knowledge .kn-revs .row { min-height: 58px; }
+#s-knowledge .kn-revs .row.sel { background: var(--brand-soft); }
+#s-knowledge .kn-revs .rn { width: 34px; font: 700 13px/1 var(--mono); color: var(--ink-2); }
+#s-knowledge .kn-prof { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: var(--s2) var(--gutter) var(--s3); text-align: center; }
+#s-knowledge .kn-prof .nm { font-size: var(--fs-t2); line-height: var(--lh-t2); font-weight: 700; letter-spacing: -0.015em; margin-top: 4px; }
+#s-knowledge .kn-prof .pl { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+#s-knowledge .kn-prof .cp2 { font-size: var(--fs-foot); line-height: var(--lh-foot); color: var(--ink-3); }
+#s-knowledge .kn-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 0 var(--gutter) var(--s1); }
+#s-knowledge .kn-stats .st { background: var(--surface); border-radius: var(--r-md); padding: 8px 12px; }
+#s-knowledge .kn-stats .st b { display: block; font-size: var(--fs-t3); line-height: var(--lh-t3); font-weight: 700; font-variant-numeric: tabular-nums; }
+#s-knowledge .kn-stats .st span { font-size: var(--fs-c1); color: var(--ink-3); }
+#s-knowledge .kn-persona { margin: 0 var(--gutter); padding: var(--s3); border-radius: var(--r-md); background: var(--surface); font-size: var(--fs-foot); line-height: 19px; color: var(--ink-2); }
+#s-knowledge .kn-persona .more { color: var(--brand); font-weight: 600; }
+#s-knowledge .kn-fg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: var(--s3) var(--gutter) 0; border-radius: var(--r-md); overflow: hidden; background: var(--line); border: 1px solid var(--line); }
+#s-knowledge .kn-fg > div { background: var(--card); padding: 7px 12px; min-width: 0; }
+#s-knowledge .kn-fg span { display: block; font-size: var(--fs-c1); color: var(--ink-3); }
+#s-knowledge .kn-fg b { display: block; font-size: var(--fs-foot); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#s-knowledge .kn-claim { margin: 0 var(--gutter); padding: var(--s3) var(--s4); border-left: 3px solid var(--brand); background: var(--surface); border-radius: 0 var(--r-md) var(--r-md) 0; font-size: var(--fs-callout); line-height: 22px; color: var(--ink); }
+#s-knowledge .kn-prompt { margin: 0 var(--gutter); padding: var(--s3) var(--s4); border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--line); font-size: var(--fs-sub); line-height: 21px; color: var(--ink); }
+#s-knowledge .kn-prompt .var { font-family: var(--mono); font-size: 13px; color: var(--brand); background: var(--brand-soft); border-radius: 4px; padding: 0 4px; }
+#s-knowledge .kn-path { display: flex; align-items: center; gap: 8px; margin: 0 var(--gutter); padding: 6px 6px 6px 10px; border-radius: var(--r-sm); background: var(--surface); }
+#s-knowledge .kn-path code { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#s-knowledge .kn-path .btn { min-height: 28px; }
+#s-knowledge .row .kn-tag { font-size: var(--fs-c1); font-weight: 600; color: var(--ink-3); }
+#s-knowledge .kn-inv { margin: 0 var(--gutter); padding: var(--s3) var(--s4); border-radius: var(--r-md); border: 1px dashed var(--wait); background: var(--wait-soft); }
+#s-knowledge .kn-inv .h { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: var(--fs-sub); }
+#s-knowledge .kn-inv .h .ic { width: 18px; height: 18px; color: var(--wait); }
+#s-knowledge .kn-inv p { margin: 4px 0 10px; font-size: var(--fs-foot); line-height: var(--lh-foot); color: var(--ink-2); }
+#s-knowledge .kn-inv .mono { font-size: 12px; color: var(--ink); }
+#s-knowledge .kn-note { padding: 6px var(--gutter) 0; font-size: var(--fs-c1); line-height: var(--lh-c1); color: var(--ink-3); }
+#s-knowledge .kn-eyeb { display: flex; align-items: center; gap: 8px; }
+#s-knowledge .flow .shot .cap { font-size: 12.5px; }
+#s-knowledge .kn-file { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: var(--s8) var(--gutter) var(--s4); text-align: center; }
+#s-knowledge .kn-file .big { width: 84px; height: 100px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line-2); display: grid; place-items: center; color: var(--ink-3); position: relative; }
+#s-knowledge .kn-file .big .ic { width: 38px; height: 38px; stroke-width: 1.4; }
+#s-knowledge .kn-file .big .ext { position: absolute; bottom: 8px; font: 700 10px/1 var(--mono); letter-spacing: .05em; color: var(--ink-3); }
+#s-knowledge .kn-file .nm { font-size: var(--fs-hl); font-weight: 600; margin-top: 6px; }
+#s-knowledge .kn-file .sz { font-size: var(--fs-foot); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+/* hierarchy is visible in every list (owner ruling 2026-10-28 14:05): guide lines from the parent's chevron */
+#s-knowledge .tree .row { min-height: 52px; }
+#s-knowledge .tree .row.v0::before, #s-knowledge .tree .row.v1::after { content: ""; position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line-2); }
+#s-knowledge .tree .row.v0::before { left: calc(var(--gutter) + 10px); }
+#s-knowledge .tree .row.v1::after { left: calc(var(--gutter) + 30px); }
+#s-knowledge .tree .row.e0::before { bottom: 50%; } #s-knowledge .tree .row.e1::after { bottom: 50%; }
+#s-knowledge .tree .row.p0::before, #s-knowledge .tree .row.p1::after { content: ""; position: absolute; top: 40px; bottom: 0; width: 1px; background: var(--line-2); }
+#s-knowledge .tree .row.p0::before { left: calc(var(--gutter) + 10px); }
+#s-knowledge .tree .row.p1::after { left: calc(var(--gutter) + 30px); }
+#s-knowledge .tree .row + .row { border-top: 1px solid var(--line); }
+#s-knowledge .tree .tw .ic { color: var(--ink-3); }
+#s-knowledge .tree .row .kind-ic { width: 30px; height: 30px; }
+#s-knowledge .tree .row .s b { font-weight: 600; color: var(--ink-2); }
+</style>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="kn-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+  <symbol id="kn-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></symbol>
+  <symbol id="kn-list" viewBox="0 0 24 24"><path d="M9 6h12M9 12h12M9 18h12"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01" stroke-width="3"/></symbol>
+  <symbol id="kn-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></symbol>
+  <symbol id="kn-high" viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></symbol>
+  <symbol id="kn-erase" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3a2.4 2.4 0 0 1 0-3.4l9.6-9.6a2.4 2.4 0 0 1 3.4 0l5.6 5.6a2.4 2.4 0 0 1 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></symbol>
+  <symbol id="kn-shapes" viewBox="0 0 24 24"><path d="M3 3h8v8H3z"/><circle cx="17.5" cy="7" r="3.5"/><path d="M17.5 13.5 21.5 21h-8z"/><path d="M3 15h8v6H3z"/></symbol>
+  <symbol id="kn-save" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></symbol>
+  <symbol id="kn-wrap" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M3 12h15a3 3 0 1 1 0 6h-4"/><path d="m16 16-2 2 2 2"/><path d="M3 18h7"/></symbol>
+  <symbol id="kn-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+  <symbol id="kn-video" viewBox="0 0 24 24"><path d="m22 8-6 4 6 4V8Z"/><rect x="2" y="6" width="14" height="12" rx="2"/></symbol>
+  <symbol id="kn-archive" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></symbol>
+  <symbol id="kn-gridv" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></symbol>
+  <symbol id="kn-fit" viewBox="0 0 24 24"><path d="M3 8V5a2 2 0 0 1 2-2h3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M21 16v3a2 2 0 0 1-2 2h-3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/></symbol>
+  <symbol id="kn-pencil" viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></symbol>
+</svg>
+<header>
+  <div class="lane-eyebrow">06 · Knowledge</div>
+  <h2>Knowledge, media and people</h2>
+  <p class="lede">Docs, files, drawings, graphs and artifacts are the parts of the graph you <em>read</em>. Memories, skills and spells are what teammates carry (styles are drawn by 02 shell). Members and teammates are who did the work. On the web phone shell only the doc and the artifact got real screens; every other kind fell back to the generic page. Here each kind gets a native screen: a doc reader with an outline and a resume point, a source-faithful editor with a formatting bar above the keyboard, viewers chosen by the file type the node declared, a pencil canvas, a graph you can pan, and profiles where the avatar's shape tells you human or agent.</p>
+</header>
+
+<h3>Doc — the reader</h3>
+<p>The most important screen in this section. Most links into a doc come from somewhere else (a chat receipt, a task's Linked, an Inbox mention), and the reader's job is to put the words first and keep every way out one tap away. Drawn on <b>The Back Contract</b>, v12.</p>
+<div class="anatomy">
+  <div class="phone-wrap">
+  <figure class="phone" data-os="ios" data-theme="light">
+    <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+    <div class="ph-screen">
+      <header class="topbar">
+        <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Docs</span></span></div>
+        <div class="title">Doc<span class="sub">Atelier · tm8.sh</span></div>
+        <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+      </header>
+      <div class="kn-prog"><i style="width:8%"></i></div>
+      <main class="content fade-bottom">
+        <div class="ent-head">
+          <span class="eyebrow"><svg class="ic"><use href="#i-doc"/></svg>Doc · v12 · 01a17c3e</span>
+          <div class="title">The Back Contract</div>
+          <div class="meta"><span class="avatar xs c1">S</span>Subhang<span class="dot"></span>updated 11:20<span class="dot"></span>2 sub-docs</div>
+        </div>
+        <div class="prose kn-doc">
+          <p>Back is the control people use most and trust least. This contract says what it does on every screen of tm8, so nobody has to guess.</p>
+          <h2>1. Each tab keeps its own stack</h2>
+          <p>Opening an entity pushes it onto the current tab. Chats, Work, Inbox and Browse never share a stack, and switching tabs pops nothing.</p>
+          <ul><li>Re-tap the tab: back to its root.</li><li>Long-press it: see the stack.</li><li>Twelve deep, then the oldest drops.</li></ul>
+          <p>It replaces the drawer rule in <span class="chip"><svg class="ic"><use href="#i-doc"/></svg>One surface at a time</span> and is tracked on <span class="chip"><svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app</span>.</p>
+          <h2>2. Cold links land on a list</h2>
+          <p>A link from a push, a share or another app opens as two screens: the kind's list, then the entity.</p>
+        </div>
+      </main>
+      <nav class="kn-tb">
+        <span class="tb"><svg class="ic"><use href="#kn-list"/></svg>Outline</span>
+        <span class="tb"><svg class="ic"><use href="#i-message"/></svg>Messages <span class="n">4</span></span>
+        <span class="tb primary"><svg class="ic"><use href="#i-edit"/></svg>Edit</span>
+      </nav>
+    </div>
+    <div class="ph-home"></div>
+  </figure>
+  <span class="an" data-n="1" style="left:12px;top:56px"></span>
+  <span class="an" data-n="2" style="left:262px;top:58px"></span>
+  <span class="an" data-n="3" style="left:212px;top:81px"></span>
+  <span class="an" data-n="4" style="left:356px;top:128px"></span>
+  <span class="an" data-n="5" style="left:356px;top:300px"></span>
+  <span class="an" data-n="6" style="left:240px;top:588px"></span>
+  <span class="an" data-n="7" style="left:280px;top:774px"></span>
+  </div>
+  <ol class="legend">
+    <li><b>Back names where you came from.</b> "Docs" because this was pushed from the list. A cold link (push, share, widget) opens as <code>[Docs, this doc]</code>, so Back still lands on a list, never on nothing.</li>
+    <li><b>Share and ⋯.</b> Share sends the web address (<code>https://tm8.sh/#/s/atelier/e/01a17c3e…</code>), so it opens on a desktop too. ⋯ holds Copy link, Open on web, Save as PDF (the web's print path), Pin to Browse and Add sub-doc.</li>
+    <li><b>Reading progress.</b> A 2pt hairline under the bar. The app stores your position for each doc id and version on this phone, and the next open offers <em>Back where you left off</em>. When the doc has a newer version, you resume at the heading you were under.</li>
+    <li><b>Kind · version · id, title, byline.</b> The byline names the creator and the update time. It never names a "last editor": the contract has no such field (doc-edit G4), and guessing would credit Subhang with Priya's edit.</li>
+    <li><b>The body is the doc's markdown, rendered natively.</b> CommonMark + GFM, the same grammar the web renders (<code>kit/Markdown</code>). Headings double as outline targets, keyed by source line like the web's <code>MD_HEADING_ATTR</code>.</li>
+    <li><b>Chips inside prose.</b> A chip is a markdown link to an entity's web address, which the app recognises and draws as a chip; the stored text stays a plain link. Tap opens the entity; Back returns to this paragraph, not the top. Long-press shows a preview sheet. A chip for a deleted entity reads struck through and opens its tombstone.</li>
+    <li><b>Reader bar</b> (iOS toolbar, hidden while scrolling down, back on scroll up): Outline, Messages (the count is the node's; when it sends none, no number appears), Edit. On Android the same three verbs are the top-bar Outline icon, the ⋯ menu, and an Edit extended FAB.</li>
+  </ol>
+</div>
+
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Docs</span></span></div>
+          <div class="title">The Back Contract<span class="sub">3 · Sheets close first</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <div class="kn-prog"><i style="width:56%"></i></div>
+        <main class="content">
+          <div class="prose kn-doc">
+            <h2>3. Sheets close first</h2>
+            <p>Android back dismisses an open sheet before the screen pops. iOS has no back key, so the grabber and a swipe down do the same job.</p>
+            <div class="kn-code"><div class="ch"><span>stack.ts</span><span class="cp"><svg class="ic"><use href="#i-copy"/></svg>Copy</span></div><pre><span class="tk-k">const</span> STACK_CAP = <span class="tk-n">12</span>;
+<span class="tk-k">function</span> <span class="tk-f">push</span>(s: Route[], r: Route) {
+  <span class="tk-k">if</span> (s.at(-<span class="tk-n">1</span>)?.id === r.id) <span class="tk-k">return</span> s;
+  <span class="tk-k">return</span> [...s, r].slice(-STACK_CAP);
+}</pre></div>
+            <div class="kn-tw"><table><thead><tr><th>You were on</th><th>Back goes to</th><th>Haptic</th></tr></thead><tbody><tr><td>A cold link</td><td>The kind's list</td><td>none</td></tr><tr><td>An open sheet</td><td>The screen under it</td><td>light</td></tr></tbody></table></div>
+            <div class="kn-mm">
+              <div class="stage">
+                <span class="nd" style="left:10px;top:16px">Browse</span>
+                <span class="ar h" style="left:74px;top:29px;width:20px"></span>
+                <span class="nd" style="left:100px;top:16px">Docs</span>
+                <span class="ar h" style="left:150px;top:29px;width:20px"></span>
+                <span class="nd on" style="left:176px;top:16px">The Back Contract</span>
+                <span class="ar v" style="left:250px;top:44px;height:34px"></span>
+                <span class="lb" style="left:258px;top:52px">tap #1012</span>
+                <span class="nd" style="left:206px;top:84px">PR #1012</span>
+                <span class="ar dash" style="left:100px;top:97px;width:98px"></span>
+                <span class="lb" style="left:44px;top:90px">Back ↑ here</span>
+              </div>
+              <div class="mc"><span>Diagram · mermaid · drawn on this phone</span><span class="brandc">Tap to zoom</span></div>
+            </div>
+          </div>
+          <div class="toast"><svg class="ic"><use href="#i-clock"/></svg>Back where you left off<span class="act">From top</span></div>
+        </main>
+        <nav class="kn-tb">
+          <span class="tb"><svg class="ic"><use href="#kn-list"/></svg>Outline</span>
+          <span class="tb"><svg class="ic"><use href="#i-message"/></svg>Messages <span class="n">4</span></span>
+          <span class="tb primary"><svg class="ic"><use href="#i-edit"/></svg>Edit</span>
+        </nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Reader, mid-document (dark)</b>The bar's subtitle names the heading you are under. A code block has Copy (long-press the block copies it too). A wide table scrolls inside its own box, as the web ruled, so the page never pans sideways. The mermaid fence is drawn as a static diagram; tap opens it full screen with pinch zoom. The toast appears when the app restores your reading position; <em>From top</em> undoes it. <span class="route">/[server]/[space]/e/[id]</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Docs</span></span></div>
+          <div class="title">The Back Contract</div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#kn-list"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="prose kn-doc">
+            <blockquote>Nothing ever jumps several levels. If Back would, the stack is wrong, not the gesture.</blockquote>
+            <p>Predictive back shows the screen underneath while you drag, so you can see where you are going before you let go.</p>
+          </div>
+          <span class="fab ext"><svg class="ic"><use href="#i-edit"/></svg>Edit</span>
+        </main>
+        <div class="scrim"></div>
+        <div class="sheet" style="height:78%">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="h">Outline</span><span class="foot">v12 · 6 headings</span></div>
+          <div class="sheet-b">
+            <div class="list kn-ol">
+              <div class="row l1"><span class="num"></span><span class="main"><span class="t">The Back Contract</span></span></div>
+              <div class="row"><span class="num">1</span><span class="main"><span class="t">Each tab keeps its own stack</span></span></div>
+              <div class="row"><span class="num">2</span><span class="main"><span class="t">Cold links land on a list</span></span></div>
+              <div class="row on"><span class="num">3</span><span class="main"><span class="t">Sheets close first</span></span><span class="here">You are here</span></div>
+              <div class="row l3"><span class="main"><span class="t">Predictive back</span></span></div>
+              <div class="row"><span class="num">4</span><span class="main"><span class="t">What we measured</span></span></div>
+              <div class="row"><span class="num">5</span><span class="main"><span class="t">What we did not keep</span></span></div>
+            </div>
+            <div class="section-h">Sub-docs · 2</div>
+            <div class="list tree">
+              <div class="row"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">Cold links</span><span class="s">v4 · updated Tue</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+              <div class="row"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">Predictive back on Android</span><span class="s">v2 · <b>2 sub-docs</b></span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Outline sheet (Android)</b>The top-bar list icon opens the outline as a bottom sheet with 28dp corners. Headings are one list, numbered as the author wrote them; the heading you are under is marked <em>You are here</em>. Tap jumps there and closes the sheet; back closes the sheet first. The doc's <b>sub-docs</b> are a separate tree under the outline: they are other entities and open as a push, while headings scroll this page. <span class="route">/[server]/[space]/e/[id]/outline</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Docs</span></span></div>
+          <div class="title">The Back Contract</div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#kn-list"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="kn-mmfail">
+            <div class="h"><svg class="ic"><use href="#i-warning"/></svg>This diagram did not draw</div>
+            <p>Parse error on line 3: <code>expected --&gt;</code>. Shown as the author wrote it, so it can be fixed.</p>
+            <div class="btnrow"><span class="btn sm outline">Show source</span><span class="btn sm outline"><svg class="ic"><use href="#i-globe"/></svg>Open on web</span></div>
+          </div>
+          <div class="section-h">Sub-docs · 2 <span class="more">+ Add</span></div>
+          <div class="list tree">
+            <div class="row"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">Cold links</span><span class="s">v4 · updated Tue</span></span></div>
+            <div class="row p0"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">Predictive back on Android</span><span class="s">v2 · updated Tue</span></span></div>
+            <div class="row v0 e0" style="--depth:1"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">Back callback order</span><span class="s">v3 · Mon</span></span></div>
+          </div>
+          <div class="section-h">Attachments · 2</div>
+          <div class="chips" style="padding-top:0"><span class="chip"><svg class="ic"><use href="#i-image"/></svg>back-gesture-trace.png</span><span class="chip"><svg class="ic"><use href="#i-drawing"/></svg>Tab bar sketch</span></div>
+          <div class="section-h">Messages · 4 <span class="more">View all</span></div>
+          <div class="list">
+            <div class="row tall"><span class="avatar sm c2">P</span><span class="main"><span class="s" style="color:var(--ink-2)"><b>Priya</b> · 10:12</span><span class="t wrap" style="font-weight:400;font-size:var(--fs-sub);line-height:var(--lh-sub)">Should a cold link from a push land on Inbox instead of the kind's list?</span></span></div>
+          </div>
+          <div class="section-h">Linked</div>
+          <div class="linked"><div class="chips" style="padding-top:0"><span class="chip"><svg class="ic"><use href="#i-chat"/></svg>Explain the Back Contract to me</span><span class="chip"><svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app</span></div></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>End of the doc: sub-docs, attachments, Messages, Linked (Android, dark)</b>A fence that fails to parse shows the error and offers the source, never an empty box (the web's Mermaid rule). Sub-docs are a tree, expanded to depth 2, with a guide line from the parent's chevron (owner ruling 2026-10-28). Messages show the latest message, with View all one tap away. <span class="route">/[server]/[space]/e/[id] · /e/[id]/messages</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Browse</span></span></div>
+          <div class="title">Docs<span class="sub">Atelier · tm8.sh</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-sort"/></svg></span><span class="iconbtn brand"><svg class="ic"><use href="#i-plus"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="segmented"><span class="seg on">Tree</span><span class="seg">List</span><span class="seg">Timeline</span></div>
+          <div class="filters"><span class="f on">All</span><span class="f">Mine</span><span class="f">Edited today</span><span class="f">By agents</span></div>
+          <div class="list tree">
+            <div class="row p0"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">Mobile shell contract</span><span class="s">v9 · updated Mon</span></span></div>
+            <div class="row v0 p1" style="--depth:1"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">The Back Contract</span><span class="s">v12 · 11:20 · 4 messages</span></span></div>
+            <div class="row v0 v1" style="--depth:2"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">Cold links</span><span class="s">v4 · Tue</span></span></div>
+            <div class="row v0 v1 e1" style="--depth:2"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">Predictive back on Android</span><span class="s">v2 · <b>2 sub-docs</b></span></span></div>
+            <div class="row v0 e0" style="--depth:1"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">One surface at a time</span><span class="s">v6 · Oct 19</span></span></div>
+            <div class="row"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">Operator guide</span><span class="s">v15 · <b>3 sub-docs · 1 edited this week</b></span></span></div>
+            <div class="row"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">PTY recheck: why it fails closed</span><span class="s">v1 · TM8 Helper · 12:40</span></span></div>
+            <div class="row"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">Facade audit: dead endpoints</span><span class="s">v3 · Worker · Sat</span></span></div>
+          </div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Docs list (k/docs) as a tree</b>Tree is the default layout for docs: expanded to depth 2, with guide lines from each parent's chevron. A collapsed parent states what it holds ("3 sub-docs · 1 edited this week"). <em>Operator guide</em> was collapsed by hand, and list memory keeps it that way across visits. Tapping the chevron toggles; tapping the row opens the doc. Rows sort by last edit, as the registry rules for docs. <span class="route">/[server]/[space]/k/docs?layout=tree</span></div>
+  </div>
+</div>
+<div class="why"><b>Why the reader works this way.</b> The web ruled on 2026-10-19 that a doc reads full screen and moved its discussion behind a button (<code>MESSAGES_ON_PAGE</code> excludes doc), because Messages under a long body were thirty screens away. The native reader <em>partly overturns</em> that. The reader bar's <b>Messages</b> is always one tap away, and the end of the doc still carries the latest message and <b>Linked</b>, so the overview's "Messages + Linked on every kind" holds without making anyone scroll to discuss. The outline stays a list, not chips (user ruling 2026-08-17: a pill row of long headings could not be scanned). Headings are <em>controls that arrive</em>: tap scrolls to them. Sub-docs are a separate tree, because they are other entities, and following the owner's ruling of 2026-10-28 every list that nests shows the nesting.</div>
+
+<h3>Doc — the editor</h3>
+<p>Edit opens the same doc as markdown source, with the marks shown but dimmed, so what you type is exactly what the node stores. There is no second rich-text model to drift from the web. The formatting bar sits on the keyboard and wraps the selection in marks. <b>@</b> opens a picker for the entity to reference. Save writes with the version the editor opened (<code>expect-version</code>), so a concurrent edit is refused, never overwritten.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="kn-done off">Cancel</span></div><div class="title"><span class="kn-saved wait">Draft · not saved</span><span class="sub">The Back Contract · v12</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#kn-undo"/></svg></span><span class="kn-done">Save</span></div></header>
+        <main class="content"><div class="kn-ed">
+  <p class="ln hd"><span class="mk">## </span>4. Cold links land on a list</p>
+  <p class="ln">A link from a push opens as <span class="mk">**</span><b>two screens</b><span class="mk">**</span>: the kind's list, then the entity. See <span class="q">@one sur</span><span class="kn-caret"></span></p>
+</div>
+<div class="kn-pop" style="bottom:8px">
+  <div class="ph-h">Reference</div>
+  <div class="row sel"><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">One surface at a time</span><span class="s">Doc · v6 · Oct 19</span></span></div>
+  <div class="row"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Quiet list tiles + one-row header</span><span class="s">Task · in review</span></span></div>
+  <div class="ft"><svg class="ic"><use href="#i-link"/></svg>Inserts <code style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">[One surface at a time](https://tm8.sh/#/s/atelier/e/01a17b90…)</code></div>
+</div></main>
+        <div class="kn-fmt"><span class="fb">B</span><span class="fb i">I</span><span class="fb">H</span><span class="fb"><svg class="ic"><use href="#kn-list"/></svg></span><span class="fb"><svg class="ic"><use href="#kn-code"/></svg></span><span class="sep"></span><span class="fb on"><svg class="ic"><use href="#i-at"/></svg></span><span class="fb"><svg class="ic"><use href="#i-link"/></svg></span><span class="fb"><svg class="ic"><use href="#i-attach"/></svg></span><span class="sp"></span><span class="fb"><svg class="ic"><use href="#i-keyboard"/></svg></span></div><div class="keyboard"><div class="kr"><span class="k">q</span><span class="k">w</span><span class="k">e</span><span class="k">r</span><span class="k">t</span><span class="k">y</span><span class="k">u</span><span class="k">i</span><span class="k">o</span><span class="k">p</span></div><div class="kr"><span class="k">a</span><span class="k">s</span><span class="k">d</span><span class="k">f</span><span class="k">g</span><span class="k">h</span><span class="k">j</span><span class="k">k</span><span class="k">l</span></div><div class="kr"><span class="k w">⇧</span><span class="k">z</span><span class="k">x</span><span class="k">c</span><span class="k">v</span><span class="k">b</span><span class="k">n</span><span class="k">m</span><span class="k w">⌫</span></div><div class="kr"><span class="k w">123</span><span class="k space">space</span><span class="k ret">return</span></div></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Editor, keyboard up, @ picker (iOS)</b>Typing <b>@</b> searches the space and suggests matches. Picking one inserts an ordinary markdown link to the entity's web address, and the reader draws any such link as a chip (that is client-side parsing, no new syntax). A skill inserts as <code>[/github](tm8://skill/…)</code>, the one reference scheme the node reserves today. The title shows the save state in words: <em>Draft · not saved</em>, <em>Saving…</em>, <em>Saved v13</em>. <span class="route">/[server]/[space]/e/[id]/edit</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Doc</span></span></div><div class="title">Edit conflict</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content"><div class="kn-cf"><svg class="ic"><use href="#i-info"/></svg><div><b>Priya saved v13 while you were editing</b><p>The node refused your save because it was based on v12. Your text is safe on this phone. Choose for each change, then save as v14.</p><div class="btnrow"><span class="btn outline">Keep both</span><span class="btn brand">Review 2 changes</span></div></div></div>
+<div class="section-h">Change 1 of 2 · § 4 Cold links</div>
+<div class="kn-hunk"><div class="hh">@@ line 41 @@</div><div class="dl"><span class="who">v13</span><span>A cold link opens as two screens: the list, then the entity.</span></div><div class="ad"><span class="who">Yours</span><span>A link from a push opens as <b>two screens</b>: the kind's list, then the entity.</span></div></div>
+<div class="section-h">Change 2 of 2 · § 5 Sheets</div>
+<div class="kn-hunk"><div class="hh">@@ line 58 @@</div><div class="cx"><span class="who">both</span><span>Android back dismisses an open sheet first.</span></div><div class="ad"><span class="who">Yours</span><span>On iOS, a swipe down on the grabber does the same.</span></div></div>
+<div class="kn-note">Nothing is merged silently. Until you choose, the draft stays on this phone, keyed to the doc id and v12.</div></main>
+        
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>A save refused by a newer version (Android, dark)</b>The write carried <code>expect-version 12</code> and the doc was at 13, so the node refused it. The app shows the two versions change by change, in plain words, never as a raw diff dump. <em>Keep both</em> saves yours as a sub-doc, so neither edit is lost. <span class="route">/[server]/[space]/e/[id]/edit?conflict=13</span></div>
+  </div>
+</div>
+<div class="why"><b>Why source, not rich text.</b> The web's doc editor round-trips through markdown (<code>doc-edit/rich</code>), and every mismatch between the rich model and the stored source has shown up as a phantom edit in a doc's history. A phone keyboard makes selection-based rich editing harder still. Dimmed marks keep the source visible and still readable, and the formatting bar means nobody has to type <code>**</code>. Saves stay version-checked, as on the web: the app never retries a refused write with a newer version, because that would discard Priya's edit without asking.</div>
+
+<h3>Files — list, upload, viewers</h3>
+<p>A file's viewer is chosen by the MIME type the node declared at upload, never by guessing from the name: images open full screen with pinch zoom, PDFs page by page, text and code in a monospace viewer with wrap, audio and video in the system player. Anything else gets an honest card with Share and Open in…. Uploads go to the node's file endpoint, one row each, with progress in bytes.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Browse</span></span></div><div class="title">Files<span class="sub">Atelier · tm8.sh</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn brand"><svg class="ic"><use href="#i-plus"/></svg></span></div></header>
+        <main class="content"><div class="segmented"><span class="seg on">Grid</span><span class="seg">List</span></div>
+<div class="list kn-up">
+  <div class="row"><span class="kind-ic"><svg class="ic"><use href="#i-image"/></svg></span><span class="main"><span class="t">IMG_4471.HEIC</span><span class="s">Uploading · 2.1 of 3.4 MB</span><div class="progress brand"><i style="width:62%"></i></div></span><span class="trail"><svg class="ic"><use href="#i-close"/></svg></span></div>
+  <div class="row bad"><span class="kind-ic"><svg class="ic"><use href="#i-warning"/></svg></span><span class="main"><span class="t">standup-2026-10-28.m4a</span><span class="s">The node refused: larger than this server accepts</span></span><span class="trail"><span class="btn xs outline">Dismiss</span></span></div>
+</div>
+<div class="section-h">This week</div>
+<div class="kn-grid">
+  <div class="kn-tile"><span class="th"><span class="im-shot"></span><span class="im-trace"></span><span class="ext">PNG</span></span><span class="nm">back-gesture-trace.png</span><span class="mt">412 KB · 11:02</span></div>
+  <div class="kn-tile"><span class="th"><svg class="ic"><use href="#i-file"/></svg><span class="ext">PDF</span></span><span class="nm">Operator guide v15.pdf</span><span class="mt">1.8 MB · Mon</span></div>
+  <div class="kn-tile"><span class="th"><span class="im-poster"></span><span class="play"><svg class="ic"><use href="#i-play"/></svg></span><span class="ext">MP4</span></span><span class="nm">predictive-back.mp4</span><span class="mt">6.2 MB · Mon</span></div>
+  <div class="kn-tile"><span class="th"><svg class="ic"><use href="#kn-code"/></svg><span class="ext">TS</span></span><span class="nm">stack.ts</span><span class="mt">2 KB · Sun</span></div>
+  <div class="kn-tile"><span class="th"><span class="im-pal"><i style="background:var(--brand)"></i><i style="background:var(--run)"></i><i style="background:var(--info)"></i><i style="background:var(--active)"></i></span><span class="ext">PNG</span></span><span class="nm">atelier-palette.png</span><span class="mt">38 KB · Sat</span></div>
+  <div class="kn-tile"><span class="th"><svg class="ic"><use href="#kn-archive"/></svg><span class="ext">TGZ</span></span><span class="nm">facade-audit.tar.gz</span><span class="mt">9.4 MB · Sat</span></div>
+</div></main>
+        
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Files (k/files), with uploads in flight</b>Uploads sit above the grid, one row each, with progress in bytes and a Cancel. A refusal keeps the node's words and its reason. Thumbnails come from the node for images. Every other type shows its declared extension, never a fake preview. <span class="route">/[server]/[space]/k/files</span></div>
+  </div>
+  <div class="shot">
+    <figure class="phone kn-black" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        
+        <main class="content"><div class="kn-viewer" style="position:absolute;inset:0">
+  <div class="kn-ovl top"><span class="iconbtn"><svg class="ic"><use href="#i-close"/></svg></span><span class="tt">back-gesture-trace.png<small>412 KB · 1170 × 2532 · Subhang · 11:02</small></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+  <div class="kn-zoom">240%</div>
+  <div class="kn-bigimg"><span class="bar" style="top:40px;width:180px"></span><span class="bar" style="top:72px"></span><span class="bar" style="top:96px;right:120px"></span><span class="trc"></span><span class="dotp" style="left:20px;top:380px"></span><span class="dotp" style="left:120px;top:420px;opacity:.35"></span></div>
+  <div class="kn-ovl bot"><span class="iconbtn"><svg class="ic"><use href="#i-share"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#kn-save"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-link"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-message"/></svg></span></div>
+</div></main>
+        
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Image viewer, zoomed (iOS; black in both themes)</b>Full screen on black in both themes. Pinch or double-tap to zoom, the zoom level shows for a second, and swipe down dismisses back to where you were. One tap hides the chrome. The bottom row: Share (the file itself), Save to Photos, Copy link, Messages. <span class="route">/[server]/[space]/e/[id]/view</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Files</span></span></div><div class="title">Operator guide v15.pdf</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content"><div class="kn-pdf"><div class="kn-page"><div class="l h"></div><div class="l"></div><div class="l m"></div><div class="l"></div><div class="l s"></div><div class="box"></div><div class="l h" style="width:44%"></div><div class="l"></div><div class="l m"></div><div class="l"></div><div class="l s"></div><div class="l"></div><div class="l m"></div><span class="pn">3</span></div></div>
+<span class="kn-pill" style="left:50%;top:14px;transform:translateX(-50%)">3 / 12</span>
+<div class="kn-pstrip"><span class="pg"></span><span class="pg"></span><span class="pg on"></span><span class="pg"></span><span class="pg"></span><span class="pg"></span><span class="pg"></span><span class="pg"></span></div></main>
+        
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>PDF viewer (Android, dark)</b>The page stays white in dark mode because it is the document, not chrome. The page pill fades after scrolling stops, and the strip jumps to a page. Search finds text when the PDF has a text layer and says <em>This PDF has no text to search</em> when it does not. <span class="route">/[server]/[space]/e/[id]/view</span></div>
+  </div>
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Files</span></span></div><div class="title">File<span class="sub">Atelier · tm8.sh</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content"><div class="kn-file"><span class="big"><svg class="ic"><use href="#kn-archive"/></svg><span class="ext">TGZ</span></span><span class="nm">facade-audit.tar.gz</span><span class="sz">9.4 MB · application/gzip · swarm01 · Sat</span></div>
+<div class="refusal" style="margin-top:0"><div class="h">No viewer on this phone for this type</div><p>The node declared it as <code>application/gzip</code>. Share it to an app that opens archives, or open it on the web.</p></div>
+<div class="ent-actions"><span class="btn outline"><svg class="ic"><use href="#i-share"/></svg>Open in…</span><span class="btn outline"><svg class="ic"><use href="#i-globe"/></svg>Open on web</span></div>
+<div class="section-h">Linked</div>
+<div class="chips" style="padding-top:0"><span class="chip"><svg class="ic"><use href="#i-session"/></svg>Facade audit</span><span class="chip"><svg class="ic"><use href="#i-doc"/></svg>Facade audit: dead endpoints</span></div>
+<div class="section-h">Messages <span class="more">View all</span></div>
+<div class="list"><div class="row"><span class="kind-ic"><svg class="ic"><use href="#i-message"/></svg></span><span class="main"><span class="t">Contents: 41 route traces, one per endpoint</span><span class="s">Worker · Sat 18:02</span></span></div></div></main>
+        
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>A file with no viewer</b>Says what it is, using the node's own MIME type, and offers the two honest ways out. Messages and Linked are still at the bottom, as on every entity page. <span class="route">/[server]/[space]/e/[id]</span></div>
+  </div>
+</div>
+
+<h3>Drawings</h3>
+<p>A drawing opens to view, fitted to the screen. Pencil or finger draws only after you tap Edit, so panning a sketch never adds a stroke. Saving is version-checked like a doc.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="kn-done">Done</span></div><div class="title"><span class="kn-saved">Saved v7</span><span class="sub">Tab bar sketch</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#kn-undo"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#kn-redo"/></svg></span></div></header>
+        <main class="content"><div class="kn-canvas">
+  <span class="sk" style="left:40px;top:60px;width:300px;height:520px"></span>
+  <span class="ln" style="left:40px;top:500px;width:300px"></span>
+  <span class="tx" style="left:62px;top:530px">Chats</span><span class="tx br" style="left:132px;top:530px">Work</span><span class="tx" style="left:198px;top:530px">Inbox</span><span class="tx" style="left:262px;top:530px">Browse</span>
+  <span class="rg" style="left:120px;top:518px;width:66px;height:42px"></span>
+  <span class="hl" style="left:192px;top:530px;width:56px"></span>
+  <span class="tx" style="left:70px;top:110px">space button ↖</span>
+  <span class="tx br" style="left:180px;top:420px">badge = unread, not total</span>
+  <span class="sel" style="left:174px;top:412px;width:190px;height:34px"></span>
+  <span class="kn-hint" style="top:14px"><svg class="ic"><use href="#kn-pencil"/></svg>Pencil draws · finger pans</span>
+  <div class="kn-pencil"><span class="tl on"><svg class="ic"><use href="#kn-pencil"/></svg></span><span class="tl"><svg class="ic"><use href="#kn-high"/></svg></span><span class="tl"><svg class="ic"><use href="#kn-erase"/></svg></span><span class="tl"><svg class="ic"><use href="#kn-shapes"/></svg></span><span class="tl"><svg class="ic"><use href="#i-edit"/></svg></span><span class="sep"></span><span class="sw on" style="background:var(--ink)"></span><span class="sw" style="background:var(--brand)"></span><span class="sw" style="background:var(--info)"></span></div>
+</div></main>
+        
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Drawing in edit mode (iOS, Pencil)</b>With an Apple Pencil connected, Pencil draws and a finger pans, so no mode switch is needed. Without one, the hint reads <em>One finger draws · two fingers pan</em>. The tool rail holds pen, highlighter, eraser, shapes and text. A selection is drawn dashed with handles. Each stroke autosaves after 2 s of stillness, as a version-checked write. <span class="route">/[server]/[space]/e/[id]/edit</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Browse</span></span></div><div class="title">Drawings</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span></div></header>
+        <main class="content"><div class="empty" style="padding-top:120px"><svg class="ic"><use href="#i-drawing"/></svg><div class="h">No drawings in Playground yet</div><p>Sketch a flow or mark up a screenshot. Drawings attach to tasks and docs like any entity.</p><span class="btn brand"><svg class="ic" style="width:18px;height:18px;margin:0;color:inherit;stroke-width:2"><use href="#i-plus"/></svg>New drawing</span></div></main>
+        <span class="fab"><svg class="ic"><use href="#i-plus"/></svg></span>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Empty state (Android, dark)</b>An empty list says what the kind is for and offers the verb. The FAB is Material's primary create. The count is absent, not "0", until the node has answered. <span class="route">/[server]/[space]/k/drawings</span></div>
+  </div>
+</div>
+
+<h3>Graphs</h3>
+<p>A graph entity (for example <b>Session graph: mobile app</b>) is drawn on a canvas you can pan and pinch, with a <b>List</b> segment as the accessible equivalent: the same nodes, grouped by kind, with edges in words. Tapping a node selects it and shows its edges. A second tap opens the entity.</p>
+<div class="screen-strip">
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Graphs</span></span></div><div class="title">Session graph: mobile app</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-filter"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content"><div class="kn-gc">
+  <svg class="edges" viewBox="0 0 360 640" preserveAspectRatio="none"><path class="on" d="M180 120 C 180 170, 90 170, 90 220"/><path class="on" d="M180 120 C 180 170, 270 170, 270 220"/><path d="M90 260 C 90 320, 120 320, 120 370"/><path d="M270 260 C 270 320, 250 320, 250 370"/><path d="M120 410 C 120 460, 180 460, 180 500"/><path d="M250 410 C 250 460, 180 460, 180 500"/></svg>
+  <div class="kn-gbar"><span class="segmented"><span class="seg on">Canvas</span><span class="seg">List</span></span><span class="chip"><svg class="ic"><use href="#i-session"/></svg>2 live</span></div>
+  <div class="gn root sel" style="left:104px;top:96px"><span class="gi"><svg class="ic"><use href="#i-session"/></svg></span><span class="gb"><span class="gt">TM8 Mobile app</span><span class="gk">session · live</span></span></div>
+  <div class="gn" style="left:20px;top:220px"><span class="gi"><svg class="ic"><use href="#i-session"/></svg></span><span class="gb"><span class="gt">Lane 06 knowledge</span><span class="gk">session · live</span></span></div>
+  <div class="gn" style="left:200px;top:220px"><span class="gi"><svg class="ic"><use href="#i-session"/></svg></span><span class="gb"><span class="gt">Lane 05 work</span><span class="gk">session · exited</span></span></div>
+  <div class="gn" style="left:10px;top:370px"><span class="gi"><svg class="ic"><use href="#i-doc"/></svg></span><span class="gb"><span class="gt">The Back Contract</span><span class="gk">doc</span></span></div>
+  <div class="gn hub" style="left:190px;top:370px"><span class="gi"><svg class="ic"><use href="#i-task"/></svg></span><span class="gb"><span class="gt">TM8 Mobile app</span><span class="gk">task</span></span><span class="deg">14</span></div>
+  <div class="gn fold" style="left:124px;top:500px"><span class="gi"><svg class="ic"><use href="#i-plus"/></svg></span><span class="gb"><span class="gt">6 more commits</span><span class="gk">tap to expand</span></span></div>
+  <span class="el on" style="left:96px;top:166px">spawned</span><span class="el on" style="left:226px;top:166px">spawned</span><span class="el" style="left:58px;top:320px">produces</span><span class="el" style="left:250px;top:320px">works_on</span>
+  <div class="kn-gctl" style="bottom:20px"><span class="iconbtn"><svg class="ic"><use href="#i-plus"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-minus"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#kn-fit"/></svg></span></div>
+</div></main>
+        
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Graph canvas, root selected (Android)</b>The root is green, the selection is gold and its edges are highlighted with their names. A hub shows its degree in amber (14 edges). More than five siblings of one kind fold into a dashed <em>6 more</em> node, so a phone screen never draws a hairball. The controls are Zoom in, Zoom out and Fit. <span class="route">/[server]/[space]/e/[id]?view=canvas</span></div>
+  </div>
+</div>
+
+<h3>Artifacts</h3>
+<p>An artifact is a published web page with revisions. On the phone it renders live in a sandboxed web view with no access to the tm8 session, the same isolation the web gives it, and the full-screen button lets the phone rotate to landscape.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Artifacts</span></span></div><div class="title">Artifact<span class="sub">Atelier · tm8.sh</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content"><div class="ent-head"><span class="eyebrow"><svg class="ic"><use href="#i-artifact"/></svg>Artifact · r5 · 01a17f02</span><div class="title">TM8 Dark Tech marketing preview</div><div class="meta"><span class="avatar xs agent c3"><svg class="ic"><use href="#i-bot"/></svg></span>Worker<span class="dot"></span>published Mon 16:12</div></div>
+<div class="kn-revbar"><span class="kn-rev"><svg class="ic"><use href="#i-clock"/></svg>r5 · latest<svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="pill done">published</span></div>
+<div class="kn-frame"><div class="nav"><b>TM8</b><span>Product</span><span>Docs</span><span>Pricing</span></div><div class="hero"><div class="k">AGENTS · TEAMMATES</div><div class="h">Your team, with agents in it.</div><div class="p">Tasks, sessions and docs in one graph, with every agent's work visible and versioned.</div><span class="cta">Start a space</span></div><div class="term">$ tm8 task list --mine<br>working  TM8 Mobile app<br>review   Readiness per used provider</div><span class="kn-fs" style="top:auto;bottom:8px"><svg class="ic"><use href="#i-expand"/></svg></span></div>
+<div class="kn-note" style="padding-top:10px">Runs sandboxed: no cookies, no tm8 session, and network access only as the artifact declared it.</div>
+<div class="section-h">Linked</div>
+<div class="chips" style="padding-top:0"><span class="chip"><svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app</span><span class="chip"><svg class="ic"><use href="#i-style"/></svg>Neutral</span></div></main>
+        
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Artifact page (iOS, dark)</b>The page renders live in a sandboxed web view, inline, with a full-screen button. The revision picker lists r1–r5 with who published each. Opening an older one says <em>Viewing r3 · not the latest</em> in the bar. <span class="route">/[server]/[space]/e/[id]?rev=5</span></div>
+  </div>
+</div>
+
+<h3>Memories, skills and spells: what teammates carry</h3>
+<p>These three kinds are short text that changes how agents behave, so each page puts the text first and then says who it applies to. A memory is one claim. A skill is a folder an agent can load. A spell is a reusable prompt with variables.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Memories</span></span></div><div class="title">Memory<span class="sub">Atelier · tm8.sh</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-edit"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content"><div class="ent-head"><span class="eyebrow"><svg class="ic"><use href="#i-memory"/></svg>Memory · v2 · 01a16e55</span><div class="title">Prefer bun over npm in this repo</div><div class="meta"><span class="avatar xs c1">S</span>Subhang<span class="dot"></span>updated Oct 21</div></div>
+<div class="kn-claim">Use <code>bun install</code> and <code>bun run</code> in tm8. The lockfile is <code>bun.lock</code>, and an npm install rewrites it and breaks CI.</div>
+<div class="kn-fg"><div><span>Applies to</span><b>Project tm8</b></div><div><span>Space</span><b>Atelier</b></div><div><span>Written by</span><b>Subhang</b></div><div><span>Version</span><b>v2 · Oct 21</b></div></div>
+<div class="section-h">Linked</div>
+<div class="chips" style="padding-top:0"><span class="chip"><svg class="ic"><use href="#i-project"/></svg>tm8</span><span class="chip"><svg class="ic"><use href="#i-session"/></svg>Security lane A</span></div>
+<div class="section-h">Messages <span class="more">View all</span></div>
+<div class="list"><div class="row"><span class="kind-ic"><svg class="ic"><use href="#i-message"/></svg></span><span class="main"><span class="t">v2: added the lockfile reason</span><span class="s">Subhang · Oct 21</span></span></div></div></main>
+        
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Memory page</b>The claim reads as a quote, because it is what agents read verbatim. Who it applies to is stated, not implied. How often agents loaded it is not shown: the node does not count that, and a number here would be invented. <span class="route">/[server]/[space]/e/[id]</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Skills</span></span></div><div class="title">code-review</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share-android"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content"><div class="ent-head"><span class="eyebrow"><svg class="ic"><use href="#i-skill"/></svg>Skill · v4 · 01a15d20</span><div class="title">code-review</div><div class="meta"><span class="avatar xs agent c4"><svg class="ic"><use href="#i-bot"/></svg></span>Reviewer<span class="dot"></span>updated Fri</div></div>
+<div class="kn-persona">Review the current diff for correctness bugs first, then reuse and simplification. Report each finding with a failure scenario, most severe first. <span class="more">Read SKILL.md</span></div>
+<div class="section-h">Files · 3</div>
+<div class="list lines"><div class="row"><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">SKILL.md</span><span class="s">markdown · 4 KB</span></span></div><div class="row"><span class="kind-ic"><svg class="ic"><use href="#kn-code"/></svg></span><span class="main"><span class="t">checklist.md</span><span class="s">markdown · 2 KB</span></span></div><div class="row"><span class="kind-ic"><svg class="ic"><use href="#kn-code"/></svg></span><span class="main"><span class="t">severity.json</span><span class="s">json · 1 KB</span></span></div></div>
+<div class="section-h">Insert in a chat</div>
+<div class="kn-path"><code>[/code-review](tm8://skill/01a15d20…)</code><span class="btn xs outline"><svg class="ic"><use href="#i-copy"/></svg>Copy</span></div>
+<div class="kn-note">Typing <b>/</b> in any composer or doc offers this skill and inserts that link. The agent reads it and decides; nothing runs on insert.</div></main>
+        
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Skill page (Android, dark)</b>The description first, then the skill's files (each opens in the code viewer), then the exact reference a composer inserts. This is the node's one reserved in-body reference, <code>tm8://skill/&lt;id&gt;</code>. <span class="route">/[server]/[space]/e/[id]</span></div>
+  </div>
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Spells</span></span></div><div class="title">Spell<span class="sub">Atelier · tm8.sh</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-edit"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content"><div class="ent-head"><span class="eyebrow"><svg class="ic"><use href="#i-spell"/></svg>Spell · v3 · 01a171aa</span><div class="title">Daily standup summary</div><div class="meta"><span class="avatar xs c2">P</span>Priya<span class="dot"></span>updated Tue</div></div>
+<div class="kn-prompt">Summarise what moved in <span class="var">{{space}}</span> since <span class="var">{{since}}</span>: tasks that changed status, PRs merged or waiting on review, and anything blocked with who it waits on. One line per item, blocked first.</div>
+<div class="section-h">Variables · 2</div>
+<div class="list inset"><div class="row"><span class="kind-ic"><svg class="ic"><use href="#i-space"/></svg></span><span class="main"><span class="t">{{space}}</span><span class="s">defaults to the current space</span></span></div><div class="row"><span class="kind-ic"><svg class="ic"><use href="#i-clock"/></svg></span><span class="main"><span class="t">{{since}}</span><span class="s">defaults to yesterday 09:00</span></span></div></div>
+<div class="ent-actions" style="padding-top:var(--s4)"><span class="btn outline"><svg class="ic"><use href="#i-copy"/></svg>Copy prompt</span><span class="btn brand disabled"><svg class="ic"><use href="#i-sparkle"/></svg>Cast</span></div>
+<div class="kn-note"><b>Cast is proposed, not available.</b> Casting needs a facade verb that starts a chat from a spell with its variables filled in (facade widening; see Open questions). Until then, Copy prompt and paste it into a chat.</div></main>
+        
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Spell page, Cast disabled with reason</b>The prompt shows its variables in gold, and each variable lists its default. Cast is drawn disabled and the caption under it says why. The phone does not pretend to run a spell the node cannot run from here. <span class="route">/[server]/[space]/e/[id]</span></div>
+  </div>
+</div>
+
+<h3>People: members and teammates</h3>
+<p>Avatar shape is provenance: a member (human) is round, a teammate (agent) is a rounded square. A teammate's profile states what it is (model, profile, credential), what it is doing now, and the persona it runs with. Every number comes from the node, or the profile says nobody counted it.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Teammates</span></span></div><div class="title">Teammate<span class="sub">Atelier · tm8.sh</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content"><div class="kn-prof"><span class="avatar xl agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="nm">Worker</span><span class="pl"><span class="pill live">live</span><span class="chip">Opus 5.5</span></span><span class="cp2">Teammate · core-default · runs on tm8.sh</span></div>
+<div class="kn-stats"><div class="st"><b>2</b><span>live sessions</span></div><div class="st"><b>1</b><span>task working</span></div><div class="st"><b>—</b><span>cost this week</span></div></div>
+<div class="kn-note">Cost: nobody could count this yet. The node returns no cost for these sessions, and that is not $0.</div>
+<div class="section-h">Now</div>
+<div class="list lines"><div class="row"><span class="kind-ic"><svg class="ic"><use href="#i-session"/></svg></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s">session · live · 42 min</span></span><span class="trail"><span class="pill live">live</span></span></div><div class="row"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s">task · medium</span></span><span class="trail"><span class="pill working">working</span></span></div></div>
+<div class="section-h">Persona</div>
+<div class="kn-persona">Does the assigned task itself, reports milestones on the task, and keeps its status true. <span class="more">Show all</span></div>
+<div class="ent-actions" style="padding-top:var(--s3)"><span class="btn brand"><svg class="ic"><use href="#i-chat"/></svg>New chat</span><span class="btn outline"><svg class="ic"><use href="#i-play"/></svg>Launch on…</span></div></main>
+        
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Teammate profile</b>"Now" shows the live sessions and the claimed tasks, which are the node's own lists. The cost tile shows a dash and says why in words, because an absent count is not zero. New chat opens 03 chat's composer with this teammate picked, and Launch opens 04 sessions' launch sheet. <span class="route">/[server]/[space]/e/[id]</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Browse</span></span></div><div class="title">People</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span></div></header>
+        <main class="content"><div class="segmented"><span class="seg on">Everyone</span><span class="seg">Members</span><span class="seg">Teammates</span></div>
+<div class="section-h">Members · 4</div>
+<div class="list lines">
+<div class="row"><span class="avatar c1">S</span><span class="main"><span class="t">Subhang</span><span class="s">owner · you</span></span></div>
+<div class="row"><span class="avatar c2">P</span><span class="main"><span class="t">Priya</span><span class="s">member</span></span></div>
+<div class="row"><span class="avatar c5">M</span><span class="main"><span class="t">Marco</span><span class="s">member · 1 blocked task waits on Marco</span></span></div>
+<div class="row"><span class="avatar c6">L</span><span class="main"><span class="t">Lena</span><span class="s">member</span></span></div>
+</div>
+<div class="section-h">Teammates · 9</div>
+<div class="list lines">
+<div class="row"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Worker</span><span class="s">Opus 5.5 · 2 live sessions</span></span><span class="trail"><span class="pill live">live</span></span></div>
+<div class="row"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Coordinator</span><span class="s">Fable 5.1 · 2 live sessions</span></span><span class="trail"><span class="pill live">live</span></span></div>
+<div class="row"><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Reviewer</span><span class="s">waiting: asked a form</span></span><span class="trail"><span class="pill waiting">waiting</span></span></div>
+<div class="row"><span class="avatar agent c2"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">TM8 Helper</span><span class="s">idle</span></span><span class="trail"><span class="pill idle">idle</span></span></div>
+</div></main>
+        
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>People (Android, dark)</b>Members are round and teammates are rounded squares, with the live dot only on agents that have a live session. Each subtitle says something true and current, not a job title. The list scrolls on to the other five teammates. <span class="route">/[server]/[space]/k/members</span></div>
+  </div>
+</div>
+
+<h3>States</h3>
+<div class="screen-strip">
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Browse</span></span></div><div class="title">Docs</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span></div></header>
+        <main class="content"><div class="list"><div class="row"><span class="kind-ic skeleton"></span><span class="main" style="gap:8px"><span class="sk-line skeleton w80"></span><span class="sk-line skeleton w40" style="height:9px"></span></span></div><div class="row"><span class="kind-ic skeleton"></span><span class="main" style="gap:8px"><span class="sk-line skeleton w60"></span><span class="sk-line skeleton w40" style="height:9px"></span></span></div><div class="row"><span class="kind-ic skeleton"></span><span class="main" style="gap:8px"><span class="sk-line skeleton w80"></span><span class="sk-line skeleton w40" style="height:9px"></span></span></div><div class="row"><span class="kind-ic skeleton"></span><span class="main" style="gap:8px"><span class="sk-line skeleton w40"></span><span class="sk-line skeleton w40" style="height:9px"></span></span></div><div class="row"><span class="kind-ic skeleton"></span><span class="main" style="gap:8px"><span class="sk-line skeleton w60"></span><span class="sk-line skeleton w40" style="height:9px"></span></span></div><div class="row"><span class="kind-ic skeleton"></span><span class="main" style="gap:8px"><span class="sk-line skeleton w80"></span><span class="sk-line skeleton w40" style="height:9px"></span></span></div></div></main>
+        <span class="fab"><svg class="ic"><use href="#i-plus"/></svg></span>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Docs loading (Android)</b>Skeleton rows keep the tree's shape while the first page loads. After 10 s without an answer they give way to <em>This server could not be reached</em> with Check again. The skeleton never pretends to be data. <span class="route">/[server]/[space]/k/docs</span></div>
+  </div>
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Docs</span></span></div><div class="title">Doc<span class="sub">Atelier · tm8.sh</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content"><div class="banner"><svg class="ic"><use href="#i-wifi-off"/></svg>Offline · showing v12 saved on this phone at 11:24<span class="act">Check again</span></div>
+<div class="ent-head"><span class="eyebrow"><svg class="ic"><use href="#i-doc"/></svg>Doc · v12 · 01a17c3e</span><div class="title">The Back Contract</div><div class="meta"><span class="avatar xs c1">S</span>Subhang<span class="dot"></span>updated 11:20</div></div>
+<div class="prose kn-doc"><p>Back is the control people use most and trust least. This contract says what it does on every screen of tm8, so nobody has to guess.</p><h2>1. Each tab keeps its own stack</h2><p>Opening an entity pushes it onto the current tab. Chats, Work, Inbox and Browse never share a stack, and switching tabs pops nothing.</p></div>
+<div class="refusal"><div class="h">Messages need a connection</div><p>The 4 messages here were not saved for offline reading. They load when the server is reachable again.</p></div></main>
+        <nav class="kn-tb"><span class="tb"><svg class="ic"><use href="#kn-list"/></svg>Outline</span><span class="tb" style="color:var(--ink-4)"><svg class="ic"><use href="#i-message"/></svg>Messages</span><span class="tb" style="color:var(--ink-4)"><svg class="ic"><use href="#i-edit"/></svg>Edit · offline</span></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Doc offline (iOS)</b>A doc you have opened before stays readable from the phone's cache, and the banner names the version and when it was saved. Edit is disabled and says why. Offline drafts are not offered: a draft saved against a version that may have moved on would only lead to a conflict later. <span class="route">/[server]/[space]/e/[id]</span></div>
+  </div>
+</div>
+
+<h3>Routes</h3>
+<table class="route-table">
+  <thead><tr><th style="width:42%">Route</th><th>Screen</th><th>Params · notes</th></tr></thead>
+  <tbody>
+    <tr><td>/[server]/[space]/e/[id]</td><td>Doc reader · file · drawing (view) · graph · artifact · memory · skill · spell · member · teammate</td><td>The registry picks the body by kind. <code>?rev=</code> (artifact), <code>?view=canvas|list</code> (graph), <code>?h=</code> heading anchor (doc)</td></tr>
+    <tr><td>/[server]/[space]/e/[id]/edit</td><td>Doc editor · drawing editor</td><td><b>Proposed route.</b> <code>?conflict=&lt;version&gt;</code> opens the merge view. A cold link to <code>/edit</code> opens as <code>[list, reader]</code> and does not enter edit mode by itself.</td></tr>
+    <tr><td>/[server]/[space]/e/[id]/view</td><td>Full-screen file viewer (image · PDF · text · media)</td><td><b>Proposed route</b>, presented modally. Swipe down or Back returns to the page under it.</td></tr>
+    <tr><td>/[server]/[space]/e/[id]/messages</td><td>Messages on any of these kinds</td><td>Owned by 03 chat; linked from the reader bar and the end of every page.</td></tr>
+    <tr><td>/[server]/[space]/k/docs · files · drawings · graphs · artifacts · memories · skills · spells · members</td><td>Kind lists</td><td>Owned by 05 work's kind list; docs default to <code>layout=tree</code>, files to <code>layout=grid</code>.</td></tr>
+    <tr><td>https://&lt;host&gt;/#/s/&lt;space&gt;/e/&lt;id&gt; inside a doc body</td><td>Drawn as an entity chip</td><td>Parsed by the app, so the stored markdown is unchanged and still a plain link on the web.</td></tr>
+  </tbody>
+</table>
+
+<h3>Components</h3>
+<table class="spec">
+  <thead><tr><th style="width:20%">Component</th><th style="width:18%">Size</th><th>Behaviour</th><th style="width:24%">Platform</th></tr></thead>
+  <tbody>
+    <tr><td class="code">ReaderBar</td><td>49pt + home inset</td><td>Outline · Messages (node count, or none) · Edit. Hides while scrolling down and returns on scroll up or at the end.</td><td>Android: Outline in the top bar, Messages in ⋯, an Edit FAB</td></tr>
+    <tr><td class="code">ReadingProgress</td><td>2pt hairline</td><td>Fraction of the body scrolled. The resume point is stored per doc id and version.</td><td>same</td></tr>
+    <tr><td class="code">OutlineSheet</td><td>medium / large detent</td><td>Headings H1–H3 numbered, the current heading tinted. Tap scrolls and closes.</td><td>Android: bottom sheet, 28dp corners</td></tr>
+    <tr><td class="code">SourceEditor</td><td>body 17pt / 26pt line</td><td>Markdown source with marks dimmed to ink-4. Undo stack per session. Draft kept on the phone per id and version.</td><td>same; Android IME actions</td></tr>
+    <tr><td class="code">FormatBar</td><td>44pt / 48dp</td><td>B · I · H · list · code · @ · link · attach · hide keyboard. Wraps the selection, or inserts at the caret.</td><td>iOS inputAccessoryView; Android pill buttons</td></tr>
+    <tr><td class="code">RefPicker</td><td>2–4 rows + footer</td><td>Search-as-you-type from <b>@</b>. The footer shows the exact markdown it will insert.</td><td>same</td></tr>
+    <tr><td class="code">ConflictView</td><td>full screen</td><td>Opens when the node refuses a save on version. Shows each change with whose it is. Keep both saves yours as a sub-doc.</td><td>same</td></tr>
+    <tr><td class="code">FileTile</td><td>3 columns, 92pt thumb</td><td>Node thumbnail for images. Otherwise the declared extension, never a guessed preview.</td><td>same</td></tr>
+    <tr><td class="code">MediaViewer</td><td>full screen, black</td><td>Pinch / double-tap zoom, swipe down to dismiss, tap to hide chrome. Chosen by the declared MIME type.</td><td>iOS QuickLook-like; Android shared-element return</td></tr>
+    <tr><td class="code">PencilCanvas</td><td>full bleed</td><td>View by default; Edit enables strokes. Pencil draws and finger pans. Autosave after 2 s idle, version-checked.</td><td>Android: stylus via MotionEvent tool type; no Pencil hint</td></tr>
+    <tr><td class="code">GraphCanvas</td><td>full bleed + List</td><td>Pan, pinch, select, then a second tap opens. More than 5 same-kind siblings fold. List is the screen-reader path.</td><td>same</td></tr>
+    <tr><td class="code">ArtifactFrame</td><td>300pt inline / full</td><td>Sandboxed web view with no cookies or session. Revision picker.</td><td>WKWebView / Android WebView, JS bridge off</td></tr>
+    <tr><td class="code">ProfileStats</td><td>3 tiles</td><td>Node counts only. An absent value is a dash plus a sentence saying why.</td><td>same</td></tr>
+  </tbody>
+</table>
+
+<h3>Gestures &amp; interactions</h3>
+<table class="spec">
+  <thead><tr><th style="width:26%">Gesture</th><th>Where · result</th><th style="width:28%">Haptic (iOS · Android)</th></tr></thead>
+  <tbody>
+    <tr><td>Tap chip in prose</td><td>Reader: push the entity. Back returns to the same paragraph.</td><td>selection · CLOCK_TICK</td></tr>
+    <tr><td>Long-press chip</td><td>Preview sheet: kind, title, status, Open.</td><td>impactMedium · LONG_PRESS</td></tr>
+    <tr><td>Long-press code block</td><td>Copy the block; toast "Copied".</td><td>notificationSuccess · CONFIRM</td></tr>
+    <tr><td>Tap heading in outline</td><td>Scroll to it and close the sheet.</td><td>selection · CLOCK_TICK</td></tr>
+    <tr><td>Scroll down / up</td><td>Hide / show the reader bar.</td><td>none</td></tr>
+    <tr><td>Pull to refresh</td><td>Every list here; the reader re-fetches and keeps your position.</td><td>impactLight at threshold · none</td></tr>
+    <tr><td>Save (editor)</td><td>Saved: the title shows <em>Saved v13</em>. Refused: the conflict view opens.</td><td>notificationSuccess / notificationWarning · CONFIRM / REJECT</td></tr>
+    <tr><td>Cancel with unsaved edits</td><td>Confirm: Discard · Keep editing (the draft also stays on the phone).</td><td>notificationWarning · REJECT</td></tr>
+    <tr><td>Pinch / double-tap</td><td>Image, PDF, drawing, graph: zoom.</td><td>impactLight at min/max zoom · none</td></tr>
+    <tr><td>Swipe down</td><td>Full-screen viewer: dismiss to the page under it.</td><td>none</td></tr>
+    <tr><td>Pencil / one finger (edit mode)</td><td>Drawing: stroke. Two fingers pan.</td><td>none (strokes never buzz)</td></tr>
+    <tr><td>Tap node, tap again</td><td>Graph: select (edges highlight), then open.</td><td>selection · CLOCK_TICK</td></tr>
+    <tr><td>Tap chevron in a tree</td><td>Docs list: expand/collapse. The state is remembered per list.</td><td>selection · CLOCK_TICK</td></tr>
+    <tr><td>Android back</td><td>Closes the sheet or picker first, then leaves edit mode (with the confirm), then pops.</td><td>predictive back animation</td></tr>
+  </tbody>
+</table>
+
+<div class="callout open"><b>Open questions for the owner</b>
+<ol>
+  <li><b>Cast a spell from the phone</b> needs a facade verb ("start a chat from a spell with these variable values"). It is drawn disabled until one exists. Should the node add it, or should Cast stay web-only?</li>
+  <li><b>A general entity reference scheme.</b> Today only <code>tm8://skill/&lt;id&gt;</code> is reserved. The editor inserts web-address links, which the app draws as chips. A <code>tm8://e/&lt;id&gt;</code> scheme would survive a host rename. Worth a facade widening?</li>
+  <li><b>Doc byline.</b> The contract has no "last editor" field, so the reader names only the creator. Should the node expose the author of the latest version?</li>
+  <li><b>Offline drafts.</b> This design allows none (Edit needs a connection). Keep that, or allow drafts that open the conflict view on reconnect?</li>
+  <li><b>New routes</b> <code>/e/[id]/edit</code> and <code>/e/[id]/view</code> are proposed here for the overview's route tree.</li>
+</ol></div>
+</section>
