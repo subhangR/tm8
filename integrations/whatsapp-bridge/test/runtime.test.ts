@@ -2,7 +2,8 @@
 // list, sealed keys and the protocol frames. Baileys is replaced by a fake socket; nothing here touches WhatsApp.
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
-import { EventEmitter } from 'node:events'
+import { EventEmitter, once } from 'node:events'
+import { Readable } from 'node:stream'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -11,7 +12,7 @@ import type { UserFacingSocketConfig, WAMessage } from '@whiskeysockets/baileys'
 import { Allowlist, OutboundRefused, bareJid } from '../src/runtime/allowlist.js'
 import { GroupCreationRefused, RuntimeConnection, baileysLogLevel, mediaHandle, type WaSocketLike } from '../src/runtime/connection.js'
 import type { RuntimeFrames, RuntimeRoute, ServerFrame } from '../src/runtime/protocol.js'
-import { Runtime, failure } from '../src/runtime/runtime.js'
+import { Runtime, failure, type ServerLink } from '../src/runtime/runtime.js'
 import { seal, unseal, useSealedAuthState } from '../src/runtime/sealed-auth.js'
 
 const G1 = '120363000000000001@g.us' // connected
@@ -91,11 +92,12 @@ class FakeSocket {
 
 const tick = () => new Promise((r) => setImmediate(r))
 
-async function connection(ids: string[] = [G1]) {
+async function connection(ids: string[] = [G1], openMedia?: ServerLink['openMedia']) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-rt-'))
   const sock = new FakeSocket()
   const emitted: Sent[] = []
   const conn = new RuntimeConnection(CONN, {
+    openMedia,
     authDir: dir,
     stateKey: KEY,
     authFlow: { kind: 'qr' },
@@ -515,7 +517,7 @@ describe('sealed keys', () => {
 })
 
 describe('runtime', () => {
-  function runtime(reply: unknown) {
+  function runtime(reply: unknown, override: Partial<ServerLink> = {}) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-rtm-'))
     const posts: Sent[] = []
     const socks: FakeSocket[] = []
@@ -524,7 +526,7 @@ describe('runtime', () => {
       runtimeId: 'wa-test',
       dataDir: dir,
       log: () => {},
-      link: { post: async <R extends RuntimeRoute>(route: R, frame: RuntimeFrames[R]) => (posts.push({ route, frame }), route === 'hello' ? reply : null) },
+      link: { post: async <R extends RuntimeRoute>(route: R, frame: RuntimeFrames[R]) => (posts.push({ route, frame }), route === 'hello' ? reply : null), ...override },
       socketFactory: (c) => {
         // The allowlist is in place before the socket exists: nothing can be read before it is known.
         allowAtStart.push(c.shouldIgnoreJid!(G1) === false)
@@ -570,6 +572,52 @@ describe('runtime', () => {
     assert.deepEqual(sent[0], { outboxId: 'ob1', connectionId: CONN, failed: { reason: 'not_connected', retryable: false } })
     assert.equal(sent[1].externalMessageId, 'OUT1')
     assert.deepEqual(socks[0]!.touched(G2), [])
+  })
+
+  test('a lost success acknowledgement replays the receipt without sending again', async () => {
+    let failAck = true
+    const receipts: unknown[] = []
+    const { rt, socks } = runtime({}, { post: async (route, frame) => {
+      if (route === 'sent') {
+        receipts.push(frame)
+        if (failAck) { failAck = false; throw new Error('ack link lost') }
+      }
+      return null
+    } })
+    await rt.onFrame({ type: 'connect', connectionId: CONN, stateKey: k, authFlow: { kind: 'qr' }, allowlist: { type: 'allowlist', connectionId: CONN, version: 1, conversationIds: [G1] } })
+    socks[0]!.open()
+    await tick()
+    const frame = { type: 'send' as const, outboxId: 'ack-retry', connectionId: CONN, conversationId: G1, text: 'once' }
+    await assert.rejects(rt.onFrame(frame), /ack link lost/)
+    await rt.onFrame(frame)
+    assert.equal(socks[0]!.calls.filter((c) => c.fn === 'sendMessage').length, 1)
+    assert.deepEqual(receipts[0], receipts[1])
+    assert.ok(!(receipts[0] as any).failed)
+    await rt.stop()
+  })
+
+  test('renews the outbox lease while a provider upload is active', async (t) => {
+    t.mock.timers.enable({ apis: ['setInterval'] })
+    const { rt, socks, posts } = runtime({})
+    await rt.onFrame({ type: 'connect', connectionId: CONN, stateKey: k, authFlow: { kind: 'qr' }, allowlist: { type: 'allowlist', connectionId: CONN, version: 1, conversationIds: [G1] } })
+    socks[0]!.open()
+    await tick()
+    let release!: () => void
+    socks[0]!.sendMessage = async () => { await new Promise<void>((r) => { release = r }); return { key: { id: 'LARGE' }, message: {} } as any }
+    const frame = { type: 'send' as const, outboxId: 'large', connectionId: CONN, conversationId: G1, text: 'upload' }
+    const pending = rt.onFrame(frame)
+    const replay = rt.onFrame(frame)
+    t.mock.timers.tick(90_000)
+    await tick()
+    assert.ok(posts.some((p) => p.route === 'outbound-progress' && p.frame.outboxId === 'large'))
+    release()
+    await Promise.all([pending, replay])
+    assert.equal(posts.filter((p) => p.route === 'sent').length, 1)
+    const count = posts.length
+    t.mock.timers.tick(90_000)
+    await tick()
+    assert.equal(posts.length, count)
+    await rt.stop()
   })
 
   test('an allowlist frame replaces the list; a stale one does not', async () => {
@@ -648,7 +696,115 @@ describe('runtime', () => {
   })
 })
 
+describe('streamed outbound attachments', () => {
+  test('a document beyond the former 100 MiB ceiling reaches the provider as a bounded stream', async () => {
+    const chunk = Buffer.alloc(64 * 1024, 0x61)
+    let produced = 0
+    const stream = Readable.from((async function* () { for (let i = 0; i < 2048; i++) { produced++; yield chunk } })())
+    const { conn, sock } = await connection([G1], async () => stream)
+    let total = 0
+    sock.sendMessage = async (_jid, value) => {
+      assert.equal(produced, 0)
+      const content = value as { document: { stream: Readable }; fileName: string }
+      assert.equal(content.fileName, 'large.pdf')
+      assert.equal(content.document.stream, stream)
+      for await (const part of content.document.stream) total += part.length
+      return { key: { id: 'STREAMED' }, message: {} } as any
+    }
+    const result = await conn.send({ type: 'send', outboxId: 'large', connectionId: CONN, conversationId: G1,
+      media: { kind: 'document', mime: 'application/pdf', fileName: 'large.pdf', caption: 'report', fileEntityId: 'file' } })
+    assert.equal(result.externalMessageId, 'STREAMED')
+    assert.equal(total, 128 * 1024 * 1024)
+    assert.equal(stream.destroyed, true)
+    await conn.stop()
+  })
+
+  test('image streams close on provider rejection and retain the provider error', async () => {
+    const stream = Readable.from([Buffer.from('image')])
+    const { conn, sock } = await connection([G1], async () => stream)
+    sock.sendMessage = async (_jid, value) => {
+      assert.equal((value as any).image.stream, stream)
+      throw new Error('WhatsApp rejected media: 413')
+    }
+    await assert.rejects(conn.send({ type: 'send', outboxId: 'img', connectionId: CONN, conversationId: G1,
+      media: { kind: 'image', mime: 'image/png', fileName: 'image.png', caption: '', fileEntityId: 'file' } }), /WhatsApp rejected media: 413/)
+    assert.equal(stream.destroyed, true)
+    assert.deepEqual(failure(new Error('WhatsApp rejected media: 413')), { reason: 'WhatsApp rejected media: 413', retryable: false })
+    await conn.stop()
+  })
+})
+
 describe('server link', () => {
+  test('destroying an unread attachment stream cancels its HTTP response', async () => {
+    const http = await import('node:http')
+    const { HttpWsLink } = await import('../src/runtime/link.js')
+    let closed!: () => void
+    const responseClosed = new Promise<void>((resolve) => { closed = resolve })
+    const server = http.createServer((_req, res) => {
+      res.once('close', closed)
+      res.writeHead(200, { 'content-length': 1024 * 1024 })
+      res.write(Buffer.alloc(64 * 1024))
+    })
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+    const link = new HttpWsLink({ serverUrl: `http://127.0.0.1:${(server.address() as any).port}`, runtimeId: 'rt', token: () => 'token', log: () => {}, onOpen: async () => {}, onFrame: async () => {} })
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    try {
+      const stream = await link.openMedia({ outboxId: 'out', connectionId: CONN, fileEntityId: 'file' })
+      stream.destroy()
+      await Promise.race([responseClosed, new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error('attachment response was not cancelled')), 1000)
+      })])
+    } finally { clearTimeout(timeout); server.closeAllConnections(); server.close() }
+  })
+
+  test('an interrupted attachment HTTP body stays retryable and closes its stream', async () => {
+    const http = await import('node:http')
+    const { HttpWsLink } = await import('../src/runtime/link.js')
+    const server = http.createServer((_req, res) => {
+      res.writeHead(200, { 'content-length': 1024 * 1024 })
+      res.write(Buffer.alloc(64 * 1024))
+      setTimeout(() => res.destroy(), 10)
+    })
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+    const link = new HttpWsLink({ serverUrl: `http://127.0.0.1:${(server.address() as any).port}`, runtimeId: 'rt', token: () => 'token', log: () => {}, onOpen: async () => {}, onFrame: async () => {} })
+    try {
+      const stream = await link.openMedia({ outboxId: 'out', connectionId: CONN, fileEntityId: 'file' })
+      await assert.rejects(async () => { for await (const _part of stream) { /* consume */ } }, (error) => {
+        assert.equal(failure(error).retryable, true)
+        return true
+      })
+      assert.equal(stream.destroyed, true)
+    } finally { server.close() }
+  })
+
+  test('attachment HTTP bodies stream with the bearer and outbox scope', async () => {
+    const http = await import('node:http')
+    const { HttpWsLink } = await import('../src/runtime/link.js')
+    const chunk = Buffer.alloc(64 * 1024, 0x62)
+    let request: unknown
+    const server = http.createServer(async (req, res) => {
+      assert.equal(req.url, '/v2/bridge-runtime/outbound-media')
+      assert.equal(req.headers.authorization, 'Bearer token')
+      let body = ''
+      for await (const part of req) body += part
+      request = JSON.parse(body)
+      res.writeHead(200, { 'content-length': 128 * 1024 * 1024 })
+      for (let i = 0; i < 2048; i++) if (!res.write(chunk)) await once(res, 'drain')
+      res.end()
+    })
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+    const link = new HttpWsLink({ serverUrl: `http://127.0.0.1:${(server.address() as any).port}`, runtimeId: 'rt', token: () => 'token', log: () => {}, onOpen: async () => {}, onFrame: async () => {} })
+    try {
+      const input = { outboxId: 'out', connectionId: CONN, fileEntityId: 'file' }
+      const stream = await link.openMedia(input)
+      let total = 0, maxChunk = 0
+      for await (const part of stream) { total += part.length; maxChunk = Math.max(maxChunk, part.length) }
+      assert.equal(total, 128 * 1024 * 1024)
+      assert.ok(maxChunk < 1024 * 1024)
+      assert.deepEqual(request, input)
+    } finally { server.close() }
+  })
+
   test('frames go up as POST /v2/bridge-runtime/<route> with the bearer; 5xx is retried, 4xx is not', async () => {
     const http = await import('node:http')
     const { HttpWsLink } = await import('../src/runtime/link.js')

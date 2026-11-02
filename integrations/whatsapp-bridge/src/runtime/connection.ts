@@ -1,3 +1,4 @@
+import type { Readable } from 'node:stream'
 // One linked WhatsApp number on the runtime: its Baileys socket, its allowlist, and nothing stored but sealed keys.
 // Inbound: a stanza from a conversation off the allowlist is acked undecrypted (Baileys' shouldIgnoreJid), and anything
 // that still reaches `messages.upsert` from off the list is dropped before a single field past its JID is read.
@@ -88,6 +89,7 @@ export class RuntimeConnection {
       authFlow?: AuthFlow
       socketFactory?: SocketFactory
       logLevel?: string
+      openMedia?: (input: { outboxId: string; connectionId: string; fileEntityId: string }) => Promise<Readable>
     },
   ) {
     // Baileys logs stanza attributes, nodes and whole group lists at info and below, off-list JIDs included, before
@@ -359,18 +361,34 @@ export class RuntimeConnection {
     const kind: OutboundKind = f.poll ? 'poll' : f.media ? 'media' : 'text'
     const sock = this.guard(f.conversationId, kind)
     const quoted = f.replyTo ? { quoted: quoteOf(f.conversationId, f.replyTo) } : undefined
-    const content = f.poll
-      ? { poll: { name: withBridgeMark(f.poll.name), values: f.poll.values, selectableCount: f.poll.selectableCount } }
-      : f.media
-        ? f.media.kind === 'image'
-          ? { image: Buffer.from(f.media.data, 'base64'), mimetype: f.media.mime, caption: withBridgeMark(f.media.caption) }
-          : { document: Buffer.from(f.media.data, 'base64'), mimetype: f.media.mime, fileName: f.media.fileName, caption: withBridgeMark(f.media.caption) }
-        : { text: withBridgeMark(f.text ?? '') }
-    const sent = await sock.sendMessage(f.conversationId, content, f.poll ? undefined : quoted)
-    if (!sent?.key.id) throw new Error('send returned no message id')
-    this.remember(sent.key.id, sent.message)
-    // toJsonSafe keeps a poll's messageSecret (the vote key) as base64, so the server's copy can open votes later.
-    return { externalMessageId: sent.key.id, message: toJsonSafe(sent.message) }
+    let stream: Readable | undefined
+    try {
+      let source: Buffer | { stream: Readable } | undefined
+      if (f.media?.fileEntityId) {
+        if (!this.o.openMedia) throw new Error('runtime attachment streaming is unavailable')
+        stream = await this.o.openMedia({ outboxId: f.outboxId, connectionId: f.connectionId, fileEntityId: f.media.fileEntityId })
+        source = { stream }
+        this.guard(f.conversationId, kind) // it may have been paused during the fetch
+      } else if (f.media?.data !== undefined) {
+        source = Buffer.from(f.media.data, 'base64') // compatibility with older servers
+      } else if (f.media) {
+        throw new Error('attachment has no stream reference or bytes')
+      }
+      const content = f.poll
+        ? { poll: { name: withBridgeMark(f.poll.name), values: f.poll.values, selectableCount: f.poll.selectableCount } }
+        : f.media
+          ? f.media.kind === 'image'
+            ? { image: source!, mimetype: f.media.mime, caption: withBridgeMark(f.media.caption) }
+            : { document: source!, mimetype: f.media.mime, fileName: f.media.fileName, caption: withBridgeMark(f.media.caption) }
+          : { text: withBridgeMark(f.text ?? '') }
+      const sent = await sock.sendMessage(f.conversationId, content, f.poll ? undefined : quoted)
+      if (!sent?.key.id) throw new Error('send returned no message id')
+      this.remember(sent.key.id, sent.message)
+      // toJsonSafe keeps a poll's messageSecret (the vote key) as base64, so the server's copy can open votes later.
+      return { externalMessageId: sent.key.id, message: toJsonSafe(sent.message) }
+    } finally {
+      stream?.destroy()
+    }
   }
 
   async react(f: Extract<ServerFrame, { type: 'react' }>): Promise<{ externalMessageId: string; message: unknown }> {

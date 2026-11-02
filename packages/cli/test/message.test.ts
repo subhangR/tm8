@@ -321,6 +321,17 @@ describe('message delivery', () => {
    * "pending" without saying the message is stored invites a resend of a
    * message that was never lost.
    */
+  it.each(['pending', 'sent', 'failed_retryable', 'failed_permanent', 'refused'])('shows bridge delivery %s even without a session delivery', async (status) => {
+    reply = () => envelope({ message: { id: MESSAGE, bridge: {
+      bridgeId: ANCHOR, direction: 'out', delivery: { status, ...(status === 'refused' ? { reason: 'bridge_paused' } : status.startsWith('failed') ? { detail: 'whatsapp_unavailable' } : {}) },
+    } }, deliveries: [] });
+    const r = await dispatch(['message', 'delivery', MESSAGE]);
+    expect(r.stdout).toContain(`bridge ${ANCHOR}  ${status}`);
+    expect(r.stdout).not.toContain('no live delivery');
+    if (status.startsWith('failed')) expect(r.stdout).toContain('whatsapp_unavailable');
+    if (status === 'refused') expect(r.stdout).toContain('bridge_paused');
+  });
+
   it('never renders a pending delivery as a lost message', async () => {
     reply = () => envelope({
       message: { id: MESSAGE },

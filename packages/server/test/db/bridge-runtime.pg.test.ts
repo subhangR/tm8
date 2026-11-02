@@ -472,9 +472,18 @@ describe('the outbox (§2.3, §2.7, ac1, ac4, ac5)', () => {
     expect(ob!.payload.text).toBe('Infra Bot: Deployed at 10:40.');
     expect(ob!.payload.replyTo).toMatchObject({ fromMe: false, text: '@tm8 deploy status?', senderExternalId: RAHUL });
 
-    const frames = await worker<{ runtimeId: string; frame: Record<string, unknown> }[]>('internal.bridge_outbox_take', [['wa-test'], 10]);
-    const mine = frames.find(f => f.frame['outboxId'] === ob!.id)!;
-    expect(mine.frame).toMatchObject({ type: 'send', connectionId: connection, conversationId: GROUP, text: 'Infra Bot: Deployed at 10:40.' });
+    let mine: { runtimeId: string; frame: Record<string, unknown> } | undefined;
+    // Dispatch now waits for each connection's active row to settle. Act as
+    // the runtime for earlier reactions/notices before reaching this reply.
+    for (let n = 0; n < 50 && !mine; n++) {
+      const frames = await worker<{ runtimeId: string; frame: Record<string, unknown> }[]>('internal.bridge_outbox_take', [['wa-test'], 10]);
+      for (const f of frames) {
+        if (f.frame['outboxId'] === ob!.id) mine = f;
+        else await door('bridge_runtime_sent', JSON.stringify({ outboxId: f.frame['outboxId'], connectionId: f.frame['connectionId'], externalMessageId: `fixture-${n}` }));
+      }
+    }
+    expect(mine).toBeDefined();
+    expect(mine!.frame).toMatchObject({ type: 'send', connectionId: connection, conversationId: GROUP, text: 'Infra Bot: Deployed at 10:40.' });
     const updates = async (id: string) => (await owner<{ n: number }>(`select count(*)::int as n from public.workspace_events
       where event_type = 'message.updated' and subject_ids @> array[$1::uuid]`, [id]))[0]!.n;
     const before = await updates(answer);
@@ -518,6 +527,27 @@ describe('the outbox (§2.3, §2.7, ac1, ac4, ac5)', () => {
         [bridge, msg, JSON.stringify({ poster, teammateId: teammate, sessionId: session, directed, ...over })]);
       return rows[0].r as { status: string; reason?: string; retryAfterMs?: number };
     });
+
+  it('overlapping workers dispatch at most one row per connection', async () => {
+    await owner(`delete from public.bridge_outbox where connection_id = $1`, [connection]);
+    expect((await enqueue(infra, 'member')).status).toBe('pending');
+    expect((await enqueue(infra, 'member')).status).toBe('pending');
+    // Reactions avoid unrelated message-event locks, isolating dispatch
+    // admission itself while both transactions are open.
+    await owner(`update public.bridge_outbox set kind = 'react', reaction = '👍' where connection_id = $1`, [connection]);
+    try {
+      await db.tx(bridgesWorkerClaims(), async q => {
+        const first = await q.rpc<unknown[]>('internal.bridge_outbox_take', [['wa-test'], 1]);
+        expect(first).toHaveLength(1);
+        // Keep the first dispatch uncommitted while another worker takes the
+        // next unlocked outbox row for the same number.
+        const second = await worker<unknown[]>('internal.bridge_outbox_take', [['wa-test'], 1]);
+        expect(second).toEqual([]);
+      });
+    } finally {
+      await owner(`delete from public.bridge_outbox where connection_id = $1`, [connection]);
+    }
+  });
 
   it('the 7th un-directed post from one teammate in 10 minutes is refused rate_limited with retryAfterMs (ac5)', async () => {
     await owner(`delete from public.bridge_outbox where bridge_id = $1`, [gaming]);

@@ -39,7 +39,7 @@
  * for arbitration rather than normalised away — see `refuseMentionEdit` and the
  * `--order` note on `messageList`.
  */
-import { plainExcerpt } from '@tm8/contract';
+import { plainExcerpt, type BridgeDelivery } from '@tm8/contract';
 import { readTextSource } from '../args.js';
 import { UnsettledDeliveryError } from '../errors.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
@@ -640,7 +640,14 @@ export function renderDelivery(dto: unknown): string {
   // Storage and delivery are different facts, and the stored one is stated
   // first: a pending delivery is not a message that went missing.
   const lines = [`${idOf(message)}  stored`];
-  if (rows.length === 0) lines.push('  no live delivery was requested for this message');
+  const bridge = (message as { bridge?: { bridgeId?: string; direction?: string; delivery?: BridgeDelivery } })?.bridge;
+  if (bridge?.direction === 'out' && bridge.delivery) {
+    const detail = bridge.delivery.reason ?? bridge.delivery.detail;
+    const reason = detail ? ` (${detail})` : '';
+    lines.push(`  bridge ${bridge.bridgeId ?? ''}  ${bridge.delivery.status ?? 'unknown'}${reason}`);
+  } else if (rows.length === 0) {
+    lines.push('  no live delivery was requested for this message');
+  }
   for (const row of rows) {
     lines.push(`  ${String(row.targetWorkSessionId ?? '')}  ${String(row.status ?? 'unknown')}`.trimEnd());
   }

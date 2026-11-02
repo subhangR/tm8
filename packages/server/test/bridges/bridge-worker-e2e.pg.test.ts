@@ -80,7 +80,11 @@ function runtimeSocket(): Promise<ServerFrame[]> {
   const ws = new WebSocket(url, { headers: { authorization: `Bearer ${runtimeToken}` } } as unknown as string[]);
   sockets.push(ws);
   const frames: ServerFrame[] = [];
-  ws.onmessage = (ev) => frames.push(JSON.parse(String(ev.data)) as ServerFrame);
+  ws.onmessage = (ev) => {
+    const frame = JSON.parse(String(ev.data)) as ServerFrame;
+    frames.push(frame);
+    if (frame.type === 'react') void call('/v2/bridge-runtime/sent', runtimeToken, { outboxId: frame.outboxId, connectionId: frame.connectionId, externalMessageId: `react-${frame.outboxId}` });
+  };
   return new Promise((resolve, reject) => { ws.onopen = () => resolve(frames); ws.onerror = () => reject(new Error('socket refused')); });
 }
 
@@ -171,7 +175,7 @@ describe('a worker in the group, end to end through the real server (B1b-8 ac1, 
 
   it('directed in, signed reply out quoting the right message, a reply to the worker re-directs it, and one handle in two groups', async () => {
     const frames = await runtimeSocket();
-    expect((await call('/v2/bridge-runtime/hello', runtimeToken, { provider: 'whatsapp', version: 1, runtimeId: 'wa-e2e', capabilities: {} })).status).toBe(200);
+    expect((await call('/v2/bridge-runtime/hello', runtimeToken, { provider: 'whatsapp', version: 3, runtimeId: 'wa-e2e', capabilities: {} })).status).toBe(200);
     const { port, sent } = capturingPort();
     const deliver = createBridgeSessionDelivery({ db, delivery: port });
 

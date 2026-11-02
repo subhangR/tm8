@@ -18,6 +18,8 @@
  * connection) answers 409, so it is not retried; the refusal is counted.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { pipeline } from 'node:stream/promises';
+import type { W2BlobStore } from '../../files/w2-blob-store.js';
 
 import { CollabError } from '@tm8/contract';
 import type { AuthFrame, HeartbeatFrame, HelloFrame, HelloReply, InboundFrame, RuntimeRoute, SentFrame, StateFrame } from '@tm8/contract';
@@ -32,7 +34,7 @@ import type { BridgeRuntimeHub } from './hub.js';
 export const BRIDGE_RUNTIME_PATH_PREFIX = '/v2/bridge-runtime/';
 
 const ROUTES: readonly RuntimeRoute[] = [
-  'hello', 'state', 'auth', 'conversations', 'conversation-state', 'inbound', 'sent', 'heartbeat', 'media', 'group',
+  'hello', 'state', 'auth', 'conversations', 'conversation-state', 'inbound', 'sent', 'heartbeat', 'media', 'group', 'outbound-progress',
 ];
 
 /** B1b-5's relay (packages/server/src/bridges/connection-auth.ts), kept structural here. */
@@ -46,6 +48,7 @@ export interface BridgeRuntimeRouteOptions {
   readonly resolveIdentity: IdentityResolver;
   readonly disableAutoOwner: boolean;
   readonly hub: BridgeRuntimeHub;
+  readonly blobStore?: Pick<W2BlobStore, 'openRead'>;
   /** B1b-4's executor. Absent: nothing is a command. */
   readonly commands?: () => BridgeCommandHook | undefined;
   readonly connectionAuth?: BridgeConnectionAuthPort;
@@ -113,9 +116,9 @@ export function createBridgeRuntimeRoute(o: BridgeRuntimeRouteOptions): BridgeRu
   return async (req, res, { requestId }) => {
     const pathname = new URL(req.url ?? '/', 'http://tm8.invalid').pathname;
     if (req.method !== 'POST' || !pathname.startsWith(BRIDGE_RUNTIME_PATH_PREFIX)) return false;
-    const route = pathname.slice(BRIDGE_RUNTIME_PATH_PREFIX.length) as RuntimeRoute;
+    const route = pathname.slice(BRIDGE_RUNTIME_PATH_PREFIX.length) as RuntimeRoute | 'outbound-media';
     try {
-      if (!ROUTES.includes(route)) throw new CollabError('not_found', `no bridge runtime route ${route}`);
+      if (route !== 'outbound-media' && !ROUTES.includes(route)) throw new CollabError('not_found', `no bridge runtime route ${route}`);
       const identity = await o.resolveIdentity(req.headers, {
         remoteAddress: req.socket.remoteAddress,
         disableAutoOwner: o.disableAutoOwner,
@@ -128,10 +131,21 @@ export function createBridgeRuntimeRoute(o: BridgeRuntimeRouteOptions): BridgeRu
       const { value } = await readJsonBody(req, o.maxBodyBytes ?? 32 * 1024 * 1024);
       const frame = object(value, route);
       const claims = claimsOf(identity, requestId);
+      if (route === 'outbound-media') {
+        const file = await o.db.rpc<{ storagePath: string; spaceId: string }>(claims,
+          'bridge_runtime_outbound_media', [frame['outboxId'], frame['connectionId'], frame['fileEntityId']]);
+        if (!o.blobStore) throw new CollabError('upstream_unavailable', 'attachment storage is unavailable');
+        const blob = await o.blobStore.openRead(file.storagePath, file.spaceId);
+        res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': blob.sizeBytes,
+          'cache-control': 'no-store', 'x-tm8-request-id': requestId });
+        await pipeline(blob.stream, res);
+        return true;
+      }
       const answer = await handle(o, route, frame, claims);
       reply(res, answer.status, answer.body, requestId);
     } catch (err) {
-      sendWireError(res, err, requestId);
+      if (res.headersSent) res.destroy(err as Error);
+      else sendWireError(res, err, requestId);
     }
     return true;
   };
@@ -181,8 +195,11 @@ async function handle(
       o.hub.kick();
       return { status: 200, body };
     }
+    case 'outbound-progress':
+      return { status: 200, body: await o.db.rpc(claims, 'bridge_runtime_outbound_progress', [JSON.stringify(frame)]) };
     case 'sent': {
       const body = await o.db.rpc(claims, 'bridge_runtime_sent', [JSON.stringify(frame as unknown as SentFrame)]);
+      o.hub.kick();
       return { status: 200, body };
     }
     case 'inbound':
