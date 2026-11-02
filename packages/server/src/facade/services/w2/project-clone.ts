@@ -17,6 +17,8 @@ import { DbSpaceCredentialStore } from '../../../credentials/space-credential-st
 import type { Db, DbClaims } from '../../../db/types.js';
 import type { RequestContext } from '../../../http/types.js';
 import { scanSpaceSkills } from '../../../skills/service.js';
+import { readGitHubBotCredential } from '@tm8/execution';
+
 import { resolveGithubToken } from '../../../tracking/github.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
@@ -144,6 +146,15 @@ export type CloneCredentialResolver = (claims: DbClaims, spaceId: string) => Pro
 /**
  * The GitHub token a clone into `spaceId` runs on, in the owner's order:
  *
+ *   0. the NODE's shared GitHub BOT credential, when the operator configured
+ *      one (`github-bot-credential.ts`) — and then ONLY it. A clone runs on
+ *      behalf of a launch, so a node that has removed personal GitHub logins
+ *      from its sessions has not removed them while THIS still reads step 1:
+ *      the caller's own account token, decrypted server-side, reaching
+ *      whatever their personal account can reach. The posture has to cut in
+ *      here too or the claim it makes is false. An unusable bot file THROWS,
+ *      failing the clone, because the alternative is falling through to the
+ *      personal token the posture exists to stop using.
  *   1. the CALLER's own — their account GitHub login (093), else the space
  *      GitHub credential they picked as their default;
  *   2. the SPACE's default GitHub credential;
@@ -163,6 +174,13 @@ export function dbCloneCredentialResolver(db: Db, dataDir: string, env: NodeJS.P
   const spaceStore = new DbSpaceCredentialStore({ db, dataDir });
   const accountStore = new DbGitHubCredentialStore({ db, dataDir });
   return async (claims, spaceId) => {
+    // Step 0. Ahead of the policy reads: in this posture there is one source,
+    // so a space policy that excludes `node` would refuse every clone on a
+    // node whose only GitHub credential is the bot. Same reasoning, and the
+    // same operator, as the spawn path's — see `credential-resolution.ts`.
+    const bot = await readGitHubBotCredential(env);
+    if (bot) return { source: 'node', token: bot.token };
+
     const [spacePolicy, nodePolicy] = await Promise.all([
       spaceStore.readSpacePolicy(claims, spaceId),
       spaceStore.readNodePolicy(claims),

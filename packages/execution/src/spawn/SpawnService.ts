@@ -116,6 +116,7 @@ import {
   resolveSessionCredentials,
   type ResolvedSessionCredentials,
 } from './credential-resolution.js';
+import { readGitHubBotCredential } from './github-bot-credential.js';
 import {
   materializeSpaceApiKeyHome,
   scrubSpaceSessionSecrets,
@@ -928,6 +929,17 @@ export class SpawnService {
         resolveMemberHome: (source) =>
           this.resolveCredentialHome(auth, launch.agentTool, launch.model, source),
         resolveMemberGitHub: () => this.resolveGitHubCredential(auth, null),
+        // The node's shared bot posture, read from THIS SERVICE'S OWN ENV
+        // rather than taken as a constructor port — and that is the point.
+        // `execution-handlers.ts` builds a SpawnService twice (the current
+        // runtime and the legacy shape) and says in its own comment that the
+        // duplication is deliberate; a port would have to be added to both,
+        // and the one that was missed would run the personal-login chain with
+        // nothing anywhere saying so. Env is wired once, by construction.
+        //
+        // Read per call, not cached: rotating the bot token is then writing a
+        // new file, with no server restart to disturb live sessions.
+        readGitHubBot: () => readGitHubBotCredential(this.env),
         materializeApiKeyHome: (input) =>
           materializeSpaceApiKeyHome({ dataDir: this.dataDir, sessionId, ...input }),
       },

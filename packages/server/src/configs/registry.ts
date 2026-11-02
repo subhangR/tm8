@@ -215,6 +215,10 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_GOOGLE_OAUTH_CLIENT_ID', group: 'Keys', summary: 'Client ID of this node\'s Google OAuth client, for the Gmail, Calendar and Drive connectors. Read at each connect and refresh.', default: null, definedIn: MAIN },
   { name: 'TM8_MCP_CLIENT_SECRET_GOOGLE', group: 'Keys', summary: 'Client secret of the Google OAuth client named by TM8_GOOGLE_OAUTH_CLIENT_ID. Never stored in a connection.', default: null, definedIn: MAIN, secret: true },
   { name: 'TM8_GITHUB_TOKEN', group: 'Keys', summary: 'GitHub token PR tracking prefers over GITHUB_TOKEN / GH_TOKEN.', default: null, definedIn: 'packages/server/src/tracking/github.ts', secret: true },
+  // NOT marked `secret`: the VALUE is a path, and an operator needs to read it
+  // back to check the posture is on and pointed where they think. The token it
+  // names never enters this process's environment at all.
+  { name: 'TM8_GITHUB_BOT_CREDENTIAL_FILE', group: 'Keys', summary: 'Path to this node\'s shared GitHub bot credential, a 0600 JSON file {"login","token"}. Setting it IS the posture: every session and clone on this node then runs GitHub as that bot, and no personal or space GitHub login is reachable. Unset (default) keeps the member → space → node chain. An unusable file refuses the launch rather than falling back to a person.', default: null, definedIn: 'packages/execution/src/spawn/github-bot-credential.ts' },
 ];
 
 export const CLI_ENV: readonly EnvKnob[] = [
