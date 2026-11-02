@@ -1,6 +1,6 @@
 # Connect Apps release verification
 
-**Merge blocked pending final acceptance.** Real account reads and representative writes have passed for GitHub, Slack, Notion, Atlassian, Gmail and the native Figma API adapter. Figma full-design reads currently return a provider quota error, development links remain unverified on the available Starter file, and repository CI cannot start because of its billing/spending allowance. These are unresolved release gates, not passing tests.
+Real account reads and representative writes have passed for GitHub, Slack, Notion, Atlassian, Gmail and the native Figma API adapter. Slack message, thread, reaction and file-upload checks below are complete. Figma full-design reads remain quota-limited, development links remain unverified on the available Starter file, and repository CI cannot start because of its billing/spending allowance. These limits are recorded separately from the verified connector behavior.
 
 ## Implementation
 
@@ -17,7 +17,7 @@ Figma API (`figma.api`) is a separate TM8-hosted MCP adapter over Figma’s OAut
 | Provider | Discovery and permissions | Representative verified operations |
 | --- | --- | --- |
 | GitHub | All-toolset discovery: 111 tools; expanded account grant | Private disposable repository, branch and file creation; exact file readback; issue creation |
-| Slack | 30 granted scopes; 27 tools | Public/private channel and DM/group-DM history, search; disposable canvas create/edit/exact readback; list create/update/schema read |
+| Slack | 30 granted scopes; 27 tools | Public/private channel and DM/group-DM history, search; self-DM send/exact readback, thread reply/exact readback, reaction/readback; private file upload/finalization/exact content readback; disposable canvas create/edit/exact readback; list create/update/schema read |
 | Notion | 71 tools through official MCP | Accessible page fetch; private disposable page creation/edit/exact readback |
 | Atlassian | All requested 39 scopes granted; 26 tools | Disposable Jira issue creation, edit, exact readback and JQL search on the approved site after Jira Free activation |
 | Gmail | Read and compose grants; sending explicitly enabled in acceptance | Search, message bodies, draft creation, one explicitly approved self-email and exact sent-message readback |
@@ -35,7 +35,7 @@ Final acceptance runs the PR worktree’s UI and server against a separate copy 
 
 ## Code verification
 
-Current local checks include server build and UI typecheck, 18 database binding/isolation tests, 11 database foundation/resource-identity tests, 109 UI domain tests, 38 MCP UI/catalog-phase tests, 50 Google/Figma adapter tests, 95 execution manifest/Codex harness tests, 48 execution MCP/resume/security tests, 14 catalog contract tests and 9 reusable integration tests. Additional MCP/OAuth/security checks passed earlier; repeated runs are not added together as distinct coverage.
+Current local checks include server build and UI typecheck, 18 database binding/isolation tests, 11 database foundation/resource-identity tests, 109 UI domain tests, 38 MCP UI/catalog-phase tests, 50 Google/Figma adapter tests, 95 execution manifest/Codex harness tests, 48 execution MCP/resume/security tests, 14 catalog contract tests and 9 reusable integration tests. A further 25 account-resolution/credential tests pass, including distinct account coexistence, pinned account selection and reconnect behavior. Additional MCP/OAuth/security checks passed earlier; repeated runs are not added together as distinct coverage.
 
 Fresh-database tests apply the complete migration set. Migrations 434/435 update curated identities and the bounded tool-catalog health cache; 436 preserves account identity and sharing during reconnect; 437 raises the bounded OAuth scope count to 64; 438 enables contextual MCP defaults while retaining credential and skill/spell guards; 439 adds the distinct Figma API identity. No production database was migrated.
 
@@ -44,3 +44,13 @@ GitHub Actions run 41341169419 did not execute any job steps because repository 
 ## Deferred scope
 
 Provider webhooks, event delivery, always-on agents and per-server public callback provisioning remain a separate iteration. Calendar, Drive and Linear account acceptance are outside the six-provider launch gate.
+
+## Multiple accounts
+
+Connect Apps exposes **+ Add another account** without replacing an existing account. Distinct provider account identities coexist; reconnecting the same identity updates that connection in place. Chat and session pickers allow explicit account selection. The Figma second-account form has been verified in the live UI; authorization and design reads for a second real Figma account require signing into that account.
+
+## Slack message and file acceptance — 2026-11-02
+
+Fresh checks used the TM8 MCP endpoint and the expanded Slack grant. A message was sent only to the connected user’s self-DM, read back exactly, followed by a thread reply and a reaction, both verified on readback. A small disposable text file was uploaded using the MCP-issued signed upload URL, finalized privately through MCP and read back with exact content through MCP. Temporary TM8 access tokens were revoked after each verification run. No provider account token or signed upload URL is committed. An additional actual TM8 chat with only Slack selected sent a self-DM and read it back through its native MCP tools; successful proxy audit rows confirm both operations.
+
+The requested TM*-group could not be identified among the connected account’s channels/groups. No message or file was sent to an unrelated group; group delivery awaits the exact Slack link/workspace. This does not invalidate the verified message/file capabilities.
