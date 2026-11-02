@@ -257,7 +257,10 @@ function ConnectStatus({ connect, admin, busy, onRetry, onSettings }: {
   if (phase.kind === 'waiting') {
     return <div className="mcp-banner mcp-banner--wait" role="status">
       <p>Waiting for {phase.provider}&hellip; finish signing in in the window tm8 opened.</p>
-      <button type="button" onClick={connect.cancel}>Cancel</button>
+      <div className="mcp-actions">
+        <a href={phase.url} rel="noreferrer" onClick={connect.cancel}>Continue in this tab</a>
+        <button type="button" onClick={connect.cancel}>Cancel</button>
+      </div>
     </div>;
   }
   if (phase.kind === 'blocked') {

@@ -91,6 +91,23 @@ describe('§10.2 — the popup-blocked fallback', () => {
     open.mockRestore();
   });
 
+  it('offers recovery when an opened popup is hidden and closes it before same-tab continuation', async () => {
+    const close=vi.fn();
+    const child={location:{href:''},focus:vi.fn(),close,closed:false};
+    const open=vi.spyOn(window,'open').mockReturnValue(child as unknown as Window);
+    try {
+      const live=port();
+      render(<ConnectorDrawer server={server()} port={live} admin={false} busy={false}
+        run={async action=>{await action();}} onClose={()=>{}} />);
+      fireEvent.click(screen.getByRole('button',{name:'Connect'}));
+      const link=await screen.findByRole('link',{name:'Continue in this tab'});
+      expect(link.getAttribute('href')).toBe('https://figma.example/oauth/authorize?state=s');
+      fireEvent.click(link);
+      expect(close).toHaveBeenCalledOnce();
+      expect(live.startOAuth).toHaveBeenCalledTimes(1);
+    } finally {open.mockRestore();}
+  });
+
   it('keeps returnTo a path on this origin, never a URL', () => {
     expect(returnToPath({ pathname: '/', search: '', hash: '#/s/space/settings/connectors' })).toBe('/#/s/space/settings/connectors');
     // `//host` and a backslash are read as another origin by browsers, so the
