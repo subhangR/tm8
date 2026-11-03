@@ -112,6 +112,10 @@ runs:
         key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
         restore-keys: ${{ runner.os }}-bun-
 
+    - name: Install native addon build tooling
+      shell: bash
+      run: npm install --global node-gyp@11.5.0
+
     - name: Install dependencies (frozen lockfile)
       shell: bash
       run: bun install --frozen-lockfile
