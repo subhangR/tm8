@@ -925,8 +925,6 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           return async () => { await client.end().catch(() => undefined); };
         },
         log: (line) => console.warn(line),
-        // 431: an image posted in tm8 goes to the group as an image.
-        ...(blobStore ? { blobStore } : {}),
       })
     : undefined;
   bridgeHubRef = bridgeHub || undefined;
@@ -974,6 +972,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         resolveIdentity: identityResolver ?? autoOwnerResolver,
         disableAutoOwner: config.disableAutoOwner === true,
         hub: bridgeHub,
+        ...(blobStore ? { blobStore } : {}),
         // B1b-7: the auth door relays the QR, the state door settles it (B1b-5's relay).
         connectionAuth: bridgeConnectionAuth,
         commands: () => bridgeCommands,
