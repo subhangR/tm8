@@ -37,6 +37,8 @@
    ========================================================================== */
 
 .cv2-root {
+  --pn-provider-tile: #fff;
+  --pn-provider-tile-line: #e5e7eb;
   /* The xterm host / black box. Near-black in BOTH themes by design — the
      established terminal contrast, deliberately outside the paper ramp.
      T0-2 draws two near-blacks: #0D0B08 for the reserved/placeholder host and

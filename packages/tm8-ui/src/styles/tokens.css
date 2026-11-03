@@ -11,8 +11,6 @@
 @import './fonts.css';
 
 .cv2-root {
-  --pn-provider-tile: #fff;
-  --pn-provider-tile-line: #e5e7eb;
   /* --- 1 · paper & ink ---------------------------------------------------- */
   --pn-paper:    #F4F2EC;
   --pn-surface:  #FBFAF6;
