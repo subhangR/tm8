@@ -1,0 +1,4 @@
+#!/bin/sh
+# case-gate <case-task-id> — exit 0 when the case's final pack may be sent, 1 when it may not.
+# The rule and its output are in gate/README.md. TM8_BIN overrides the tm8 binary.
+exec node "$(dirname "$(readlink -f "$0")")/gate/case-gate.mjs" "$@"
