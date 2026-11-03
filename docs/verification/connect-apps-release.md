@@ -37,7 +37,7 @@ Final acceptance runs the PR worktree’s UI and server against a separate copy 
 
 Current local checks include server build and UI typecheck, 18 database binding/isolation tests, 11 database foundation/resource-identity tests, 109 UI domain tests, 38 MCP UI/catalog-phase tests, 50 Google/Figma adapter tests, 95 execution manifest/Codex harness tests, 48 execution MCP/resume/security tests, 14 catalog contract tests and 9 reusable integration tests. A further 25 account-resolution/credential tests pass, including distinct account coexistence, pinned account selection and reconnect behavior. Additional MCP/OAuth/security checks passed earlier; repeated runs are not added together as distinct coverage.
 
-Fresh-database tests apply the complete migration set. Migrations 434/435 update curated identities and the bounded tool-catalog health cache; 436 preserves account identity and sharing during reconnect; 437 raises the bounded OAuth scope count to 64; 438 enables contextual MCP defaults while retaining credential and skill/spell guards; 439 adds the distinct Figma API identity. No production database was migrated.
+Fresh-database tests apply the complete migration set. Migrations 435/436 update curated identities and the bounded tool-catalog health cache; 437 preserves account identity and sharing during reconnect; 438 raises the bounded OAuth scope count to 64; 439 enables contextual MCP defaults while retaining credential and skill/spell guards; 440 adds the distinct Figma API identity. No production database was migrated.
 
 GitHub Actions run 41341169419 did not execute any job steps because repository billing/spending allowance is blocked. It supplies no remote validation result.
 

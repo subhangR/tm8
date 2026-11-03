@@ -90,7 +90,7 @@ describe('the closed taxonomy maps onto it exhaustively', () => {
   const codes = Object.keys(ERROR_STATUS) as CommandErrorCode[];
 
   it('covers every CommandErrorCode the contract defines', () => {
-    expect(codes.length).toBe(19); // +5 forms (FORMS-DESIGN §6)
+    expect(codes.length).toBe(20); // Includes forms and community administration.
     for (const code of codes) {
       const exit = exitCodeForCommandError(code);
       expect(isExitCode(exit), `${code} -> ${exit}`).toBe(true);
@@ -105,6 +105,7 @@ describe('the closed taxonomy maps onto it exhaustively', () => {
       invalid_cursor: 2,
       unauthenticated: 3,
       forbidden: 4,
+      not_community_admin: 4,
       not_found: 5,
       version_conflict: 6,
       conflict: 6,
