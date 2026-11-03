@@ -1,6 +1,6 @@
 # Connect Apps release verification
 
-Real account reads and representative writes have passed for GitHub, Slack, Notion, Atlassian, Gmail and the native Figma API adapter. Slack message, thread, reaction and file-upload checks below are complete. Figma full-design reads remain quota-limited, development links remain unverified on the available Starter file, and repository CI cannot start because of its billing/spending allowance. These limits are recorded separately from the verified connector behavior.
+Real account reads and representative writes have passed for GitHub, Slack, Notion, Atlassian, Gmail and the native Figma API adapter. Slack message, thread, reaction and file-upload checks below are complete. Figma full-design reads remain quota-limited, development links remain unverified on the available Starter file, and remote CI results are tracked on the PR. These limits are recorded separately from the verified connector behavior.
 
 ## Implementation
 
@@ -37,9 +37,9 @@ Final acceptance runs the PR worktree’s UI and server against a separate copy 
 
 Current local checks include server build and UI typecheck, 18 database binding/isolation tests, 11 database foundation/resource-identity tests, 109 UI domain tests, 38 MCP UI/catalog-phase tests, 50 Google/Figma adapter tests, 95 execution manifest/Codex harness tests, 48 execution MCP/resume/security tests, 14 catalog contract tests and 9 reusable integration tests. A further 25 account-resolution/credential tests pass, including distinct account coexistence, pinned account selection and reconnect behavior. Additional MCP/OAuth/security checks passed earlier; repeated runs are not added together as distinct coverage.
 
-Fresh-database tests apply the complete migration set. Migrations 435/436 update curated identities and the bounded tool-catalog health cache; 437 preserves account identity and sharing during reconnect; 438 raises the bounded OAuth scope count to 64; 439 enables contextual MCP defaults while retaining credential and skill/spell guards; 440 adds the distinct Figma API identity. No production database was migrated.
+Fresh-database tests apply the complete migration set. Migrations 435/436 update curated identities and the bounded tool-catalog health cache; 437 preserves account identity and sharing during reconnect; 438 raises the bounded OAuth scope count to 64; 439 enables contextual MCP defaults while retaining credential and skill/spell guards; 440 adds the distinct Figma API identity; 441 preserves connector visibility while resolving membership once per statement. No production database was migrated.
 
-GitHub Actions run 41341169419 did not execute any job steps because repository billing/spending allowance is blocked. It supplies no remote validation result.
+Initial GitHub Actions runs, including 41341169419, executed no job steps because of repository billing/spending limits. A later retry can execute jobs. CI setup explicitly supplies node-gyp for native addons, and the fresh-database identity gate includes the reviewed reconnect function. Current remote results are available on the PR checks tab.
 
 ## Deferred scope
 

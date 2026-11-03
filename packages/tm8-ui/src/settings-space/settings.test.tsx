@@ -176,7 +176,7 @@ const LIVE_VERBS = [
   // control from it.
   /^Agent logins$/,
   // The native MCP section is injected by GateApp; this shell owns its nav row.
-  /^Connectors$/,
+  /^Connect Apps$/,
   /^Danger zone$/,
   /^＋ Invite$/,
   /^discard$/,

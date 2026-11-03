@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { CollabError, type EntityDetail, type ToolRun } from '@tm8/contract';
 import { fixtureDetails, sessionStale } from '../fixtures';
 import { ToolBody } from './ToolBody';
@@ -88,7 +88,7 @@ describe('run history table', () => {
       port.runGet = vi.fn(async () => ({ ...running, state: 'exited' as const, exitCode: 0, exitedAt: '2026-10-10T12:00:03Z' }));
       render(<Harness port={port} />);
       await screen.findByText('Running');
-      vi.advanceTimersByTime(RUN_POLL_MS);
+      await act(async () => { await vi.advanceTimersByTimeAsync(RUN_POLL_MS); });
       await screen.findByText('Exited 0');
       expect(port.runGet).toHaveBeenCalledWith(id(11));
     } finally { vi.useRealTimers(); }

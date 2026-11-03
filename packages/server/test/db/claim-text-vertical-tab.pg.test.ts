@@ -100,8 +100,8 @@ describe.sequential('387 — the whitespace trims keep the letter v and drop a v
     await database?.destroy();
   }, 120_000);
 
-  it("CONTROL: PostgreSQL reads E'\\v' as the letter v", async () => {
-    const [row] = await ownerRows<{ same: boolean }>(String.raw`select E'\v' = 'v' as same`);
+  it('CONTROL: explicit octal encodes a vertical tab portably', async () => {
+    const [row] = await ownerRows<{ same: boolean }>(String.raw`select E'\013' = chr(11) as same`);
     expect(row!.same).toBe(true);
   });
 

@@ -61,6 +61,7 @@
 .cv2-root[data-shell='mobile'] .pn-debug__pre,
 .cv2-root[data-shell='mobile'] .gov-pre,
 .cv2-root[data-shell='mobile'] .auth-evidence,
+.cv2-root[data-shell='mobile'] .set-mcpt__code,
 .cv2-root[data-shell='mobile'] .tch-explain__source {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

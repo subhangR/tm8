@@ -208,6 +208,10 @@ const APPLIED_MIGRATIONS: readonly string[] = migrationFiles();
  * name pattern.
  */
 const DROPPED_BY_LATER_MIGRATION: ReadonlyMap<string, string> = new Map([
+  ['public.record_mcp_call', '346_mcp_call_audit.sql'],
+  ['internal.bridge_summary_log_anchor', '415_bridge_summary_log_anchor.sql'],
+  ['internal.bridge_note_joined_member', '418_bridge_link_followups.sql'],
+  ['internal.bridge_complete_invite_pin', '418_bridge_link_followups.sql'],
   // 146 removes the wake-budget machinery, including the surrogate pin 120 left
   // in place. See db/migrations/146_remove_wake_budget_machinery.sql.
   ['public.session_wake_budgets', '146_remove_wake_budget_machinery.sql'],

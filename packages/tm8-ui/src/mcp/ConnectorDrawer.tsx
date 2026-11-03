@@ -26,6 +26,7 @@
  *    `mcp.servers.test`. The UI never computes scope coverage — if the server
  *    does not report a gap, none is drawn.
  */
+import { absTime, relTime } from '../kit/time';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { mcpServerKey, type McpCredentialScope } from '@tm8/contract';
 import { Eyebrow } from '../kit';
@@ -49,22 +50,7 @@ function disconnectCopy(server: McpServer, account: McpAccount): { confirm: stri
 }
 
 function when(value: string | null | undefined): string {
-  if (!value) return 'never';
-  const at = new Date(value);
-  return Number.isNaN(at.getTime()) ? 'unknown' : at.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-}
-
-/** "4 min ago" for the last health check: how fresh the status is matters more than the wall-clock time. */
-export function ago(value: string | null | undefined, now = Date.now()): string | null {
-  if (!value) return null;
-  const at = new Date(value).getTime();
-  if (Number.isNaN(at)) return null;
-  const minutes = Math.round((now - at) / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
-  return when(value);
+  return value ? absTime(value) || 'unknown' : 'never';
 }
 
 /**
@@ -414,7 +400,7 @@ export function ConnectorDetail({ server, port, admin, busy, run, onDeleted, pro
   const gates = definition?.gates ?? {};
   const closedGateTools = new Set(Object.entries(gates).flatMap(([gate, open]) => open === false ? (GATE_TOOLS[gate] ?? []) : []));
   const shownTools = tools.filter(tool => !closedGateTools.has(tool.name));
-  const checked = ago(server.health?.checkedAt);
+  const checked = relTime(server.health?.checkedAt);
   const health = healthSentence(server, report);
   const gateToggles = admin ? Object.entries(GATE_LABELS).filter(([gate]) => gate in gates || GATE_APPLIES(server, gate)) : [];
 

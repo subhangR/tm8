@@ -383,9 +383,7 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
         </div>
         <div ref={chrome?.setVerbsSlot} className="tws-astrip-cluster tws-astrip-verbs" data-testid="tws-astrip-verbs" />
         {kindConfig.mcpEquipment && detail && detail.deletedAt == null ? (
-          <div className="tws-astrip-cluster">
-            <ConnectorsButton entityId={tab.entityId} />
-          </div>
+          <ConnectorsButton entityId={tab.entityId} />
         ) : null}
         {attachable && detail && detail.deletedAt == null ? (
           <div className="tws-astrip-cluster">
@@ -555,7 +553,7 @@ function ConnectorsButton({ entityId }: { entityId: string }) {
   if (!catalog?.canAttach) return null;
   const attached = catalog.attachedServerIds?.length ?? 0;
   return (
-    <div className="tws-astrip-pop-anchor" ref={ref}>
+    <div className="tws-astrip-cluster tws-astrip-pop-anchor" ref={ref}>
       <button
         type="button"
         className="tws-astrip-btn tws-astrip-connectors"

@@ -55,7 +55,7 @@ class SpawnDb implements Db {
       query: async <R>(sql: string, args: readonly unknown[] = []): Promise<R[]> => {
         // Visible teammate, with no equipped connectors in this parentage fixture.
         if (sql.includes('internal.is_space_member($2::uuid)') && sql.includes('as allowed')) {
-          return [{ allowed: args[0] === TEAMMATE && args[1] === SPACE }] as R[];
+          return [{ allowed: (args[0] === TEAMMATE || args[0] === SESSION) && args[1] === SPACE }] as R[];
         }
         if (sql.includes('from public.team_members')) {
           return [{

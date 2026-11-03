@@ -1,3 +1,4 @@
+import { absTime, relTime } from '../kit/time';
 /**
  * THE `mcp_server` ENTITY PAGE — the connector itself, not a door to Settings.
  *
@@ -17,7 +18,7 @@ import { useEffect, useState } from 'react';
 import type { EntityDetail, McpCallAuditRow } from '@tm8/contract';
 import { KindIcon } from '../domain';
 import { navStore } from '../stores/navStore';
-import { ConnectorDetail, Section, ago } from './ConnectorDrawer';
+import { ConnectorDetail, Section } from './ConnectorDrawer';
 import { useMcpCatalog } from './context';
 import type { McpCatalog, McpPort, McpServer } from './port';
 import { useConnectorRun } from './useConnectorRun';
@@ -62,7 +63,7 @@ function RecentCalls({ port, server }: { port: McpPort; server: McpServer }) {
             <td><code>{row.tool ?? row.method}</code></td>
             <td><span className={`mcp-state mcp-state--sm mcp-state--${outcome.tone}`}>{outcome.label}</span>{row.denyReason && <span className="mcp-note"> {row.denyReason.replace(/_/g, ' ')}</span>}</td>
             <td>{row.via ? VIA[row.via] ?? row.via : '—'}{row.latencyMs != null && <span className="mcp-note"> · {row.latencyMs} ms</span>}</td>
-            <td title={new Date(row.occurredAt).toLocaleString()}>{ago(row.occurredAt)}</td>
+            <td title={absTime(row.occurredAt)}>{relTime(row.occurredAt)}</td>
           </tr>;
         })}</tbody>
       </table>

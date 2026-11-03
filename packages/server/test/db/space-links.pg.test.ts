@@ -104,6 +104,13 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   // carries a sealed PKCE verifier and client, so begin and its single-use take
   // stay on the strict gate with create_mcp_credential.
   'create_mcp_oauth_pending(bytea,uuid,uuid,integer,text,text,bytea,bytea,text,text,timestamp with time zone)': CREDENTIAL_MANAGEMENT,
+  'create_mcp_token(text,uuid[],text,timestamp with time zone)': CREDENTIAL_MANAGEMENT,
+  'list_mcp_tokens()': CREDENTIAL_READ,
+  'revoke_mcp_token(uuid)': CREDENTIAL_MANAGEMENT,
+  'reconnect_mcp_credential(uuid,uuid,uuid,text,bytea,bytea,text,timestamp with time zone,boolean,integer,text,text,text,text[])': CREDENTIAL_MANAGEMENT,
+  'record_mcp_test_audit(uuid,uuid,text,text,integer,integer,integer)': CREDENTIAL_MANAGEMENT,
+  'request_mcp_server_entity(uuid,jsonb,text,uuid,text)': CREDENTIAL_MANAGEMENT,
+  'update_chat_mcp_selections(uuid,jsonb)': CREDENTIAL_MANAGEMENT,
   'take_mcp_oauth_pending(bytea)': CREDENTIAL_MANAGEMENT,
   'save_chat_mcp_selections(uuid,jsonb)': CREDENTIAL_MANAGEMENT,
   'set_chat_configuration(uuid,bigint,jsonb,text)': CREDENTIAL_MANAGEMENT, // 332: set_chat_credentials (314) now delegates here
@@ -440,9 +447,9 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
   });
 
-  it('the list is 41 credential management + 1 seen state + 6 non-credential + 2 session management + 12 spaceLinks writes + 3 space password + 5 servers (W8, two retired by W9c) + 2 path grants (282) + 1 MCP audit read (346) + 4 bridge lifecycle writes (395) + 1 memory proposal decision (416) + 2 bridge link mint/unlink (417) + 1 participant write (420) + 3 bridge connection writes (421) + 1 runtime connect (422) + 2 bridge connection doors (423)', () => {
+  it('the list is 48 credential management + 1 seen state + 6 non-credential + 2 session management + 12 spaceLinks writes + 3 space password + 5 servers (W8, two retired by W9c) + 2 path grants (282) + 1 MCP audit read (346) + 4 bridge lifecycle writes (395) + 1 memory proposal decision (416) + 2 bridge link mint/unlink (417) + 1 participant write (420) + 3 bridge connection writes (421) + 1 runtime connect (422) + 2 bridge connection doors (423)', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
-    expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(41); // +1 revoke_all_mcp_credentials (377) +2 create/take_mcp_oauth_pending (342: §5.4 pending OAuth sign-ins) +1 rekey_mcp_credential (341: API-key rotation moves off rekey_space_credential so ciphertext and key_id land together) +3 tool secret writers (318) +1 set_chat_credentials (314)
+    expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(48); // +1 revoke_all_mcp_credentials (377) +2 create/take_mcp_oauth_pending (342: §5.4 pending OAuth sign-ins) +1 rekey_mcp_credential (341: API-key rotation moves off rekey_space_credential so ciphertext and key_id land together) +3 tool secret writers (318) +1 set_chat_credentials (314)
     expect(labels.filter((l) => l === SEEN_STATE)).toHaveLength(1); // mark_entity_seen (313)
     expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(8); // +2 generation-fenced mint/revoke overloads (332)
     expect(labels.filter((l) => l === SESSION_MANAGEMENT)).toHaveLength(2);
@@ -455,7 +462,7 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(labels.filter((l) => l === BRIDGE_LINKS)).toHaveLength(2); // 417: begin_bridge_link, revoke_bridge_link
     expect(labels.filter((l) => l === CONNECTIONS)).toHaveLength(7); // 421: begin/offer/withdraw_bridge_connection; 422: internal.bridge_runtime_connect; 423: remove_bridge_connection, bridge_connection_for_owner; 432: set_bridge_offer_agent_groups
     expect(labels.filter((l) => l === HANDOVERS)).toHaveLength(6); // 424: offer/accept/decline/withdraw, the receiving read, the shared close body
-    expect(labels).toHaveLength(96); // +1 set_bridge_offer_agent_groups (432) // +6 bridge hand-over doors (424) // +2 bridge connection doors (423) // +1 bridge_runtime_connect's owner arm (422) +3 bridge connection writes (421) // +1 update_bridge_participant (420) // +2 bridge link mint/unlink (417) // +1 resolve_bridge_memory_proposal (416) // +4 bridge lifecycle writes (395) // +1 revoke_all_mcp_credentials (377, revoke-all kill switch) +1 list_mcp_call_audit (346, human-only audit read) +2 create/take_mcp_oauth_pending (342) +1 rekey_mcp_credential (341) +2 chat runtime mint/revoke (332; set_chat_configuration replaces set_chat_credentials) -1 the request decision helper (325) +3 tool secret writers (318) +1 set_chat_credentials (314) +1 mark_entity_seen (313)
+    expect(labels).toHaveLength(103); // +1 set_bridge_offer_agent_groups (432) // +6 bridge hand-over doors (424) // +2 bridge connection doors (423) // +1 bridge_runtime_connect's owner arm (422) +3 bridge connection writes (421) // +1 update_bridge_participant (420) // +2 bridge link mint/unlink (417) // +1 resolve_bridge_memory_proposal (416) // +4 bridge lifecycle writes (395) // +1 revoke_all_mcp_credentials (377, revoke-all kill switch) +1 list_mcp_call_audit (346, human-only audit read) +2 create/take_mcp_oauth_pending (342) +1 rekey_mcp_credential (341) +2 chat runtime mint/revoke (332; set_chat_configuration replaces set_chat_credentials) -1 the request decision helper (325) +3 tool secret writers (318) +1 set_chat_credentials (314) +1 mark_entity_seen (313)
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {

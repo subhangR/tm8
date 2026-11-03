@@ -1297,7 +1297,7 @@
 .connect-apps__card footer button { min-height: 30px; font-size: 12px; padding: 5px 9px; }
 .connect-apps__connected { color: var(--pn-ink); }
 .connect-apps__detail p { line-height: 1.6; }
-.mcp-logo[data-brand="official"] { width: 32px; height: 32px; padding: 0; overflow: hidden; box-sizing: border-box; background: #fff; border-color: #e5e7eb; }
+.mcp-logo[data-brand="official"] { width: 32px; height: 32px; padding: 0; overflow: hidden; box-sizing: border-box; background: var(--pn-provider-tile); border-color: var(--pn-provider-tile-line); }
 .mcp-logo img { width: 100%; height: 100%; display: block; object-fit: contain; }
 .mcp-logo[data-logo="github"] img { transform: scale(1.3); }
 .mcp-logo[data-logo="notion"] img { transform: scale(1.2); }
