@@ -4,10 +4,16 @@
 //   WA_RUNTIME_ID                  stable id for this runtime (default whatsapp-<hostname>)
 //   WA_RUNTIME_DATA_DIR            sealed per-connection key dirs live under <dir>/bridges/<connectionId>/
 import fs from 'node:fs'
+import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { HttpWsLink } from './runtime/link.js'
 import { HEARTBEAT_MS, Runtime } from './runtime/runtime.js'
+
+// Node 22 gives each address family 250 ms to connect before failing over (happy eyeballs). From a host where the
+// TCP connect to web.whatsapp.com takes longer than that and IPv6 is unreachable, every attempt fails at once
+// with ETIMEDOUT, which Baileys reports as "408 WebSocket Error ()" before any QR or pairing code. Seen on prod.
+net.setDefaultAutoSelectFamilyAttemptTimeout(Number(process.env.WA_CONNECT_ATTEMPT_TIMEOUT_MS ?? 2000))
 
 const log = (m: string) => console.log(`[${new Date().toISOString()}] ${m}`)
 const serverUrl = process.env.TM8_SERVER_URL ?? 'http://127.0.0.1:17777'
