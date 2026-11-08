@@ -2,6 +2,8 @@ import { createMcpPort } from '../../mcp/adapter';
 import { createMcpTokensPort } from '../../settings-mcp-tokens/port';
 import { createToolPort } from '../../tools/adapter';
 import { createLoopsClient } from '../../loops/api';
+import { bridgesPortFromSeam, catalogServes, createBridgesClient } from '../../bridges/api';
+import { createBridgePeoplePort } from '../../bridges/people';
 import { loopFormSourcesOf } from '../../loops/sources';
 /**
  * `createRealSeam()` — the HTTP + WS implementation of the co-owned Facade seam
@@ -376,6 +378,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     spaceSettings: (spaceId: SpaceId): Promise<SpaceSettingsView> => ops.spaceSettings(spaceId),
     spaceConfigs: (spaceId: SpaceId): Promise<SpaceConfigsView> => ops.spaceConfigs(spaceId),
     authSessions: (spaceId: SpaceId | null): Promise<AuthSessionsListResult> => ops.authSessions(spaceId),
+    bridgeLinks: () => ops.bridgeLinks(),
     chatDefaults: (spaceId: SpaceId): Promise<ChatDefaultsView> => ops.chatDefaults(spaceId),
     setChatDefaults: (spaceId: SpaceId, defaults: Record<string, ChatDefault | null>): Promise<ChatDefaultsView> =>
       ops.setChatDefaults(spaceId, defaults),
@@ -544,6 +547,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       // a 400 and an absent object is not the same as an empty one on the wire.
       revokeInvite: (spaceId, inviteId, ctx) => ops.revokeInvite(spaceId, inviteId, ctx ?? {}),
       revokeAuthSession: (sessionId) => ops.revokeAuthSession(sessionId),
+      beginBridgeLink: (provider) => ops.beginBridgeLink(provider),
+      revokeBridgeLink: (linkId) => ops.revokeBridgeLink(linkId),
       createTaskAxis: (spaceId, input) => ops.createTaskAxis(spaceId, input),
       updateTaskAxis: (spaceId, axisId, input) => ops.updateTaskAxis(spaceId, axisId, input),
       deleteTaskAxis: (spaceId, axisId, ctx) => ops.deleteTaskAxis(spaceId, axisId, ctx),
@@ -699,6 +704,13 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
   seam.commands.managed = managedPortFromSeam(seam);
   seam.commands.tools = createToolPort(http, seam);
   seam.commands.loops = createLoopsClient(http);
+  seam.commands.bridges = {
+    ...bridgesPortFromSeam(
+      createBridgesClient(http), seam, catalogServes, (cb) => connection.onBridgeConnectionAuth(cb),
+    ),
+    people: createBridgePeoplePort(http),
+    createInvite: (spaceId, input) => seam.commands.createInvite(spaceId, input),
+  };
   seam.commands.loopForm = loopFormSourcesOf(seam);
   return seam;
 }

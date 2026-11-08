@@ -17,6 +17,7 @@ import type { Db, DbClaims, Querier } from '../src/db/types.js';
 import { registerExecutionHandlers } from '../src/facade/execution-handlers.js';
 import { HandlerRegistry } from '../src/facade/registry.js';
 import type { RequestContext } from '../src/http/types.js';
+import { trackBoots } from './admitted-spawn.js';
 
 vi.mock('../src/skills/service.js', () => ({ scanSpaceSkills: vi.fn(async () => ({ scannedAt: null })) }));
 
@@ -113,7 +114,7 @@ describe('execution.spawn — selection and jevRunId', () => {
     vi.stubEnv('PATH', `${binDir}:${process.env['PATH'] ?? ''}`);
     dataDir = await mkdtemp(join(tmpdir(), 'tm8-sel-data-'));
     const registry = new HandlerRegistry();
-    registerExecutionHandlers(registry, {
+    const runtime = registerExecutionHandlers(registry, {
       db,
       pty: {
         beginPromptHandoff: vi.fn(), spawnIfAbsent: vi.fn(() => ({ reused: false })),
@@ -129,12 +130,17 @@ describe('execution.spawn — selection and jevRunId', () => {
       requestId: 'req', identity: { kind: 'loopback' }, headers: {}, method: 'POST', path: '/v2/execution/spawn',
     } as unknown as RequestContext;
     let error: unknown;
+    // The handler answers at admission (404); the boot runs on behind it and
+    // is waited for before the test's directories are removed.
+    const settled = trackBoots(runtime.spawnService);
     try {
       await registry.get('execution.spawn' as OperationName)!(ctx);
     } catch (caught) {
       // The fake cannot re-read the new work_session for the response; the
-      // spawn has happened by then, so only an earlier refusal is interesting.
+      // spawn has been admitted by then, so only an earlier refusal is interesting.
       if (!(caught instanceof Error) || !/no such entity/.test(caught.message)) error = caught;
+    } finally {
+      await settled();
     }
     return { db, error };
   }

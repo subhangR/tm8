@@ -65,7 +65,7 @@ describe('the one settings nav', () => {
 
   it('names rows plainly, and marks Models as this browser inside Account', () => {
     const account = settingsNavGroups(MEMBER).find((g) => g.id === 'account')!;
-    expect(account.items.map((i) => i.label)).toEqual(['Profile', 'Sign-ins & devices', 'Agent logins', 'MCP tokens', 'Linked spaces', 'Models']);
+    expect(account.items.map((i) => i.label)).toEqual(['Profile', 'Sign-ins & devices', 'Linked identities', 'Agent logins', 'MCP tokens', 'Linked spaces', 'Models']);
     expect(account.items.find((i) => i.key === 'space:models')?.detail).toBe('this browser');
     const server = settingsNavGroups(NODE_ADMIN).find((g) => g.id === 'node')!;
     expect(server.items.map((i) => i.label)).toEqual(['Credentials & fallback', 'Filesystem access', 'Accounts', 'Configuration']);

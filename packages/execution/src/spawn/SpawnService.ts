@@ -88,6 +88,7 @@ import {
   type ResolvedLaunchConfig,
 } from './manifest.js';
 import { detectCheckoutBranch } from './checkout-branch.js';
+import { SpawnPhaseTimer, type SpawnTimings } from './spawn-timings.js';
 import {
   claudePluginConfigDir,
   harnessSurfaceEnv,
@@ -97,10 +98,14 @@ import {
   readProjectSkillKeys,
   type ConfigHomeSkill,
 } from './harness-surface.js';
-import { applyDispatcherTeammates, contextHeaderIds, contextIndexForResume, contextIndexSwitch, DISPATCHER_ROSTER_READ_MAX, TOOL_INDEX_READ_MAX } from './context-index.js';
+import { applyDispatcherTeammates, contextHeaderIds, contextIndexForResume, contextIndexSwitch, DISPATCHER_ROSTER_READ_MAX, TOOL_INDEX_READ_MAX, type ContextIndexSource } from './context-index.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
-import { readSessionUsage } from '../transcript/session-usage.js';
+import {
+  readSessionUsage,
+  type WorkSessionUsage,
+  type WorkSessionUsageSource,
+} from '../transcript/session-usage.js';
 import { probeCodexSandbox } from './sandbox-probe.js';
 import {
   type AgentCredentialHome,
@@ -117,7 +122,13 @@ import {
   sweepSpaceSessionSecrets,
 } from './space-credential-session-home.js';
 import type { WorktreeManager } from '../worktree/WorktreeManager.js';
-import { provisionWorktree, type ProvisionedWorktree } from './worktree-provisioning.js';
+import {
+  materializeWorktree,
+  reserveWorktree,
+  type ProvisionedWorktree,
+  type ProvisionWorktreeParams,
+  type ReservedWorktree,
+} from './worktree-provisioning.js';
 import { reconcileNodeWorktrees, type WorktreeReconcileReport } from './worktree-reconcile.js';
 import {
   ShellSessionLauncher,
@@ -125,6 +136,8 @@ import {
   resolveLoginShell,
 } from '../shell/ShellSessionLauncher.js';
 import type {
+  AdmittedSpawn,
+  BootProgressPhase,
   CredentialSource,
   GraphAuth,
   GraphPort,
@@ -135,6 +148,8 @@ import type {
   SessionLaunchPosture,
   ShellSessionRequest,
   ShellSessionResult,
+  SpawnAdmission,
+  SpawnBootOutcome,
   SpawnContext,
   SpawnRequest,
   SpawnResult,
@@ -142,13 +157,15 @@ import type {
   SpaceCredentialPort,
   SpaceCredentialProvider,
   Tm8Manifest,
+  NodeEndingSweepReport,
+  NodeEndedKind,
+  SessionUsageFacts,
   TransitionInput,
   WorkSessionEndedKind,
   WorkSessionStatus,
   WorktreeAllocationRow,
-  GhostReconcileReport,
 } from './types.js';
-import { SpawnError } from './types.js';
+import { emptySweep, SpawnError } from './types.js';
 import { ContextBudgetsSchema, SpawnSelectionReasonsSchema, SpawnSelectionSchema, type SpawnSelection } from '@tm8/contract';
 
 /**
@@ -182,6 +199,12 @@ export interface CredentialContainmentResult {
 
 /** The ended reason a failed resume writes (Spec D1 §9 scenario 29). */
 export const RESUME_FAILED_PREFIX = 'Failed to resume: ';
+
+/**
+ * The ended reason a failed launch writes (404). A launch answered at
+ * admission has no HTTP error to show its caller, so the row says why.
+ */
+export const LAUNCH_FAILED_PREFIX = 'Failed to launch: ';
 
 /**
  * The ending each containment records. `endedReason` is read by a person (one
@@ -334,8 +357,93 @@ interface SandboxDecision {
   degradedReason: string | null;
 }
 
+/**
+ * Everything the admission established that the boot needs: the row, the
+ * resolved launch and the reservation. Internal to SpawnService — callers see
+ * the `SpawnAdmission` it is summarized into.
+ */
+interface AdmittedLaunch {
+  request: SpawnRequest;
+  sessionId: string;
+  commandResult: unknown;
+  replayed: boolean;
+  context: SpawnContext;
+  launch: ResolvedLaunchConfig;
+  commandNetwork: ReturnType<typeof resolveCommandNetworkPolicy>;
+  resolvedProfile: Awaited<ReturnType<GraphPort['resolveInteractionProfile']>>;
+  contextIndex: { source: ContextIndexSource } | null;
+  nativeSessionId: string | null;
+  workdir: ReturnType<typeof resolveWorkdir>;
+  cwd: string;
+  /** Null for any other mode, and for a replay (whose reservation was abandoned). */
+  worktree: ReservedWorktree | null;
+  routedTaskIds: string[] | undefined;
+  spawnFacts: { createdTaskId?: string; routedTaskIds?: string[] };
+}
+
+/**
+ * Every promise's outcome, waited for in full, then the first failure IN
+ * ARRAY ORDER. Unlike `Promise.all`, nothing started here is still running
+ * when the caller decides what failed — which matters when the steps write
+ * (a checkout, a token) and the caller is about to clean up after them — and
+ * the failure reported does not depend on which one happened to lose a race.
+ */
+async function allOrFirstFailure<T extends readonly unknown[] | []>(
+  values: T,
+): Promise<{ -readonly [P in keyof T]: Awaited<T[P]> }> {
+  const results = await Promise.allSettled(values);
+  for (const result of results) {
+    if (result.status === 'rejected') throw result.reason;
+  }
+  return results.map((result) => (result as PromiseFulfilledResult<unknown>).value) as {
+    -readonly [P in keyof T]: Awaited<T[P]>;
+  };
+}
+
+/** How `admit` schedules the boot it starts. */
+export interface AdmitOptions {
+  /**
+   * The boot starts once this settles, whichever way it settles, and at the
+   * latest two seconds after admission. The `execution.spawn` handler passes
+   * the assembly of its answer: measured on the dev slot at load ~54, that
+   * assembly took 747 ms p50 while the session's own boot competed with it
+   * for the database pool and the event loop, against 221 ms when nothing else
+   * of the launch ran beside it. Absent, the boot starts at once.
+   */
+  bootAfter?: Promise<unknown>;
+}
+
+/**
+ * The Postgres sqlstate behind a graph-port failure. A raw driver error carries
+ * it as `code`; the server's port translates every database error into a
+ * CollabError (`invariant_violation`, …) and keeps the sqlstate in
+ * `details.sqlstate` (db/errors.ts), which is the shape production delivers.
+ */
+function sqlStateOf(error: unknown): string | undefined {
+  const e = error as { code?: unknown; details?: { sqlstate?: unknown } } | null;
+  if (typeof e?.details?.sqlstate === 'string') return e.details.sqlstate;
+  return typeof e?.code === 'string' && /^[0-9A-Z]{5}$/.test(e.code) ? e.code : undefined;
+}
+
+/** Stop the boot when a phase report found its session already stopped. */
+function throwIfStopped(stopped: SpawnError | null): void {
+  if (stopped) throw stopped;
+}
+
 /** The ordinary case: whatever the posture asked for, the node can give it. */
 const CONFINED: SandboxDecision = { unavailable: false, degradedReason: null };
+
+/** What a wait for a booting session's terminal found: live, or the boot's failure (null: none, or the bound passed). */
+export interface TerminalWait {
+  live: boolean;
+  failure: string | null;
+}
+
+/** How long `prompt` waits for the PTY of a session still booting here before refusing. */
+const PROMPT_BOOT_WAIT_MS = 30_000;
+
+/** The longest a boot waits for its caller's answer (`AdmitOptions.bootAfter`) before it starts anyway. */
+const BOOT_AFTER_MAX_WAIT_MS = 2_000;
 
 /** How long a v2 launch waits for its task's context render before degrading. */
 const TASK_CONTEXT_RENDER_TIMEOUT_MS = 5_000;
@@ -461,6 +569,44 @@ async function isDirectory(path: string): Promise<boolean> {
  * base delay.
  */
 const FAILED_TRANSITION_MAX_ATTEMPTS = 20;
+
+/** One ending a node job records: what `sweepNodeEndings` hands to the node door. */
+type NodeEnding = {
+  status: 'exited' | 'failed';
+  error: string;
+  endedKind: NodeEndedKind;
+  endedReason: string;
+};
+
+/**
+ * Writes one ending through a door (`memberEnding` or `nodeEnding`) and
+ * resolves whether it was recorded. `killThenRecordEnding` calls it after the
+ * kill, so every ending — operator, containment, node job — has one path.
+ */
+type EndingWriter<K extends WorkSessionEndedKind> = (ending: {
+  status: 'exited' | 'failed';
+  error: string;
+  endedKind: K;
+  endedReason: string;
+}) => Promise<boolean>;
+
+/** The `failed / lost` ending: the reaper's and the panel's "Mark lost". */
+function lostEnding(missingForMs?: number): {
+  reason: string;
+  endedKind: 'lost';
+  endedReason: string;
+} {
+  const minutes = missingForMs === undefined ? null : Math.max(1, Math.round(missingForMs / 60_000));
+  return {
+    reason: `marked lost: the record said live, but this node holds no process for it${
+      minutes === null ? '' : ` (missing for ${String(minutes)} min)`}`,
+    endedKind: 'lost',
+    endedReason:
+      minutes === null
+        ? 'Marked lost: its process could not be found. It can be resumed to try again.'
+        : `Lost: its process was gone for ${String(minutes)} minutes. It can be resumed to try again.`,
+  };
+}
 
 /** Per-session bound on the usage read inside `recordShutdown`. See there. */
 const SHUTDOWN_USAGE_READ_MS = 2_000;
@@ -651,6 +797,29 @@ export class SpawnService {
   /** Failed spawn terminal writes retried for this process lifetime. Startup
    * ghost reconciliation is the second line of defence after a node restart. */
   private readonly failedTransitionRetries = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /**
+   * Worktree reservations this process is admitting or booting into. An
+   * admitted spawn writes its row before `git worktree add` runs, so its
+   * allocation stays `preparing` for as long as the checkout takes; the
+   * reconciler asks here (`isBootInFlight`) instead of guessing from the
+   * row's age.
+   */
+  private readonly bootingWorktrees = new Set<string>();
+
+  /**
+   * Sessions this process admitted whose boot has not ended. `prompt` waits on
+   * these for their PTY instead of refusing: `execution.spawn` answers at
+   * admission, and a caller that prompts right after it must keep working.
+   */
+  private readonly bootingSessions = new Set<string>();
+
+  /**
+   * Callers waiting for a booting session's terminal (`awaitBootedTerminal`):
+   * prompts and PTY attaches. Woken when the boot spawns its PTY, the moment it
+   * fails (with the reason), or when it ends.
+   */
+  private readonly terminalWaiters = new Map<string, Array<(failure: string | null) => void>>();
 
   /** Drain-on-live listeners (Forms W2, 214). See `onSessionLive`. */
   private readonly sessionLiveListeners = new Set<SessionLiveListener>();
@@ -980,19 +1149,20 @@ export class SpawnService {
   }
 
   /**
-   * §4.1 admission plus §4.2-4.7, for a spawn that asked for isolation.
+   * §4.1 admission plus §4.2-4.5, for a spawn that asked for isolation: the
+   * reservation `admitLaunch` records on the row before the checkout exists.
    *
    * Every refusal here NAMES its reason, and none of them falls back to the
    * project directory. That is §7.4's first prohibition and the reason the
    * whole feature exists: a session told it is isolated, running in the shared
    * checkout, is worse than a session that refused to start.
    */
-  private async provisionWorktreeFor(
+  private async reserveWorktreeFor(
     auth: GraphAuth,
     request: SpawnRequest,
     context: SpawnContext,
     requestedBaseRef: string | null,
-  ): Promise<ProvisionedWorktree> {
+  ): Promise<ReservedWorktree> {
     if (!this.worktrees) {
       throw new SpawnError(
         'this node cannot provision worktrees — no worktree area is configured',
@@ -1019,20 +1189,48 @@ export class SpawnService {
         { reason: 'worktree_no_node_identity' },
       );
     }
+    return reserveWorktree(this.worktreeParams(auth, request, context, this.worktrees, this.nodeId, requestedBaseRef));
+  }
 
-    return provisionWorktree({
+  /** §4.6-4.7 for the reservation the admission made: the boot's checkout. */
+  private async materializeWorktreeFor(
+    auth: GraphAuth,
+    admitted: AdmittedLaunch,
+    reserved: ReservedWorktree,
+  ): Promise<ProvisionedWorktree> {
+    // `reserveWorktreeFor` refused the launch unless all three were present.
+    if (!this.worktrees || !this.nodeId || !admitted.context.project) {
+      throw new SpawnError('worktree provisioning lost its preconditions mid-launch', 'internal', {
+        reason: 'worktree_unavailable',
+      });
+    }
+    return materializeWorktree(
+      this.worktreeParams(auth, admitted.request, admitted.context, this.worktrees, this.nodeId, admitted.workdir.baseRef),
+      reserved,
+    );
+  }
+
+  private worktreeParams(
+    auth: GraphAuth,
+    request: SpawnRequest,
+    context: SpawnContext,
+    manager: WorktreeManager,
+    nodeId: string,
+    requestedBaseRef: string | null,
+  ): ProvisionWorktreeParams {
+    return {
       auth,
       graph: this.graph,
-      manager: this.worktrees,
+      manager,
       spaceId: request.spaceId,
-      projectId: context.project.id,
-      projectWorkingDir: context.project.workingDir,
+      projectId: (context.project as { id: string }).id,
+      projectWorkingDir: (context.project as { workingDir: string }).workingDir,
       requestedBaseRef,
-      nodeId: this.nodeId,
+      nodeId,
       cap: this.worktreeCap,
       clientMutationId: request.clientMutationId ?? null,
       logger: this.logger,
-    });
+    };
   }
 
   /**
@@ -1052,6 +1250,9 @@ export class SpawnService {
       manager: this.worktrees,
       nodeId: this.nodeId,
       hasLivePty: (sessionId) => this.pty.hasSession(sessionId),
+      // A reservation this process is admitting or booting into is in flight
+      // whatever its age; see `bootingWorktrees`.
+      isBootInFlight: (worktreeId) => this.bootingWorktrees.has(worktreeId),
       repoRootFor: (projectId) =>
         this.graph.loadProjectWorkingDir(auth, projectId).catch(() => null),
       logger: this.logger,
@@ -1409,20 +1610,6 @@ export class SpawnService {
   }
 
   /**
-   * The spawn flow, in the only order that is safe:
-   *   1. read the graph (persona, project, tasks) — nothing has been created yet
-   *   2. resolve launch config + cwd IN-PROCESS
-   *   3. `execution_spawn` — the work_session row and `working_on` edges, one tx
-   *   4. compose the manifest, write the FILE and record the ROW
-   *   5. queue the first task, spawn the PTY, and await verified submission
-   *   6. transition to `running`
-   *
-   * Steps 1-2 precede 3 because the RPC persists the resolved model/agentTool/
-   * mode onto the row, and resolving them needs the persona's defaults. Step 4
-   * precedes 5 because the agent reads the manifest at boot — a PTY started
-   * before the file exists races its own configuration.
-   */
-  /**
    * The per-launch facts only the v2 frame reads (spec ca8d §2): the primary
    * task's context DTO, rendered now — after the session row exists, so as its
    * actor and with the task already `working` — and whether the cwd holds a
@@ -1601,6 +1788,14 @@ export class SpawnService {
   }
 
   /**
+   * execution.spawn, whole: admit the launch, then wait for its boot.
+   *
+   * The in-process callers take this — the dispatcher (which needs a live
+   * terminal before it routes), the loop executor, form delivery — and get
+   * exactly the result they always had, after the session is `running`. The
+   * public `execution.spawn` handler answers at admission instead, through
+   * {@link admit}.
+   *
    * @param server FACTS THE SERVER ESTABLISHED — see {@link SpawnServerFacts}.
    * A separate parameter precisely because `SpawnRequest` is assembled from the
    * wire input by the public `execution.spawn` handler: a caller cannot reach
@@ -1608,24 +1803,134 @@ export class SpawnService {
    * fills it.
    */
   async spawn(auth: GraphAuth, request: SpawnRequest, server?: SpawnServerFacts): Promise<SpawnResult> {
-    const taskIds = request.taskIds ?? [];
-    let bootExit: PtyExitInfo | undefined;
-    let firstPromptDeliveryId: string | undefined;
+    const { boot } = await this.admit(auth, request, server);
+    const outcome = await boot;
+    if (!outcome.ok) throw outcome.error;
+    return outcome.result;
+  }
 
-    const context = await this.graph.loadSpawnContext(auth, {
-      spaceId: request.spaceId,
-      teamMemberId: request.teamMemberId,
-      projectId: request.projectId ?? null,
-      taskIds,
-      // 176: the loader resolves the parent's KIND for the manifest's
-      // coordinator block. Passed even for non-coordinated modes because the
-      // launch config that decides coordination has not been resolved yet, and
-      // re-reading the graph after it would be a second round trip describing
-      // a later instant than the persona it is composed beside.
-      parentSessionId: request.parentSessionId ?? null,
-      ...(request.memoryIds?.length ? { memoryIds: request.memoryIds } : {}),
-      ...(request.selection ? { selection: request.selection } : {}),
+  /**
+   * Admit a launch and start its boot, answering as soon as the launch is
+   * ADMITTED: every read that can refuse it has run, its row exists
+   * (`spawning`, boot phase `admitted`, its slot counted by `execution_spawn`)
+   * and a worktree launch holds a reservation whose path the row records.
+   *
+   * The boot then runs on in this process — lane → briefing → agent → live —
+   * and records each phase on the row as it is reached (404), so a caller that
+   * answered at admission follows it through the ordinary `entity.upsert`.
+   * `boot` NEVER REJECTS: a boot that fails has already recorded the failure on
+   * the row (status `failed`, boot phase `failed`, an ended reason) and cleaned
+   * up after itself when it resolves `{ ok: false }`.
+   *
+   * A ledger replay of an admitted launch — the same `clientMutationId`, in any
+   * phase — answers with the original session and boots nothing.
+   */
+  async admit(
+    auth: GraphAuth,
+    request: SpawnRequest,
+    server?: SpawnServerFacts,
+    options: AdmitOptions = {},
+  ): Promise<AdmittedSpawn> {
+    const timer = new SpawnPhaseTimer();
+    let admitted: AdmittedLaunch;
+    try {
+      admitted = await this.admitLaunch(auth, request, server, timer);
+    } catch (error) {
+      this.logSpawnTimings(timer, null, 'refused', error);
+      throw error;
+    }
+    const admission: SpawnAdmission = {
+      sessionId: admitted.sessionId,
+      cwd: admitted.cwd,
+      commandResult: admitted.commandResult,
+      reused: admitted.replayed,
+      ...admitted.spawnFacts,
+      timings: timer.snapshot(),
+    };
+    if (admitted.replayed) {
+      const timings = this.logSpawnTimings(timer, admitted.sessionId, 'replayed');
+      return {
+        admission: { ...admission, timings },
+        boot: Promise.resolve({ ok: true, result: { ...this.replayedResult(request, admitted), timings } }),
+      };
+    }
+    return { admission, boot: this.boot(auth, request, admitted, timer, options.bootAfter) };
+  }
+
+  /**
+   * One structured line per launch, whatever its outcome, so a slow launch can
+   * be read phase by phase from the node's log (see spawn-timings.ts). A boot
+   * logs once, at its end, with its admission's phases in the same record.
+   */
+  private logSpawnTimings(
+    timer: SpawnPhaseTimer,
+    sessionId: string | null,
+    outcome: 'running' | 'replayed' | 'refused' | 'failed',
+    error?: unknown,
+  ): SpawnTimings {
+    const timings = timer.snapshot();
+    this.logger?.info('SpawnService: spawn timings', {
+      sessionId,
+      outcome,
+      totalMs: timings.totalMs,
+      phases: timings.phases,
+      ...(error === undefined ? {} : { error: error instanceof Error ? error.message : String(error) }),
     });
+    return timings;
+  }
+
+  /**
+   * The admission: everything that can refuse the launch, then its row.
+   *
+   *   1. read the graph — context ∥ the parent's posture ∥ the interaction
+   *      profile, three independent reads of one instant — and resolve the
+   *      launch config and workdir in-process. All three reads settle before
+   *      any is judged, and the first refusal in that order is the one
+   *      reported: the context's, then the profile's, then the in-process
+   *      checks that need both.
+   *   2. read the selection headers `<context_index>` renders.
+   *   3. worktree mode: RESERVE the checkout (`reserveWorktree`: repository,
+   *      base, id, path, allocation) — never `git worktree add`, which is the
+   *      boot's. The path is deterministic, so the row can record it now.
+   *   4. `execution_spawn` — the row, its `working_on` edges, the cap, the
+   *      ledger, one transaction.
+   *
+   * Steps 1-3 precede 4 because the RPC persists the resolved model/agentTool/
+   * mode and the workdir path onto the row, and resolving them needs the
+   * persona's defaults and the reservation.
+   */
+  private async admitLaunch(
+    auth: GraphAuth,
+    request: SpawnRequest,
+    server: SpawnServerFacts | undefined,
+    timer: SpawnPhaseTimer,
+  ): Promise<AdmittedLaunch> {
+    const taskIds = request.taskIds ?? [];
+    const [context, parentPosture, resolvedProfile] = await allOrFirstFailure([
+      timer.time('loadSpawnContext', () => this.graph.loadSpawnContext(auth, {
+        spaceId: request.spaceId,
+        teamMemberId: request.teamMemberId,
+        projectId: request.projectId ?? null,
+        taskIds,
+        // 176: the loader resolves the parent's KIND for the manifest's
+        // coordinator block. Passed even for non-coordinated modes because the
+        // launch config that decides coordination has not been resolved yet, and
+        // re-reading the graph after it would be a second round trip describing
+        // a later instant than the persona it is composed beside.
+        parentSessionId: request.parentSessionId ?? null,
+        ...(request.memoryIds?.length ? { memoryIds: request.memoryIds } : {}),
+        ...(request.selection ? { selection: request.selection } : {}),
+      })),
+      // An explicit inheritPosture (Forms W2) needs no read of the parent.
+      request.inheritPosture !== undefined
+        ? Promise.resolve(null)
+        : timer.time('inheritedPosture', () => this.inheritedPosture(auth, request)),
+      timer.time('resolveInteractionProfile', () => this.graph.resolveInteractionProfile(auth, {
+        spaceId: request.spaceId,
+        teamMemberId: request.teamMemberId,
+        interactionProfileId: request.interactionProfileId ?? null,
+      })),
+    ]);
 
     // A child inherits its parent's posture but not its harness pick; only a
     // resume replays the pick, because only a resume is the same launch. An
@@ -1633,8 +1938,8 @@ export class SpawnService {
     // replayed, so it keeps its pick: dropping a plugin allow set could widen it.
     const inherited = request.inheritPosture !== undefined
       ? request.inheritPosture
-      : childLaunchPosture(await this.inheritedPosture(auth, request));
-    const launch = resolveLaunchConfig(request, context, this.env, inherited);
+      : childLaunchPosture(parentPosture);
+    const launch = timer.timeSync('resolveLaunchConfig', () => resolveLaunchConfig(request, context, this.env, inherited));
     // Fail before creating a work_session row when a coordinated mode has no
     // concrete parent to receive its result. composeManifest repeats this
     // guard so direct callers cannot manufacture an unroutable prompt.
@@ -1660,45 +1965,38 @@ export class SpawnService {
       scratchRoot: join(this.dataDir, 'scratch'),
     });
 
-    const resolvedProfile = await this.graph.resolveInteractionProfile(auth, {
-      spaceId: request.spaceId,
-      teamMemberId: request.teamMemberId,
-      interactionProfileId: request.interactionProfileId ?? null,
-    });
     // `<context_index>` (design 01a0d348 §2): always on (launch card v3), so
     // its headers are always read.
     const indexSwitch = contextIndexSwitch(this.env, resolvedProfile.snapshot);
     const contextIndex = indexSwitch.on ? { source: indexSwitch.source } : null;
     applyDispatcherTeammates(context, launch.mode);
-    if (contextIndex) await this.loadIndexHeaders(auth, context, launch.mode, request.jevRunId);
+    if (contextIndex) {
+      await timer.time('loadIndexHeaders', () => this.loadIndexHeaders(auth, context, launch.mode, request.jevRunId));
+    }
 
-    // Worktree mode provisions BEFORE the work_session row exists, because the
+    // Worktree mode RESERVES before the work_session row exists, because the
     // row must persist the path the PTY will actually use — that is §1.2's
     // shipped scratch defect (a row recording `.../pending`) not being
-    // reintroduced. Everything after this point treats the worktree as just
-    // another workdir.
+    // reintroduced. The reservation names that path without creating it
+    // (`computeWorktreePath` of an id minted before any write), so the row can
+    // exist before the checkout does: `git worktree add` is the boot's first
+    // step, after the caller has its answer. Everything after the boot's lane
+    // phase treats the worktree as just another workdir.
     //
     // It runs AFTER every read that can refuse the launch, so a refusal there
-    // costs no checkout; the only refusal left after it is the row write
-    // itself, and that one hands the fresh checkout to the reconciler below.
+    // costs no reservation; the only refusal left after it is the row write
+    // itself, and that one settles the reservation below.
     const worktree =
       workdir.mode === 'worktree'
-        ? await this.provisionWorktreeFor(auth, request, context, workdir.baseRef)
+        ? await timer.time('reserveWorktree', () => this.reserveWorktreeFor(auth, request, context, workdir.baseRef))
         : null;
-
-    // The lane fact (107). Worktree mode knows its branch without a probe —
-    // provisioning just created it. Project mode asks the SHARED checkout what
-    // it has right now; a non-repo or detached HEAD answers null, which is
-    // recorded as "no claim". Scratch has no repo by construction.
-    const checkoutBranch = worktree
-      ? worktree.branch
-      : workdir.mode === 'project'
-        ? await detectCheckoutBranch(workdir.path)
-        : null;
+    // In flight from here: the reconciler leaves this reservation alone for as
+    // long as this process is admitting or booting into it.
+    if (worktree) this.bootingWorktrees.add(worktree.worktreeId);
 
     let created: Awaited<ReturnType<GraphPort['createWorkSession']>>;
     try {
-      created = await this.graph.createWorkSession(auth, {
+      created = await timer.time('createWorkSession', () => this.graph.createWorkSession(auth, {
         spaceId: request.spaceId,
         teamMemberId: request.teamMemberId,
         parentSessionId: request.parentSessionId ?? null,
@@ -1707,7 +2005,7 @@ export class SpawnService {
         // accepts the project entity id or the folder id, but `execution_spawn`
         // looks the id up in `public.projects` by folder id only, so forwarding
         // an entity id refused the spawn with a bare not_found — after the
-        // worktree had already been provisioned from the resolved id.
+        // worktree had already been reserved from the resolved id.
         projectId: context.project?.id ?? null,
         workdirMode: workdir.mode,
         workdirPath: worktree ? worktree.path : workdir.path,
@@ -1730,29 +2028,25 @@ export class SpawnService {
         ...(request.sourceWorkSessionId ? { sourceWorkSessionId: request.sourceWorkSessionId } : {}),
         // 348: from `server`, never from `request`. `execution_spawn` writes
         // the session -> loop `triggered_by` edge in THIS transaction, because
-        // the MCP bind below runs inside this spawn and reads the schedule
-        // provenance root off that edge.
+        // the MCP bind in the boot reads the schedule provenance root off that
+        // edge.
         ...(server?.triggeredByLoopId ? { triggeredByLoopId: server.triggeredByLoopId } : {}),
-      });
+        // 399: from `server`, never from `request`, for the same reason.
+        ...(server?.bridgeOrigins?.length ? { bridgeOrigins: server.bridgeOrigins } : {}),
+      }));
     } catch (error) {
-      // The row was refused, so nothing references the checkout just created
-      // and nothing ever will: left in `preparing` with its entity committed,
-      // the reconciler would PUBLISH it as ready — a lane with no session.
-      // `cleanup_pending` is the state that tells it to remove the checkout
-      // instead; it holds no work, since no agent ever ran in it.
-      if (worktree) {
-        await this.graph
-          .setWorktreeAllocationState(auth, {
-            worktreeId: worktree.worktreeId,
-            state: 'cleanup_pending',
-            failureCode: 'spawn_refused',
-            failureDetail: { message: error instanceof Error ? error.message : String(error) },
-          })
-          .catch(() => undefined);
-      }
+      // The row was refused, so nothing will ever boot into the reservation.
+      // Nothing is on disk yet (the checkout is the boot's), so `failed` — the
+      // safe-to-retry state — is the whole repair.
+      if (worktree) await this.abandonReservation(auth, worktree.worktreeId, 'spawn_refused', error);
       throw error;
     }
     const { sessionId, commandResult, replayed, createdTaskId } = created;
+    // A ledger replay names the ORIGINAL launch, which reserved its own
+    // checkout: this call's reservation belongs to nobody.
+    if (replayed && worktree) {
+      await this.abandonReservation(auth, worktree.worktreeId, 'spawn_replayed', null);
+    }
     // Launch v3 gap 4: the task the RPC just created is known only now. It is
     // new, so it has nothing but its title — the rest is what the row holds.
     if (createdTaskId) {
@@ -1774,9 +2068,6 @@ export class SpawnService {
         },
       ];
     }
-    // The RPC just started the tasks, so their version moved (a replay's did,
-    // the first time). Compose from the task as it stands now.
-    await this.refreshStartedTasks(auth, context);
     // A dispatcher launched on tasks ROUTES them rather than working them:
     // its first turn is a dispatch request per task, not an assignment (and
     // 267 wrote it neither `working_on` nor `assigned_to`).
@@ -1784,159 +2075,227 @@ export class SpawnService {
       ? context.tasks.map((task) => task.id)
       : undefined;
     if (routedTaskIds) context.tasks = [];
-    const spawnFacts = {
-      ...(createdTaskId ? { createdTaskId } : {}),
-      ...(routedTaskIds ? { routedTaskIds } : {}),
-    };
 
     // A projectless scratch session's directory is named for the session, which
-    // only exists now. Re-resolve so the manifest and the PTY agree.
-    //
-    // A worktree's path needed no session id — it was computed from an id
-    // generated before any write — so it is simply the path, and the row above
-    // persisted this exact string (G3.6).
+    // only exists now. A worktree's path needed no session id — it was computed
+    // from an id generated before any write — so it is simply the reserved
+    // path, and the row above persisted this exact string (G3.6). A REPLAY's
+    // worktree is the original launch's, whose path only its row knows: this
+    // call's reservation was just abandoned and will never be created.
     const cwd = worktree
-      ? worktree.path
+      ? replayed
+        ? await this.recordedWorkdirPath(auth, sessionId, worktree.path)
+        : worktree.path
       : context.project
         ? workdir.path
         : join(this.dataDir, 'scratch', sessionId);
 
-    // A ledger replay is a transport retry of the original command result, not
-    // permission to boot another child under the old work-session id.
-    if (replayed) {
-      // No sandbox preflight on a replay branch: this re-renders the ORIGINAL
-      // command result and boots no child, so it cannot produce a session that
-      // looks alive and is not. Preflighting here would let a node whose
-      // sandbox broke since the first call turn a successful, already-completed
-      // spawn into an error on retry, which is precisely what idempotent replay
-      // exists to prevent.
-      const command = buildAgentCommand(launch, this.env);
-      const manifestPath = this.manifestPathFor(sessionId);
-      const manifest = composeManifest({
-        sessionId,
-        request,
-        context,
-        launch,
-        commandNetwork,
-        interactionProfile: { ...resolvedProfile, pinRevision: 0 },
-        workdir: { mode: workdir.mode, path: cwd },
-        command,
-        contextIndex,
-        baseUrl: this.baseUrl,
-      });
-      return {
-        sessionId,
-        manifestPath,
-        manifest,
-        command,
-        cwd,
-        envVarNames: [],
-        reused: true,
-        commandResult,
-        ...spawnFacts,
-        launchFacts: spawnLaunchFacts(manifest.launch, launch.accessModeSource, request.parentSessionId ?? null),
-      };
+    if (!replayed) {
+      // The claims the exit path writes with (see `sessionAuth`), from the
+      // moment the row exists: a boot can fail, or its PTY exit, at any point
+      // after this.
+      this.sessionAuth.set(sessionId, auth);
+      this.bootingSessions.add(sessionId);
     }
 
+    return {
+      request, sessionId, commandResult, replayed, context, launch, commandNetwork, resolvedProfile,
+      contextIndex, nativeSessionId, workdir, cwd,
+      worktree: replayed ? null : worktree,
+      routedTaskIds,
+      spawnFacts: {
+        ...(createdTaskId ? { createdTaskId } : {}),
+        ...(routedTaskIds ? { routedTaskIds } : {}),
+      },
+    };
+  }
+
+  /**
+   * A ledger replay is a transport retry of the original command result, not
+   * permission to boot another child under the old work-session id: it boots
+   * nothing, whatever phase the original launch is in.
+   *
+   * No sandbox preflight on a replay: this re-renders the ORIGINAL command
+   * result and boots no child, so it cannot produce a session that looks alive
+   * and is not. Preflighting here would let a node whose sandbox broke since the
+   * first call turn a successful, already-admitted spawn into an error on
+   * retry, which is precisely what idempotent replay exists to prevent.
+   */
+  private replayedResult(request: SpawnRequest, admitted: AdmittedLaunch): SpawnResult {
+    const { sessionId, launch } = admitted;
+    const command = buildAgentCommand(launch, this.env);
+    const manifest = composeManifest({
+      sessionId,
+      request,
+      context: admitted.context,
+      launch,
+      commandNetwork: admitted.commandNetwork,
+      interactionProfile: { ...admitted.resolvedProfile, pinRevision: 0 },
+      workdir: { mode: admitted.workdir.mode, path: admitted.cwd },
+      command,
+      contextIndex: admitted.contextIndex,
+      baseUrl: this.baseUrl,
+    });
+    return {
+      sessionId,
+      manifestPath: this.manifestPathFor(sessionId),
+      manifest,
+      command,
+      cwd: admitted.cwd,
+      envVarNames: [],
+      reused: true,
+      commandResult: admitted.commandResult,
+      ...admitted.spawnFacts,
+      launchFacts: spawnLaunchFacts(manifest.launch, launch.accessModeSource, request.parentSessionId ?? null),
+    };
+  }
+
+  /**
+   * The boot of an admitted launch, in the server process, after the caller
+   * has its answer:
+   *
+   *   lane      the checkout (`materializeWorktree`, then lease → edge → ready)
+   *             or the scratch directory, beside the row's own facts — the
+   *             branch, the native id, the profile pin, the agent token, the
+   *             started tasks' versions. Independent writes, run together.
+   *   briefing  the MCP bind and the credentials (both need the token), the
+   *             manifest, the prompt, the runtime preflight; then the manifest
+   *             FILE, its ROW and the CLI's workspace trust, together.
+   *   agent     queue the first turn, spawn the PTY, and await boot settlement
+   *             and the first turn's verified submission.
+   *   live      transition to `running`.
+   *
+   * The briefing precedes the agent because the agent reads the manifest at
+   * boot — a PTY started before the file exists races its own configuration.
+   * Each phase is recorded on the row once reached; a report the row refuses
+   * means the session was stopped while it booted, and the boot stops too.
+   *
+   * NEVER REJECTS, which is what lets `admit` hand it back unawaited: every
+   * failure goes through the one catch below, which records it on the row
+   * (`failSession`) and undoes what the boot created before resolving
+   * `{ ok: false }`.
+   */
+  private async boot(
+    auth: GraphAuth,
+    request: SpawnRequest,
+    admitted: AdmittedLaunch,
+    timer: SpawnPhaseTimer,
+    bootAfter: Promise<unknown> | undefined,
+  ): Promise<SpawnBootOutcome> {
+    const { sessionId, context, launch, worktree, cwd, workdir } = admitted;
+    let bootExit: PtyExitInfo | undefined;
+    let firstPromptDeliveryId: string | undefined;
     let agentTokenIssued = false;
-    this.sessionAuth.set(sessionId, auth);
-    // The OOM baseline, captured with the claims because it is the same kind
-    // of launch-time bookkeeping and must exist before the PTY can die (171).
-    this.oomKillAtSpawn.set(sessionId, await readOomKillCount());
+    let leased = false;
     let spaceCredentialIds: string[] = [];
 
     try {
-      // Step 7 (§4.8) — publish. The lease and the association need the session
-      // id, so they are the one part of the saga that cannot run before the row
-      // exists. `ready` is last: it is the claim that this checkout is usable,
-      // and claiming it before the lease is held would let a second spawn take
-      // a worktree this one is about to boot into.
-      if (worktree) {
-        await this.graph.acquireWorktreeLease(auth, worktree.worktreeId, sessionId);
-        await this.graph.linkSessionToWorktree(auth, {
-          spaceId: request.spaceId,
-          sessionId,
-          worktreeId: worktree.worktreeId,
-        });
-        await this.graph.setWorktreeAllocationState(auth, {
-          worktreeId: worktree.worktreeId,
-          state: 'ready',
-        });
+      // Let the caller finish its answer first (see AdmitOptions.bootAfter):
+      // the boot's own reads would otherwise compete with it for the same
+      // pool and event loop. Settled either way, and bounded, because a boot
+      // that waited on its caller forever would be a launch that never ran.
+      if (bootAfter) {
+        await timer.time('awaitAdmissionAnswer', () => Promise.race([
+          bootAfter.then(() => undefined, () => undefined),
+          new Promise<void>((resolve) => { setTimeout(resolve, BOOT_AFTER_MAX_WAIT_MS).unref?.(); }),
+        ]));
       }
+      // --- lane ---------------------------------------------------------------
+      const [, , interactionProfile, agentToken] = await allOrFirstFailure([
+        timer.time('lane', () => this.prepareLane(auth, admitted, () => { leased = true; })),
+        // The OOM baseline, captured with the claims because it is the same
+        // kind of launch-time bookkeeping and must exist before the PTY can die
+        // (171). The started tasks' versions are re-read beside it.
+        (async () => {
+          this.oomKillAtSpawn.set(sessionId, await timer.time('readOomKillCount', () => readOomKillCount()));
+          // The RPC started the tasks, so their version moved (a replay's did,
+          // the first time). Compose from the task as it stands now.
+          await timer.time('refreshStartedTasks', () => this.refreshStartedTasks(auth, context));
+        })(),
+        timer.time('recordInteractionProfilePin', () =>
+          this.graph.recordInteractionProfilePin(auth, sessionId, admitted.resolvedProfile)),
+        timer.time('issueWorkSessionAgentToken', async () => {
+          const token = await this.graph.issueWorkSessionAgentToken(auth, sessionId, request.teamMemberId);
+          agentTokenIssued = true;
+          return token;
+        }),
+        // The pre-minted Claude id is graph truth from the moment the session
+        // exists — recorded BEFORE the PTY spawns, so even a session that dies
+        // in its boot window is already resume-capable.
+        admitted.nativeSessionId
+          ? timer.time('recordNativeSessionId', () =>
+              this.graph.recordNativeSessionId(auth, sessionId, admitted.nativeSessionId as string))
+          : Promise.resolve(true),
+      ]);
+      // Awaited before the briefing's first write (MCP binding rows, the
+      // credential home): a session stopped during its lane phase gets none.
+      throwIfStopped(await this.reportBootPhase(auth, sessionId, 'lane'));
 
-      // The lane fact needs the row, so this is the earliest it can land —
-      // recorded before the PTY exists so even a session that dies in its
-      // boot window already answers "what branch was I on".
-      if (checkoutBranch !== null) {
-        await this.captureCheckoutBranch(auth, sessionId, checkoutBranch);
-      }
-
-      // The pre-minted Claude id is graph truth from the moment the session
-      // exists — recorded BEFORE the PTY spawns, so even a session that dies
-      // in its boot window is already resume-capable.
-      if (nativeSessionId) {
-        await this.graph.recordNativeSessionId(auth, sessionId, nativeSessionId);
-      }
-      const interactionProfile = await this.graph.recordInteractionProfilePin(
-        auth,
-        sessionId,
-        resolvedProfile,
-      );
-      const agentToken = await this.graph.issueWorkSessionAgentToken(
-        auth,
-        sessionId,
-        request.teamMemberId,
-      );
-      agentTokenIssued = true;
-      if (this.mcpBindings) launch.mcpSelections = await this.mcpBindings.bind(auth, {
-        sessionId, spaceId: request.spaceId, teamMemberId: request.teamMemberId,
-        targetIds: context.tasks.map(task => task.id), agentToken,
-        ...(request.mcpSelections !== undefined ? { mcpSelections: request.mcpSelections } : {}),
-      });
-      else if (request.mcpSelections?.length) throw new Error('MCP launch bindings are unavailable');
-      // The base command is built FIRST and recorded in the manifest; the system
-      // prompt is then derived FROM that manifest and appended to produce the
-      // line the PTY actually runs. See `withAgentPrompt` for why this is two
-      // steps and not one — it unties an apparent circular dependency.
+      // --- briefing -----------------------------------------------------------
+      // The MCP bind and the credentials both need the token and are otherwise
+      // independent: resolution COPIES the launch, so the bind's selections
+      // are put onto that copy below rather than raced onto the original.
+      const mcpBindings = this.mcpBindings;
+      if (!mcpBindings && request.mcpSelections?.length) throw new Error('MCP launch bindings are unavailable');
       // Preflight the sandbox BEFORE the command is built, so that a node which
       // cannot honour this posture refuses here — with a sentence naming the
       // precondition — instead of booting an agent that will look healthy and
       // be unable to run anything. Throws unless the operator has opted in.
-      const sandbox = await this.resolveSandboxPosture(launch);
-      const manifestPath = this.manifestPathFor(sessionId);
-      const credentials = await this.resolveSessionCredentials(
-        auth,
-        request.spaceId,
-        sessionId,
-        launch,
-        agentToken,
-      );
+      const [mcpSelections, sandbox, credentials] = await allOrFirstFailure([
+        mcpBindings
+          ? timer.time('mcpBind', () => mcpBindings.bind(auth, {
+              sessionId, spaceId: request.spaceId, teamMemberId: request.teamMemberId,
+              targetIds: context.tasks.map(task => task.id), agentToken,
+              ...(request.mcpSelections !== undefined ? { mcpSelections: request.mcpSelections } : {}),
+            }))
+          : Promise.resolve(undefined),
+        timer.time('resolveSandboxPosture', () => this.resolveSandboxPosture(launch)),
+        timer.time('resolveSessionCredentials', () => this.resolveSessionCredentials(
+          auth,
+          request.spaceId,
+          sessionId,
+          launch,
+          agentToken,
+        )),
+      ]);
+      if (mcpSelections !== undefined) launch.mcpSelections = mcpSelections;
+      // The RESOLVED sources: auto that landed on the space is recorded as
+      // `space` with its id, which is what 206's manifest writer turns into
+      // the session_space_credentials row containment reads (D8).
+      const resolvedLaunch = mcpSelections !== undefined
+        ? { ...credentials.launch, mcpSelections }
+        : credentials.launch;
       spaceCredentialIds = credentials.spaceCredentialIds;
       const { credentialHome, gitHubCredential } = credentials;
+      const manifestPath = this.manifestPathFor(sessionId);
+      // The base command is built FIRST and recorded in the manifest; the system
+      // prompt is then derived FROM that manifest and appended to produce the
+      // line the PTY actually runs. See `withAgentPrompt` for why this is two
+      // steps and not one — it unties an apparent circular dependency.
+      //
       // Built after the credentials because a `minimal` launch reads the
       // plugin registry of the config home the child will actually use.
       // Read once: the same lists build the argv and the manifest's record of
       // it, so the two cannot disagree about a plugin.
       // The command is built INSIDE composeManifest, after the skill index is
       // trimmed, from the plugins of the skills that survived (F2).
-      const installedPlugins = this.installedClaudePluginsFor(launch, credentialHome?.configDir);
-      const homeSkills = this.configHomeSkillsFor(launch, credentialHome?.configDir);
+      const { installedPlugins, homeSkills } = timer.timeSync('harnessSurfaceReads', () => ({
+        installedPlugins: this.installedClaudePluginsFor(launch, credentialHome?.configDir),
+        homeSkills: this.configHomeSkillsFor(launch, credentialHome?.configDir),
+      }));
       let baseCommand = '';
-      const manifest = composeManifest({
+      const manifest = timer.timeSync('composeManifest', () => composeManifest({
         agentConfigDir: credentialHome?.configDir ?? (launch.agentTool === 'codex' ? this.env.CODEX_HOME : this.env.CLAUDE_CONFIG_DIR),
         homeDir: this.env.HOME ?? homedir(),
         sessionId,
         request,
         context,
-        // The RESOLVED sources: auto that landed on the space is recorded as
-        // `space` with its id, which is what 206's manifest writer turns into
-        // the session_space_credentials row containment reads (D8).
-        launch: credentials.launch,
-        commandNetwork,
+        launch: resolvedLaunch,
+        commandNetwork: admitted.commandNetwork,
         interactionProfile,
         workdir: { mode: workdir.mode, path: cwd },
         command: (effectiveClaudePlugins, skillOverrides, noChrome) => (baseCommand = buildAgentCommand(launch, this.env, {
-          claudeSessionId: nativeSessionId,
+          claudeSessionId: admitted.nativeSessionId,
           sandboxUnavailable: sandbox.unavailable,
           installedClaudePlugins: installedPlugins,
           equippedClaudePlugins: effectiveClaudePlugins,
@@ -1945,64 +2304,18 @@ export class SpawnService {
         })),
         sandboxDegraded: sandbox.degradedReason,
         harness: this.managesClaudeHarness(launch) ? { installedPlugins, skills: homeSkills, projectKeys: this.projectSkillKeysFor(launch, cwd) } : null,
-        contextIndex,
+        contextIndex: admitted.contextIndex,
         baseUrl: this.baseUrl,
-      });
+      }));
 
-      const story = await this.storyContext(auth, manifest, sessionId);
+      // Two independent reads; both land on the manifest before the v2 runtime
+      // measures what room the prompt has left, so they finish first.
+      const [story, design] = await allOrFirstFailure([
+        timer.time('storyContext', () => this.storyContext(auth, manifest, sessionId)),
+        timer.time('designContext', () => this.designContext(auth, manifest, sessionId)),
+      ]);
       if (story) manifest.story = story;
-      const design = await this.designContext(auth, manifest, sessionId);
       if (design) manifest.design = design;
-
-      // Compose the agent's briefing IN-PROCESS and embed it in the command.
-      //
-      // In-process, NOT by having the PTY shell out to `tm8 worker init`: the
-      // prompt must exist at the agent's FIRST TOKEN, before it could run any
-      // CLI, so a boot that depends on the CLI being resolvable on PATH is a
-      // failure mode designed out rather than handled. `tm8 worker init` remains
-      // for an agent that wants to re-read its own briefing, and shares this
-      // exact composer (`@tm8/prompt`) so the two can never drift.
-      const runtime: PromptRuntime = {
-        sessionId,
-        baseUrl: this.baseUrl,
-        ...(await this.promptV2Runtime(auth, manifest, sessionId, cwd)),
-      };
-      const envelope = composeLaunchPrompt(manifest, runtime);
-      // The two halves stay SEPARATE all the way to the argv. `envelope.system`
-      // configures the agent; `envelope.task` is its first user turn, and is
-      // what actually makes it start. Concatenating them here is what left every
-      // real agent idle at a REPL — see `withAgentPrompt`.
-      //
-      // The Codex marker: a Codex rollout records nothing of the child's env
-      // and carries the system prompt as config, not a message — so the ONLY
-      // durable link between this tm8 session and its rollout file is a marker
-      // in the first user turn. That marker is what resume's capture scan
-      // matches (native-session.ts). Claude needs none: its id is pre-minted.
-      const turn = routedTaskIds
-        ? `${firstTurn(envelope, sessionId, request)}\n${routingTurn(routedTaskIds, sessionId)}`
-        : firstTurn(envelope, sessionId, request);
-      const task =
-        launch.agentTool === 'codex'
-          ? `${turn}\n<tm8_session_id>${sessionId}</tm8_session_id>`
-          : turn;
-      // THE FIRST TURN RIDES IN ARGV wherever the binary accepts one, because a
-      // prompt that is already in the process cannot be lost to a boot race. The
-      // alternative — launch an idle REPL and type the task into the TUI once it
-      // looks quiet — is what produced sessions that reported `running` with an
-      // empty composer and an agent that never received its assignment. See
-      // `withAgentPrompt`'s production note for the evidence.
-      //
-      // Only a launch this function cannot configure (echo-agent, an operator
-      // `TM8_AGENT_CMD` wrapper) still needs the PTY to carry its first turn, and
-      // `positionalTask` is the single source of truth for which case we are in —
-      // so the task is delivered exactly once, never zero times and never twice.
-      const positionalTask = supportsPositionalPrompt(launch, this.env);
-      const command = withAgentPrompt(
-        baseCommand,
-        { system: envelope.system, task: positionalTask ? task : '' },
-        launch,
-        this.env,
-      );
 
       const env = composeEnv(
         manifest,
@@ -2018,20 +2331,68 @@ export class SpawnService {
       Object.assign(env, harnessSurfaceEnv(launch));
       const envVarNames = Object.keys(env).sort();
 
-      // Refuse BEFORE spawning if the agent CLI cannot be found, so the caller
-      // is told what is actually wrong.
+      // Refuse BEFORE spawning, and before writing anything, if the agent CLI
+      // cannot be found, so the caller is told what is actually wrong.
       //
-      // Without this the launch "succeeds", the child exits 127 immediately, and
-      // the boot-settlement watcher reports `agent process exited during the
-      // 150ms boot settlement window` — true about the symptom, silent about the
-      // cause, and indistinguishable from a crashing or unlicensed CLI. Measured
-      // 2026-07-30 under the launchd service, whose PATH omits both agent
-      // binaries. `composeEnv` has already added the standard install dirs, so
-      // reaching this branch means the CLI genuinely is not installed anywhere
-      // tm8 knows to look — which is a `not_found`, not a retryable 503.
-      await this.assertAgentRuntime(baseCommand, launch, env);
+      // Without this the launch "succeeds", the child exits 127 immediately,
+      // and the boot-settlement watcher reports `agent process exited during
+      // the 150ms boot settlement window` — true about the symptom, silent
+      // about the cause, and indistinguishable from a crashing or unlicensed
+      // CLI. Measured 2026-07-30 under the launchd service, whose PATH omits
+      // both agent binaries. `composeEnv` has already added the standard
+      // install dirs, so reaching this branch means the CLI genuinely is not
+      // installed anywhere tm8 knows to look — which is a `not_found`, not a
+      // retryable 503.
+      await timer.time('assertAgentRuntime', () => this.assertAgentRuntime(baseCommand, launch, env));
 
-      await this.writeManifestFile(manifestPath, manifest);
+      // The prompt, and beside it what needs the manifest and the environment
+      // but not the prompt: the manifest FILE and the CLI's workspace trust.
+      // The manifest ROW waits for the prompt, because the two prompts go down
+      // with it.
+      const [{ envelope, task, command, positionalTask }] = await allOrFirstFailure([
+        (async () => {
+          // Compose the agent's briefing IN-PROCESS and embed it in the command.
+          //
+          // In-process, NOT by having the PTY shell out to `tm8 worker init`:
+          // the prompt must exist at the agent's FIRST TOKEN, before it could
+          // run any CLI, so a boot that depends on the CLI being resolvable on
+          // PATH is a failure mode designed out rather than handled. `tm8
+          // worker init` remains for an agent that wants to re-read its own
+          // briefing, and shares this exact composer (`@tm8/prompt`) so the two
+          // can never drift.
+          const runtime: PromptRuntime = {
+            sessionId,
+            baseUrl: this.baseUrl,
+            ...(await timer.time('promptV2Runtime', () => this.promptV2Runtime(auth, manifest, sessionId, cwd))),
+          };
+          const composed = timer.timeSync('composeLaunchPrompt', () => composeLaunchPrompt(manifest, runtime));
+          return { envelope: composed, ...this.firstTurnCommand(composed, baseCommand, sessionId, request, launch, admitted.routedTaskIds) };
+        })(),
+        timer.time('writeManifestFile', () => this.writeManifestFile(manifestPath, manifest)),
+        // Record the CLI's per-workspace trust BEFORE the child exists, because
+        // afterwards is too late: the dialog blocks on first directory access,
+        // and this launch is unattended — nobody is watching the PTY to answer
+        // it. The lane phase already created a scratch cwd, which these need:
+        // they resolve `cwd` through `realpath`.
+        // Trust belongs to the same credential/config home the child is about
+        // to use. Passing the server environment here writes into the node
+        // account even when `env` points Claude/Codex at a member-specific home,
+        // leaving the child untrusted and reintroducing shared mutable provider
+        // state. The stable trust root is what survives a booting claude's stale
+        // rewrite of the shared config; see trustClaudeWorkspace.
+        launch.agentTool === 'claude-code'
+          ? timer.time('seedClaudeTrust', () => this.seedClaudeTrust(sessionId, cwd, workdir.mode, manifest.project, env))
+          : Promise.resolve(),
+      ]);
+      if (launch.agentTool === 'codex') {
+        // After the manifest FILE: the session's Codex home sits beside it in
+        // the private data layout that write established.
+        await timer.time('codexHomeAndTrust', async () => {
+          await isolateCodexMcpHome(manifestPath, env);
+          await trustCodexWorkspace(cwd, env);
+        });
+      }
+
       // Names only. The manifest row is read by the UI and included in backups;
       // an ANTHROPIC_API_KEY value in there would outlive every rotation.
       //
@@ -2041,46 +2402,30 @@ export class SpawnService {
       // one actually handed to the PTY — including the Codex session marker —
       // so that a reader sees the real first user turn rather than the
       // pre-marker composer output.
-      await this.graph.recordManifest(auth, sessionId, manifest, envVarNames, {
+      await timer.time('recordManifest', () => this.graph.recordManifest(auth, sessionId, manifest, envVarNames, {
         system: envelope.system,
         task,
       }, launch.agentTool === 'claude-code'
         ? env.CLAUDE_CONFIG_DIR ?? join(env.HOME ?? homedir(), '.claude')
         : launch.agentTool === 'codex'
-          // The home the child RUNS with, not `env.CODEX_HOME` as it stands
-          // here: `isolateCodexMcpHome` (below) repoints CODEX_HOME at this
-          // session's own home before the PTY exists, and that is where Codex
-          // writes the rollouts resume and the transcript reader look for.
+          // The home the child RUNS with, not `env.CODEX_HOME` as it stood
+          // when composed: `isolateCodexMcpHome` (above) repointed CODEX_HOME
+          // at this session's own home before the PTY exists, and that is
+          // where Codex writes the rollouts resume and the transcript reader
+          // look for.
           ? codexMcpHomeFor(manifestPath)
-          : null);
-
-      if (!context.project) await this.ensurePrivateScratchDirectory(cwd);
-
-      // Record the CLI's per-workspace trust BEFORE the child exists, because
-      // afterwards is too late: the dialog blocks on first directory access, and
-      // this launch is unattended — nobody is watching the PTY to answer it.
-      // Must also come after the `mkdir` above, since these resolve `cwd`
-      // through `realpath` and a scratch directory does not exist until then.
-      // Trust belongs to the same credential/config home the child is about to
-      // use. Passing the server environment here writes into the node account
-      // even when `env` points Claude/Codex at a member-specific home, leaving
-      // the child untrusted and reintroducing shared mutable provider state.
-      // The stable trust root is what survives a booting claude's stale
-      // rewrite of the shared config; see trustClaudeWorkspace.
-      if (launch.agentTool === 'claude-code') {
-        await this.seedClaudeTrust(sessionId, cwd, workdir.mode, manifest.project, env);
-      }
-      if (launch.agentTool === 'codex') {
-        await isolateCodexMcpHome(manifestPath, env);
-        await trustCodexWorkspace(cwd, env);
-      }
+          : null));
+      const briefingPhase = this.reportBootPhase(auth, sessionId, 'briefing');
 
       // R1 (W10a): the manifest was recorded under the recorder's lock, but a
       // credential can be revoked or switched to private between that commit
       // and here. Ask again before a child exists to hold the key; the
       // post-spawn check below still closes the window after it.
-      await this.assertSpaceCredentialsStillActive(auth, sessionId, spaceCredentialIds);
+      await timer.time('credentialRecheckBeforePty', () => this.assertSpaceCredentialsStillActive(auth, sessionId, spaceCredentialIds));
+      // A session stopped while it was briefed gets no process at all.
+      throwIfStopped(await briefingPhase);
 
+      // --- agent --------------------------------------------------------------
       // Prompts accepted between here and the PTY being live must not be
       // dropped on the floor; the handoff parks them in the bounded FIFO and
       // spawnIfAbsent drains it.
@@ -2089,19 +2434,20 @@ export class SpawnService {
       // `positionalTask` already put the assignment in the command line; queuing
       // it here as well would deliver the same first turn twice.
       if (this.promptSettlement && !positionalTask) {
-        firstPromptDeliveryId = `spawn:${sessionId}:${randomUUID()}`;
+        const deliveryId = `spawn:${sessionId}:${randomUUID()}`;
+        firstPromptDeliveryId = deliveryId;
         // Registration MUST precede queue admission: a same-tick settlement
         // must already have somewhere to land (PromptSettlementWaiter's law).
-        firstPromptOutcome = this.promptSettlement.awaitOutcome(firstPromptDeliveryId);
-        const admitted = await this.pty.deliverPrompt(
+        firstPromptOutcome = this.promptSettlement.awaitOutcome(deliveryId);
+        const queued = await timer.time('queueFirstPrompt', () => this.pty.deliverPrompt(
           sessionId,
           task,
           'send',
-          firstPromptDeliveryId,
+          deliveryId,
           true,
-        );
-        if (!admitted) {
-          this.promptSettlement.cancel(firstPromptDeliveryId);
+        ));
+        if (!queued) {
+          this.promptSettlement.cancel(deliveryId);
           throw new SpawnError(
             `initial task prompt was refused by the delivery queue for session ${sessionId}`,
             'conflict',
@@ -2109,14 +2455,15 @@ export class SpawnService {
           );
         }
       }
-      const { reused } = this.pty.spawnIfAbsent({
+      const { reused } = timer.timeSync('ptySpawn', () => this.pty.spawnIfAbsent({
         sessionId,
         command,
         cwd,
         env,
         ...(request.cols ? { cols: request.cols } : {}),
         ...(request.rows ? { rows: request.rows } : {}),
-      });
+      }));
+      this.wakeTerminalWaiters(sessionId);
 
       // Arm the watcher before the first post-spawn await. A very short-lived
       // child can exit while the running transition is in flight; registering
@@ -2130,11 +2477,14 @@ export class SpawnService {
       const onboarding = launch.agentTool === 'claude-code' && !reused
         ? this.detectClaudeOnboarding(sessionId)
         : null;
-      await this.assertSpaceCredentialsStillActive(auth, sessionId, spaceCredentialIds);
+      // Reported while the settlement window runs, and awaited before
+      // `running`, which must not overtake it on the row.
+      const agentPhase = this.reportBootPhase(auth, sessionId, 'agent');
       let earlyExit: Awaited<typeof bootSettlement>;
       let promptOutcome: PromptSettlementResult | 'onboarding';
       try {
-        [earlyExit, promptOutcome] = await Promise.all([
+        await timer.time('credentialRecheckAfterPty', () => this.assertSpaceCredentialsStillActive(auth, sessionId, spaceCredentialIds));
+        [earlyExit, promptOutcome] = await timer.time('bootAndFirstPromptSettlement', () => Promise.all([
           bootSettlement,
           Promise.race([
             firstPromptDeliveryId && firstPromptOutcome
@@ -2143,8 +2493,11 @@ export class SpawnService {
             ...(onboarding
               ? [onboarding.seen.then((seen) => (seen ? ('onboarding' as const) : new Promise<never>(() => {})))]
               : []),
+            // A session stopped around its PTY spawn: the refused report ends
+            // the wait at once, and the catch kills the process.
+            agentPhase.then((stopped) => (stopped ? Promise.reject(stopped) : new Promise<never>(() => {}))),
           ]),
-        ]);
+        ]));
       } finally {
         onboarding?.stop();
       }
@@ -2173,9 +2526,12 @@ export class SpawnService {
           { sessionId, reason: promptOutcome.reason ?? 'unknown' },
         );
       }
+      throwIfStopped(await agentPhase);
 
-      // `running` now means both process survival and first-turn submission.
-      await this.graph.transition(auth, { sessionId, status: 'running' });
+      // --- live ---------------------------------------------------------------
+      // `running` now means both process survival and first-turn submission;
+      // the same write moves the boot phase to `live` (404).
+      await timer.time('transitionRunning', () => this.graph.transition(auth, { sessionId, status: 'running' }));
 
       this.logger?.info('SpawnService: session spawned', { sessionId, cwd, reused });
       this.notifySessionLive(sessionId, 'spawn');
@@ -2183,37 +2539,227 @@ export class SpawnService {
         this.watchWorkspaceTrust(sessionId, manifestPath, manifest, env);
       }
 
+      const timings = this.logSpawnTimings(timer, sessionId, 'running');
       return {
-        sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult, ...spawnFacts,
-        launchFacts: spawnLaunchFacts(manifest.launch, launch.accessModeSource, request.parentSessionId ?? null),
+        ok: true,
+        result: {
+          sessionId, manifestPath, manifest, command, cwd, envVarNames, reused,
+          commandResult: admitted.commandResult, ...admitted.spawnFacts,
+          launchFacts: spawnLaunchFacts(manifest.launch, launch.accessModeSource, request.parentSessionId ?? null),
+          timings,
+        },
       };
     } catch (error) {
+      // Whoever waits on this terminal hears the failure now, not after the
+      // cleanup below, and is never told a PTY about to be killed is live.
+      this.wakeTerminalWaiters(sessionId, error instanceof Error ? error.message : String(error));
       // The row exists and the graph believes a session is spawning. Leaving it
       // there would burn a slot against the concurrency cap forever, so mark it
-      // failed before rethrowing — and do not let a cleanup failure mask the
-      // original error, which is the one that explains what happened.
-      await this.failSession(auth, sessionId, error, bootExit);
-      if (firstPromptDeliveryId) this.promptSettlement?.cancel(firstPromptDeliveryId);
+      // failed — the same write moves its boot phase to `failed` and says why —
+      // and do not let a cleanup failure mask the original error, which is the
+      // one that explains what happened. Every step is guarded on its own: one
+      // that throws must neither skip the rest nor turn this boot's outcome
+      // into a rejection nobody is awaiting.
+      const cleanup = async (step: string, run: () => unknown): Promise<void> => {
+        try {
+          await run();
+        } catch (cleanupError) {
+          this.logger?.error(
+            `SpawnService: boot cleanup step failed (${step})`,
+            cleanupError instanceof Error ? cleanupError : new Error(String(cleanupError)),
+            { sessionId },
+          );
+        }
+      };
+      await cleanup('failSession', () => this.failSession(auth, sessionId, error, bootExit));
+      if (firstPromptDeliveryId) {
+        const deliveryId = firstPromptDeliveryId;
+        await cleanup('cancelFirstPrompt', () => this.promptSettlement?.cancel(deliveryId));
+      }
       // A failure after the child exists must not leave an unowned process. The
       // notifying kill also abandons a queued first prompt if spawn itself
       // threw before the PTY was installed, closing the handoff residue.
-      this.pty.kill(sessionId);
+      await cleanup('kill', () => this.pty.kill(sessionId));
       // §4.8: the lease is released, and the WORKTREE IS PRESERVED. A failed
       // spawn is evidence about a process, not about a checkout — and a
       // checkout may already hold work. Removing it here would be the delete
-      // §6.3 forbids, arrived at through the back door.
-      if (worktree) {
-        await this.graph
-          .releaseWorktreeLease(auth, worktree.worktreeId)
-          .catch(() => undefined);
+      // §6.3 forbids, arrived at through the back door. A checkout that never
+      // got made was already settled by `materializeWorktree`.
+      if (worktree && leased) {
+        await cleanup('releaseWorktreeLease', () => this.graph.releaseWorktreeLease(auth, worktree.worktreeId));
       }
       // The session is dead; its space key must not outlive it on disk.
-      await this.scrubSessionSecrets(sessionId);
+      await cleanup('scrubSessionSecrets', () => this.scrubSessionSecrets(sessionId));
       // R14: nor its agent token in auth_sessions.
-      if (agentTokenIssued) await this.revokeAgentToken(auth, sessionId);
+      if (agentTokenIssued) await cleanup('revokeAgentToken', () => this.revokeAgentToken(auth, sessionId));
       this.sessionAuth.delete(sessionId);
-      throw error;
+      this.logSpawnTimings(timer, sessionId, 'failed', error);
+      return { ok: false, error };
+    } finally {
+      if (worktree) this.bootingWorktrees.delete(worktree.worktreeId);
+      this.bootingSessions.delete(sessionId);
+      this.wakeTerminalWaiters(sessionId);
     }
+  }
+
+  /**
+   * The lane phase's workdir half. A worktree is checked out (`git worktree
+   * add`, or a warm lane, under the Git lock) and then published — step 7
+   * (§4.8): the lease and the association need the session id, so they are the
+   * one part of the saga that cannot run before the row exists. `ready` is
+   * last: it is the claim that this checkout is usable, and claiming it before
+   * the lease is held would let a second spawn take a worktree this one is
+   * about to boot into. A scratch directory is created. The lane fact (107) is
+   * recorded either way, before the PTY exists, so even a session that dies in
+   * its boot window already answers "what branch was I on".
+   */
+  private async prepareLane(auth: GraphAuth, admitted: AdmittedLaunch, onLeased: () => void): Promise<void> {
+    const { sessionId, worktree, workdir, context, cwd } = admitted;
+    if (worktree) {
+      await this.materializeWorktreeFor(auth, admitted, worktree);
+      // Only a checkout that exists has a branch to claim; the reservation
+      // named it, so no probe.
+      await this.captureCheckoutBranch(auth, sessionId, worktree.branch);
+      await this.graph.acquireWorktreeLease(auth, worktree.worktreeId, sessionId);
+      onLeased();
+      await this.graph.linkSessionToWorktree(auth, {
+        spaceId: context.spaceId,
+        sessionId,
+        worktreeId: worktree.worktreeId,
+      });
+      await this.graph.setWorktreeAllocationState(auth, {
+        worktreeId: worktree.worktreeId,
+        state: 'ready',
+      });
+      return;
+    }
+    if (workdir.mode === 'project') {
+      // Project mode asks the SHARED checkout what it has right now; a non-repo
+      // or detached HEAD answers null, which is recorded as "no claim".
+      const branch = await detectCheckoutBranch(workdir.path);
+      if (branch !== null) await this.captureCheckoutBranch(auth, sessionId, branch);
+      return;
+    }
+    // Scratch has no repo by construction, and its directory is named for the
+    // session; the trust seeding in the briefing needs it to exist.
+    if (!context.project) await this.ensurePrivateScratchDirectory(cwd);
+  }
+
+  /**
+   * The boot's first turn and the command line that carries it.
+   *
+   * The two halves stay SEPARATE all the way to the argv. `envelope.system`
+   * configures the agent; `envelope.task` is its first user turn, and is what
+   * actually makes it start. Concatenating them here is what left every real
+   * agent idle at a REPL — see `withAgentPrompt`.
+   *
+   * The Codex marker: a Codex rollout records nothing of the child's env and
+   * carries the system prompt as config, not a message — so the ONLY durable
+   * link between this tm8 session and its rollout file is a marker in the first
+   * user turn. That marker is what resume's capture scan matches
+   * (native-session.ts). Claude needs none: its id is pre-minted.
+   *
+   * THE FIRST TURN RIDES IN ARGV wherever the binary accepts one, because a
+   * prompt that is already in the process cannot be lost to a boot race. The
+   * alternative — launch an idle REPL and type the task into the TUI once it
+   * looks quiet — is what produced sessions that reported `running` with an
+   * empty composer and an agent that never received its assignment. See
+   * `withAgentPrompt`'s production note for the evidence. Only a launch this
+   * cannot configure (echo-agent, an operator `TM8_AGENT_CMD` wrapper) still
+   * needs the PTY to carry its first turn, and `positionalTask` is the single
+   * source of truth for which case we are in — so the task is delivered exactly
+   * once, never zero times and never twice.
+   */
+  private firstTurnCommand(
+    envelope: PromptEnvelope,
+    baseCommand: string,
+    sessionId: string,
+    request: SpawnRequest,
+    launch: ResolvedLaunchConfig,
+    routedTaskIds: string[] | undefined,
+  ): { task: string; command: string; positionalTask: boolean } {
+    const turn = routedTaskIds
+      ? `${firstTurn(envelope, sessionId, request)}\n${routingTurn(routedTaskIds, sessionId)}`
+      : firstTurn(envelope, sessionId, request);
+    const task = launch.agentTool === 'codex' ? `${turn}\n<tm8_session_id>${sessionId}</tm8_session_id>` : turn;
+    const positionalTask = supportsPositionalPrompt(launch, this.env);
+    const command = withAgentPrompt(
+      baseCommand,
+      { system: envelope.system, task: positionalTask ? task : '' },
+      launch,
+      this.env,
+    );
+    return { task, command, positionalTask };
+  }
+
+  /**
+   * Record that the boot reached `phase` (404), on the row, where the launching
+   * page and `tm8 session spawn` read it through the ordinary `entity.upsert`.
+   *
+   * NEVER REJECTS, so a report can be in flight while the next phase's work
+   * runs. It resolves the error that must stop the boot — the row refused the
+   * report (23514) because the session's boot already ended: it was stopped or
+   * reaped while it booted — and null otherwise. Any other failure costs only
+   * the progress report: it is logged, and the boot carries on.
+   */
+  private async reportBootPhase(
+    auth: GraphAuth,
+    sessionId: string,
+    phase: BootProgressPhase,
+  ): Promise<SpawnError | null> {
+    try {
+      await this.graph.transition(auth, { sessionId, status: 'spawning', bootPhase: phase });
+      return null;
+    } catch (error) {
+      if (sqlStateOf(error) === '23514') {
+        return new SpawnError(
+          `work session ${sessionId} was stopped while it was starting (at ${phase})`,
+          'conflict',
+          { sessionId, reason: 'boot_cancelled', bootPhase: phase },
+        );
+      }
+      this.logger?.warn?.('SpawnService: could not record a boot phase', {
+        sessionId,
+        bootPhase: phase,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  /**
+   * The workdir path a session's row records, for a replay that must answer
+   * with the ORIGINAL launch's checkout. A row that cannot be read keeps the
+   * replay answering — it boots nothing either way — with what this call has.
+   */
+  private async recordedWorkdirPath(auth: GraphAuth, sessionId: string, fallback: string): Promise<string> {
+    try {
+      return (await this.graph.loadWorkSessionForResume(auth, sessionId)).workdirPath ?? fallback;
+    } catch (error) {
+      this.logger?.warn?.('SpawnService: could not read a replayed session\'s workdir path', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return fallback;
+    }
+  }
+
+  /** Settle a reservation nothing will boot into. Nothing is on disk, so `failed` is the whole repair. */
+  private async abandonReservation(
+    auth: GraphAuth,
+    worktreeId: string,
+    failureCode: 'spawn_refused' | 'spawn_replayed',
+    error: unknown,
+  ): Promise<void> {
+    this.bootingWorktrees.delete(worktreeId);
+    await this.graph
+      .setWorktreeAllocationState(auth, {
+        worktreeId,
+        state: 'failed',
+        failureCode,
+        ...(error ? { failureDetail: { message: error instanceof Error ? error.message : String(error) } } : {}),
+      })
+      .catch(() => undefined);
   }
 
   /**
@@ -3017,7 +3563,7 @@ export class SpawnService {
           `session ${sessionId} booted into Claude Code's first-run onboarding (theme picker / login) — ` +
             `the agent's config home has no login. Failing it as ${AGENT_ONBOARDING_SCREEN}.`,
         );
-        await this.killThenRecordEnding(this.sessionAuth.get(sessionId), sessionId, {
+        await this.killThenRecordEnding(sessionId, this.memberEnding(this.sessionAuth.get(sessionId), sessionId), {
           onNotFound: 'skip',
           status: 'failed',
           error: () =>
@@ -3086,7 +3632,7 @@ export class SpawnService {
             `session ${sessionId} is stuck at Claude Code's workspace-trust prompt after ` +
               `${String(keystrokes)} keystrokes — failing it as ${action.reason}.`,
           );
-          await this.killThenRecordEnding(this.sessionAuth.get(sessionId), sessionId, {
+          await this.killThenRecordEnding(sessionId, this.memberEnding(this.sessionAuth.get(sessionId), sessionId), {
             onNotFound: 'skip',
             status: 'failed',
             error: () =>
@@ -3198,8 +3744,10 @@ export class SpawnService {
       /* SPEC D1 §9 scenario 29: a resume that fails at spawn says so. Resume
          does not clear the PREVIOUS run's ended kind and reason, so without
          its own reason the row would repeat the old crash. The UI reads this
-         prefix (`RESUME_FAILED_PREFIX` in tm8-ui session-outcome.ts). */
-      ...(phase === 'resume' ? { endedReason: `${RESUME_FAILED_PREFIX}${detail}` } : {}),
+         prefix (`RESUME_FAILED_PREFIX` in tm8-ui session-outcome.ts). A launch
+         that fails says so too (404): it answered at admission, so the row is
+         the only place its caller can learn why. */
+      endedReason: `${phase === 'resume' ? RESUME_FAILED_PREFIX : LAUNCH_FAILED_PREFIX}${detail}`,
     };
     if (await this.persistFailedTransition(auth, transition, message)) return;
     this.scheduleFailedTransitionRetry(auth, transition, message, 1);
@@ -3227,7 +3775,7 @@ export class SpawnService {
       // earlier (`coalesce(p_error, error)` only protects a NULL write; this
       // one is non-null). Detected by sqlstate rather than by re-reading the
       // row, so no extra query sits on this hot error path.
-      const sqlState = (cleanupError as { code?: string } | null)?.code;
+      const sqlState = sqlStateOf(cleanupError);
       if (sqlState === '23514') {
         this.cancelFailedTransitionRetry(transition.sessionId);
         this.logger?.info(
@@ -3319,7 +3867,7 @@ export class SpawnService {
     if (!message || message.length === 0) {
       throw new SpawnError('prompt message must not be empty', 'invalid_input');
     }
-    if (!this.pty.hasSession(sessionId)) {
+    if (!this.pty.hasSession(sessionId) && !(await this.awaitBootedTerminal(sessionId)).live) {
       throw new SpawnError(
         `work session ${sessionId} has no live terminal to prompt`,
         'conflict',
@@ -3344,6 +3892,43 @@ export class SpawnService {
     }
 
     return { delivered: true, commandResult };
+  }
+
+  /**
+   * Wait, bounded, for the PTY of a session whose boot this process is running
+   * (404: `execution.spawn` answers before it exists). Live once the terminal
+   * is; not live at once for a session that is not booting here, and not live
+   * when its boot fails (with the reason), ends without one, or the bound passes.
+   */
+  private async awaitBootedTerminal(sessionId: string): Promise<TerminalWait> {
+    if (!this.bootingSessions.has(sessionId)) return { live: this.pty.hasSession(sessionId), failure: null };
+    const failure = await new Promise<string | null>((resolve) => {
+      const timer = setTimeout(() => resolve(null), PROMPT_BOOT_WAIT_MS);
+      timer.unref?.();
+      const waiters = this.terminalWaiters.get(sessionId) ?? [];
+      waiters.push((reason) => { clearTimeout(timer); resolve(reason); });
+      this.terminalWaiters.set(sessionId, waiters);
+    });
+    return failure === null ? { live: this.pty.hasSession(sessionId), failure: null } : { live: false, failure };
+  }
+
+  /**
+   * Whether this session has a live terminal, waiting (bounded, as a prompt
+   * does) when its boot is still running here: `execution.spawn` answers at
+   * admission (404), so a client may attach before the PTY exists. A boot that
+   * fails meanwhile ends the wait at once with its reason; a session this
+   * process is not booting answers at once from the PTY map.
+   */
+  async awaitTerminal(sessionId: string): Promise<TerminalWait> {
+    if (this.pty.hasSession(sessionId)) return { live: true, failure: null };
+    return this.awaitBootedTerminal(sessionId);
+  }
+
+  /** Wake every caller waiting on this session's terminal; see `awaitBootedTerminal`. */
+  private wakeTerminalWaiters(sessionId: string, failure: string | null = null): void {
+    const waiters = this.terminalWaiters.get(sessionId);
+    this.terminalWaiters.delete(sessionId);
+    for (const wake of waiters ?? []) wake(failure);
   }
 
   /**
@@ -3427,7 +4012,7 @@ export class SpawnService {
     // user cancelling something that just finished. The graph still needs to
     // reflect the terminal state, and the RPC tolerates same→same.
     const status = opts.terminalStatus ?? 'exited';
-    const { outcome } = await this.killThenRecordEnding(auth, sessionId, {
+    const { outcome } = await this.killThenRecordEnding(sessionId, this.memberEnding(auth, sessionId), {
       onNotFound: 'record',
       status,
       error: (killed) =>
@@ -3511,7 +4096,7 @@ export class SpawnService {
       // 299 (Spec D1 §3): `credential_revoked` on `failed`. No operator chose
       // to stop this work — the credential was taken away — so the outcome
       // stays open and the session can be resumed once it is reconnected.
-      result = await this.killThenRecordEnding(auth, sessionId, {
+      result = await this.killThenRecordEnding(sessionId, this.memberEnding(auth, sessionId), {
         onNotFound: 'skip',
         status: 'failed',
         error: () => ending.error,
@@ -3557,8 +4142,7 @@ export class SpawnService {
    */
   async killRecordedEnding(sessionId: string): Promise<PtyKillOutcome> {
     const outcome = this.pty.kill(sessionId, true);
-    this.sessionAuth.delete(sessionId);
-    this.toolSessions.delete(sessionId);
+    this.forgetSession(sessionId);
     if (outcome === 'killed') await this.scrubSessionSecrets(sessionId);
     this.logger?.info('SpawnService: session killed after its membership ended', { sessionId, outcome });
     return outcome;
@@ -3585,26 +4169,25 @@ export class SpawnService {
    * nothing to kill and the caller asked to `skip` that, or when there are no
    * claims to write under. A transition that throws propagates.
    */
-  private async killThenRecordEnding(
-    auth: GraphAuth | undefined,
+  private async killThenRecordEnding<K extends WorkSessionEndedKind>(
     sessionId: string,
+    write: EndingWriter<K> | undefined,
     ending: {
       onNotFound: 'record' | 'skip';
       status: 'exited' | 'failed';
       error: (outcome: 'killed' | 'not_found') => string;
-      endedKind: WorkSessionEndedKind;
+      endedKind: K;
       endedReason: string;
     },
   ): Promise<{ outcome: PtyKillOutcome; recorded: boolean }> {
     const outcome = this.pty.kill(sessionId, true);
-    this.sessionAuth.delete(sessionId);
-    this.toolSessions.delete(sessionId);
+    this.forgetSession(sessionId);
     // Even a failed kill must lose graph authority: a process whose lifecycle
     // is no longer under control is the least safe process to leave credentialed.
     if (outcome === 'error') return { outcome, recorded: false };
     if (outcome === 'killed') await this.scrubSessionSecrets(sessionId);
     if (outcome === 'not_found' && ending.onNotFound === 'skip') return { outcome, recorded: false };
-    if (auth === undefined) return { outcome, recorded: false };
+    if (write === undefined) return { outcome, recorded: false };
 
     // `kill()` sends a signal and finalizes the tracked entry synchronously —
     // it does not, and structurally cannot, wait for node-pty's own async exit
@@ -3616,23 +4199,61 @@ export class SpawnService {
     // The ending facts (171). `endedReason` is the sentence a person reads, so
     // it never mentions PTYs, kill outcomes or exit events — all of which are
     // already in `error`, which stays technical.
-    await this.graph.transition(auth, {
-      sessionId,
+    const recorded = await write({
       status: ending.status,
       error: ending.error(outcome),
       endedKind: ending.endedKind,
       endedReason: ending.endedReason,
     });
+    return { outcome, recorded };
+  }
 
-    // The instrument, AFTER the ending is on record. A kill does not wait for
-    // the exit event (see `error` above), so the harness may still be writing
-    // its last records when this reads — a `cost-state` written after this
-    // point is missed, and the transcript half is what the process had
-    // flushed. Best-effort by contract; a later exit read overwrites with
-    // more. Ghost reconciliation reuses this path, so a session killed with a
-    // previous instance of the node is measured here too.
-    await this.recordUsageAfterExit(auth, sessionId);
-    return { outcome, recorded: true };
+  /** Drop what this process holds for a session whose process is ending. */
+  private forgetSession(sessionId: string): void {
+    this.sessionAuth.delete(sessionId);
+    this.toolSessions.delete(sessionId);
+  }
+
+  /**
+   * The MEMBER DOOR for an ending: `work_session_transition` under claims a
+   * member of the session's space holds (the launcher's, or a person's), then
+   * the usage instrument. Undefined without claims: nothing may be written.
+   */
+  private memberEnding(auth: GraphAuth | undefined, sessionId: string): EndingWriter<WorkSessionEndedKind> | undefined {
+    if (auth === undefined) return undefined;
+    return async (ending) => {
+      await this.graph.transition(auth, { sessionId, ...ending });
+      // The instrument, AFTER the ending is on record. A kill does not wait for
+      // the exit event (see `killThenRecordEnding`), so the harness may still
+      // be writing its last records when this reads — a `cost-state` written
+      // after this point is missed, and the transcript half is what the
+      // process had flushed. Best-effort by contract; a later exit read
+      // overwrites with more.
+      await this.recordUsageAfterExit(auth, sessionId);
+      return true;
+    };
+  }
+
+  /**
+   * The NODE DOOR for an ending (403): `recordNodeSessionEnding`, which every
+   * node job uses because the node's background identity is not a member of
+   * every space it hosts. The usage instrument follows through the node's own
+   * usage door, from the facts the ending returned. A row whose process was no
+   * longer recorded live is not counted and not measured.
+   */
+  private nodeEnding(auth: GraphAuth, nodeId: string, sessionId: string): EndingWriter<NodeEndedKind> {
+    return async (ending) => {
+      const result = await this.graph.recordNodeSessionEnding(auth, { nodeId, sessionId, ...ending });
+      const facts = result.usageFacts;
+      if (result.recorded && facts) {
+        await this.recordUsage(
+          sessionId,
+          async () => facts,
+          (usage, source) => this.graph.recordNodeSessionUsage(auth, { nodeId, sessionId, usage, source }),
+        );
+      }
+      return result.recorded;
+    };
   }
 
   /**
@@ -3657,9 +4278,26 @@ export class SpawnService {
    * worktree path from the row — so the exit read and the live page can never
    * name different files for one session.
    */
-  private async recordUsageAfterExit(auth: GraphAuth, sessionId: string): Promise<void> {
+  private recordUsageAfterExit(auth: GraphAuth, sessionId: string): Promise<void> {
+    return this.recordUsage(
+      sessionId,
+      () => this.graph.loadWorkSessionForResume(auth, sessionId),
+      (usage, source) => this.graph.recordWorkSessionUsage(auth, sessionId, usage, source),
+    );
+  }
+
+  /**
+   * The instrument's core, shared by the member path (above) and the node
+   * path (`nodeEnding`): find the transcript from the session's facts, read
+   * it, write what it says through `write`. Never throws.
+   */
+  private async recordUsage(
+    sessionId: string,
+    load: () => Promise<SessionUsageFacts>,
+    write: (usage: WorkSessionUsage, source: WorkSessionUsageSource) => Promise<unknown>,
+  ): Promise<void> {
     try {
-      const info = await this.graph.loadWorkSessionForResume(auth, sessionId);
+      const info = await load();
       const cwd =
         info.workdirMode === 'scratch' ? join(this.dataDir, 'scratch', sessionId) : info.workdirPath;
       const home = this.env.HOME ?? homedir();
@@ -3686,7 +4324,7 @@ export class SpawnService {
         });
         return;
       }
-      await this.graph.recordWorkSessionUsage(auth, sessionId, read.usage, read.source);
+      await write(read.usage, read.source);
       this.logger?.info('SpawnService: recorded session usage', {
         sessionId,
         source: read.source,
@@ -3720,9 +4358,10 @@ export class SpawnService {
    * running provably has no PTY. Rows belonging to other nodes are left alone —
    * they may be perfectly alive over there.
    *
-   * `terminate()` is reused rather than calling `transition` directly so the
-   * ledger records the retirement like any other terminate; its `kill()` is a
-   * no-op returning 'not_found', which is exactly right here.
+   * IN EVERY SPACE (403). Candidates and the write go through the node doors
+   * (`listNodeLiveSessions`, then `killThenRecordEnding` with `nodeEnding`), so
+   * a ghost in a space this node's identity is not a member of is retired like
+   * any other, by the same definition of live the concurrency cap counts.
    *
    * NEVER THROWS. Reconciliation is a cleanup, not a precondition: a node that
    * refuses to boot because it could not tidy stale rows is strictly worse than
@@ -3731,19 +4370,17 @@ export class SpawnService {
    *
    * @returns how many sessions were retired.
    */
-  async reconcileNodeGhosts(auth: GraphAuth): Promise<GhostReconcileReport> {
-    if (!this.nodeId) return { retired: 0, errors: [] };
+  async reconcileNodeGhosts(auth: GraphAuth): Promise<NodeEndingSweepReport> {
+    if (!this.nodeId) return emptySweep();
+    const nodeId = this.nodeId;
 
     let candidates: Array<{ sessionId: string; status: WorkSessionStatus }>;
     try {
-      candidates = await this.graph.listNodeActiveSessions(auth, this.nodeId);
+      candidates = await this.graph.listNodeLiveSessions(auth, nodeId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger?.warn?.('SpawnService: ghost reconciliation could not list sessions', {
-        nodeId: this.nodeId,
-        error: message,
-      });
-      return { retired: 0, errors: [{ message: `could not list this node's sessions: ${message}` }] };
+      this.logger?.warn?.('SpawnService: ghost reconciliation could not list sessions', { nodeId, error: message });
+      return emptySweep([{ message: `could not list this node's sessions: ${message}` }]);
     }
 
     // WAS THE KERNEL INVOLVED? Asked ONCE, before the sweep, because it is a
@@ -3769,82 +4406,114 @@ export class SpawnService {
     const oomSinceBoot = await readOomKillCount();
     const memoryKillHappened = (oomSinceBoot ?? 0) > 0;
 
-    let retired = 0;
-    const errors: Array<{ message: string }> = [];
-    for (const { sessionId, status } of candidates) {
-      // Defensive, and what makes this safe to call at any time rather than
-      // only at boot: a session with a LIVE PTY on this node is not a ghost.
-      if (this.pty.hasSession(sessionId)) continue;
+    // Defensive, and what makes this safe to call at any time rather than
+    // only at boot: a session with a LIVE PTY on this node is not a ghost. The
+    // attribution rule below counts THESE, not the raw list.
+    const ghosts = candidates.filter(({ sessionId }) => !this.pty.hasSession(sessionId));
+
+    // Attribution rule, per the honesty bound above: assert `out_of_memory`
+    // ONLY when a memory kill happened AND this is the single ghost, because
+    // only then does the per-cgroup counter point at exactly one session. With
+    // several ghosts we know a memory kill occurred but not to whom, so the
+    // kind drops to 'unknown' and the sentence says both halves out loud
+    // rather than picking a victim.
+    const kind: Pick<NodeEnding, 'endedKind' | 'endedReason'> = memoryKillHappened
+      ? ghosts.length === 1
+        ? {
+            endedKind: 'out_of_memory',
+            endedReason:
+              'Stopped because the machine ran out of memory. This session was using ' +
+              'too much, and the system shut it down to stay alive.',
+          }
+        : {
+            endedKind: 'unknown',
+            endedReason:
+              'Stopped when the server restarted. The machine also ran out of memory ' +
+              'around that time, so this session may have been shut down for memory ' +
+              'rather than by the restart — there is no way to tell which.',
+          }
+      : {
+          endedKind: 'server_restart',
+          endedReason:
+            'Stopped when the server restarted. Nothing was wrong with this session — ' +
+            'it can be resumed to pick up where it left off.',
+        };
+
+    // 'failed', not 'exited': this agent did not finish, it was killed with
+    // its host. 'exited' here is indistinguishable from a clean finish to
+    // every client, because the contract projects neither exit_code nor error
+    // (see the `terminalStatus` docstring on terminate()).
+    const report = await this.sweepNodeEndings(auth, nodeId, 'ghost reconciliation', ghosts.map(({ sessionId, status }) => ({
+      sessionId,
+      ending: {
+        status: 'failed' as const,
+        error:
+          `retired at node startup: this node still recorded status '${status}' with no live ` +
+          'PTY for it — the process almost certainly died with a prior instance of this node ' +
+          '(crash or restart) before it could record its own exit',
+        ...kind,
+      },
+    })));
+    if (report.retired > 0) {
+      this.logger?.info('SpawnService: ghost reconciliation complete', { nodeId, retired: report.retired });
+    }
+    return report;
+  }
+
+  /**
+   * THE ONE LOOP every node job ends sessions with (403): each item through
+   * `killThenRecordEnding` and the node door, tallied into one report.
+   *
+   * - recorded → `retired`;
+   * - the door answered `recorded: false` (the row was no longer recorded
+   *   live on this node) → `notRecorded`;
+   * - the kill itself failed (`outcome: 'error'`, not ESRCH) → an ERROR: the
+   *   process may still be running, so it is never counted as benign;
+   * - anything thrown → an error, COLLECTED and logged. Before 403 a door
+   *   refusal fired here for every row outside the owner's spaces and the
+   *   caller saw only `0`, indistinguishable from a clean pass.
+   *
+   * `onAnswered` runs for every item the door answered (recorded or not), so
+   * the reaper can forget its first sighting. `stillDue`, when given, is asked
+   * per item just before its kill: the reaper's candidates can come back to
+   * life (a resume) while earlier items are written, and the kill would end a
+   * live PTY. `candidates` is the item count; a job that saw more than it ends
+   * this pass overrides it.
+   */
+  private async sweepNodeEndings(
+    auth: GraphAuth,
+    nodeId: string,
+    job: string,
+    items: ReadonlyArray<{ sessionId: string; ending: NodeEnding }>,
+    onAnswered?: (sessionId: string) => void,
+    stillDue?: (sessionId: string) => boolean,
+  ): Promise<NodeEndingSweepReport> {
+    const report = emptySweep();
+    report.candidates = items.length;
+    for (const { sessionId, ending } of items) {
+      if (stillDue && !stillDue(sessionId)) continue;
       try {
-        await this.terminate(auth, sessionId, {
-          // 'failed', not 'exited': this agent did not finish, it was killed
-          // with its host. See the `terminalStatus` docstring on terminate() —
-          // 'exited' here is indistinguishable from a clean finish to every
-          // client, because the contract projects neither exit_code nor error.
-          terminalStatus: 'failed',
-          reason:
-            `retired at node startup: this node still recorded status '${status}' with no live ` +
-            'PTY for it — the process almost certainly died with a prior instance of this node ' +
-            '(crash or restart) before it could record its own exit',
-          // Attribution rule, per the honesty bound above: assert
-          // `out_of_memory` ONLY when a memory kill happened AND this is the
-          // single ghost, because only then does the per-cgroup counter point
-          // at exactly one session. With several ghosts we know a memory kill
-          // occurred but not to whom, so the kind drops to 'unknown' and the
-          // sentence says both halves out loud rather than picking a victim.
-          ...(memoryKillHappened
-            ? candidates.length === 1
-              ? {
-                  endedKind: 'out_of_memory' as const,
-                  endedReason:
-                    'Stopped because the machine ran out of memory. This session was using ' +
-                    'too much, and the system shut it down to stay alive.',
-                }
-              : {
-                  endedKind: 'unknown' as const,
-                  endedReason:
-                    'Stopped when the server restarted. The machine also ran out of memory ' +
-                    'around that time, so this session may have been shut down for memory ' +
-                    'rather than by the restart — there is no way to tell which.',
-                }
-            : {
-                endedKind: 'server_restart' as const,
-                endedReason:
-                  'Stopped when the server restarted. Nothing was wrong with this session — ' +
-                  'it can be resumed to pick up where it left off.',
-              }),
+        const { outcome, recorded } = await this.killThenRecordEnding(sessionId, this.nodeEnding(auth, nodeId, sessionId), {
+          onNotFound: 'record',
+          status: ending.status,
+          error: () => ending.error,
+          endedKind: ending.endedKind,
+          endedReason: ending.endedReason,
         });
-        retired += 1;
-        this.logger?.info('SpawnService: retired ghost session', { sessionId, status });
+        if (outcome === 'error') {
+          report.errors.push({ message: `session ${sessionId}: the kill signal failed; its process may still be running` });
+          continue;
+        }
+        onAnswered?.(sessionId);
+        if (recorded) report.retired += 1;
+        else report.notRecorded += 1;
       } catch (error) {
-        // COLLECTED, not merely logged. This catch fires once per ghost, and on
-        // a node whose owner is not a member of the ghost's space it fires for
-        // EVERY one — `work_session_transition` goes through
-        // `require_space_member` with no node-admin bypass. Reported only to an
-        // optional logger, a total failure is indistinguishable from a clean
-        // boot with nothing to do, and the caller's `retired: 0` says the same
-        // thing either way.
-        //
-        // Measured on a live node 2026-08-22: reconciliation had been refused on
-        // every boot since the space was created, silently, while its worktree
-        // sibling printed the identical refusal at startup — because that one
-        // returns its errors and this one dropped them.
         const message = error instanceof Error ? error.message : String(error);
-        errors.push({ message: `session ${sessionId} (${status}): ${message}` });
-        this.logger?.warn?.('SpawnService: failed to retire ghost session', {
-          sessionId,
-          error: message,
-        });
+        report.errors.push({ message: `session ${sessionId}: ${message}` });
+        this.logger?.warn?.(`SpawnService: ${job} could not end a session`, { sessionId, error: message });
       }
     }
-
-    if (retired > 0) {
-      this.logger?.info('SpawnService: ghost reconciliation complete', {
-        nodeId: this.nodeId,
-        retired,
-      });
-    }
-    return { retired, errors };
+    return report;
   }
 
   /**
@@ -3865,15 +4534,16 @@ export class SpawnService {
   async reapLostSessions(
     auth: GraphAuth,
     opts: { staleAfterMs: number; now?: number },
-  ): Promise<{ reaped: number; errors: Array<{ message: string }> }> {
-    if (!this.nodeId) return { reaped: 0, errors: [] };
+  ): Promise<NodeEndingSweepReport> {
+    if (!this.nodeId) return emptySweep();
+    const nodeId = this.nodeId;
     const now = opts.now ?? Date.now();
     let candidates: Array<{ sessionId: string; status: WorkSessionStatus }>;
     try {
-      candidates = await this.graph.listNodeActiveSessions(auth, this.nodeId);
+      candidates = await this.graph.listNodeLiveSessions(auth, nodeId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return { reaped: 0, errors: [{ message: `could not list this node's sessions: ${message}` }] };
+      return emptySweep([{ message: `could not list this node's sessions: ${message}` }]);
     }
     const ghosts = new Set<string>();
     for (const { sessionId } of candidates) {
@@ -3882,8 +4552,7 @@ export class SpawnService {
     for (const id of [...this.ghostFirstSeen.keys()]) {
       if (!ghosts.has(id)) this.ghostFirstSeen.delete(id);
     }
-    let reaped = 0;
-    const errors: Array<{ message: string }> = [];
+    const due: Array<{ sessionId: string; ending: NodeEnding }> = [];
     for (const sessionId of ghosts) {
       const first = this.ghostFirstSeen.get(sessionId);
       if (first === undefined) {
@@ -3891,41 +4560,38 @@ export class SpawnService {
         continue;
       }
       if (now - first < opts.staleAfterMs) continue;
-      try {
-        await this.markLost(auth, sessionId, now - first);
-        this.ghostFirstSeen.delete(sessionId);
-        reaped += 1;
-      } catch (error) {
-        errors.push({ message: `session ${sessionId}: ${error instanceof Error ? error.message : String(error)}` });
-      }
+      const lost = lostEnding(now - first);
+      due.push({ sessionId, ending: { status: 'failed', error: lost.reason, endedKind: lost.endedKind, endedReason: lost.endedReason } });
     }
-    return { reaped, errors };
+    // Re-asked just before each kill: a resume may have brought a session
+    // back since the read, and a session with a live PTY here is not lost.
+    const report = await this.sweepNodeEndings(
+      auth,
+      nodeId,
+      'the lost-session reaper',
+      due,
+      (sessionId) => { this.ghostFirstSeen.delete(sessionId); },
+      (sessionId) => !this.pty.hasSession(sessionId),
+    );
+    // `candidates` is every ghost seen on this look, including those still
+    // inside the window: a tick that sees ghosts and ends none says so.
+    return { ...report, candidates: ghosts.size };
   }
 
   /**
-   * Record that a session's process is gone: `failed / lost`. The reaper's
-   * write, and the panel's "Mark lost" (Spec D1 §5.6) — which is refused while
-   * this node still holds a live PTY for the session, because then it is not
-   * lost.
+   * The panel's "Mark lost" (Spec D1 §5.6): record that a session's process
+   * is gone, `failed / lost`, through the member door under the person's own
+   * claims (the reaper uses the node door, `nodeEnding`). Refused while this
+   * node still holds a live PTY for the session, because then it is not lost.
    */
-  async markLost(auth: GraphAuth, sessionId: string, missingForMs?: number): Promise<{ outcome: string; commandResult: unknown }> {
+  async markLost(auth: GraphAuth, sessionId: string): Promise<{ outcome: string; commandResult: unknown }> {
     if (this.pty.hasSession(sessionId)) {
       throw new SpawnError(`work session ${sessionId} has a live process on this node; it is not lost`, 'conflict', {
         sessionId,
         reason: 'process_live',
       });
     }
-    const minutes = missingForMs === undefined ? null : Math.max(1, Math.round(missingForMs / 60_000));
-    return this.terminate(auth, sessionId, {
-      terminalStatus: 'failed',
-      reason: `marked lost: the record said live, but this node holds no process for it${
-        minutes === null ? '' : ` (missing for ${String(minutes)} min)`}`,
-      endedKind: 'lost',
-      endedReason:
-        minutes === null
-          ? 'Marked lost: its process could not be found. It can be resumed to try again.'
-          : `Lost: its process was gone for ${String(minutes)} minutes. It can be resumed to try again.`,
-    });
+    return this.terminate(auth, sessionId, { terminalStatus: 'failed', ...lostEnding() });
   }
 
   /**
@@ -3934,33 +4600,30 @@ export class SpawnService {
    * min, 0 = never) since completion with no activity, close it. The work is
    * already done, so the ending is `exited_clean` and the outcome is
    * untouched. NEVER THROWS.
+   *
+   * Through the NODE DOOR (403), like reconciliation and the reaper: the
+   * listing is node-wide, and the member door refused the node's identity
+   * for every completed session outside its own spaces, every tick.
    */
-  async closeIdleCompletedSessions(
-    auth: GraphAuth,
-  ): Promise<{ closed: number; errors: Array<{ message: string }> }> {
-    if (!this.nodeId || !this.graph.listCompletedSessionsToClose) return { closed: 0, errors: [] };
+  async closeIdleCompletedSessions(auth: GraphAuth): Promise<NodeEndingSweepReport> {
+    if (!this.nodeId) return emptySweep();
+    const nodeId = this.nodeId;
     let due: Array<{ sessionId: string; minutes: number }>;
     try {
-      due = await this.graph.listCompletedSessionsToClose(auth, this.nodeId);
+      due = await this.graph.listCompletedSessionsToClose(auth, nodeId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return { closed: 0, errors: [{ message: `could not list completed sessions to close: ${message}` }] };
+      return emptySweep([{ message: `could not list completed sessions to close: ${message}` }]);
     }
-    let closed = 0;
-    const errors: Array<{ message: string }> = [];
-    for (const { sessionId, minutes } of due) {
-      try {
-        await this.terminate(auth, sessionId, {
-          reason: `auto-closed: completed and idle for ${String(minutes)} min (space setting)`,
-          endedKind: 'exited_clean',
-          endedReason: `Closed automatically: the work was completed and the session sat idle for ${String(minutes)} minutes.`,
-        });
-        closed += 1;
-      } catch (error) {
-        errors.push({ message: `session ${sessionId}: ${error instanceof Error ? error.message : String(error)}` });
-      }
-    }
-    return { closed, errors };
+    return this.sweepNodeEndings(auth, nodeId, 'the completed auto-close', due.map(({ sessionId, minutes }) => ({
+      sessionId,
+      ending: {
+        status: 'exited' as const,
+        error: `auto-closed: completed and idle for ${String(minutes)} min (space setting)`,
+        endedKind: 'exited_clean' as const,
+        endedReason: `Closed automatically: the work was completed and the session sat idle for ${String(minutes)} minutes.`,
+      },
+    })));
   }
 
   /** First time the reaper saw each live-recorded session with no PTY here. */

@@ -650,3 +650,41 @@ start: four duplicate workers on 19 Oct). The chat does only
 trivial work itself (status, quick lookups, `/say`, steering/stopping workers, relaying results; no repo edits, no multi-step
 investigation). Main chats briefed before this rule: `docker exec wa-bridge node --import tsx src/admin.ts rebrief-delegate <main name>`
 prints the update; post it the same way.
+
+## Outbound attachments: runtime protocol v3
+
+The server sends a small file reference over the runtime WebSocket. The runtime
+POSTs that reference to `/v2/bridge-runtime/outbound-media` with its runtime
+bearer. The server checks that the live file belongs to that dispatched outbox
+row and that its bridge is still allowed, then streams the blob. Baileys receives
+a readable stream and encrypts/uploads through its temporary file path. Neither
+tm8 nor the runtime builds a whole-file base64 buffer. Storage paths never leave
+the server. A failed download or provider rejection is a delivery failure, not
+a caption-only success.
+
+There is no bridge document-size ceiling. WhatsApp documents support up to 2 GB
+([provider documentation](https://www.whatsapp.com/messaging)); provider errors
+remain authoritative. Images above the existing 16 MiB inline-image threshold
+use the document path. The separate tm8 upload policy defaults to 512 MiB:
+set `TM8_FILE_MAX_SIZE_BYTES=2000000000` (or the operator's desired policy) to
+admit uploads through the provider's documented document limit. This change
+does not alter that node-wide policy; it removes the old redundant 512 MiB
+message-attachment check so finalized files admitted by that policy can be sent. The runtime needs temporary disk space for
+Baileys' encrypted file (and an original copy when image thumbnailing needs it).
+
+Apply migration 434 and deploy the server and WhatsApp runtime together. The
+server keeps outbound rows queued for runtime versions below 3 and logs that an
+upgrade is required; a new runtime can still read an older server's base64
+frames. Each number has at most one dispatched row, and active transfers renew
+their lease every 30 seconds so a long upload does not trigger watchdog replay.
+Different numbers process independently. A success receipt lost on the HTTP link
+is replayed from the runtime's bounded receipt cache, without uploading again.
+The cache is process-local: a crash after WhatsApp accepts a send but before its
+receipt is stored remains an ambiguous delivery, as with the existing outbox.
+
+After rollout, inspect the original pending message's delivery before posting a
+new message. Original and manually reposted reports are separate outbox rows;
+restoring transport can deliver both. Verify an image and PDF in the authorized
+test group, check `message delivery` for `sent`, and use the same mutation id for
+replays. The implementation tests use isolated scratch databases and a simulated
+WhatsApp socket; they do not constitute a live WhatsApp delivery check.

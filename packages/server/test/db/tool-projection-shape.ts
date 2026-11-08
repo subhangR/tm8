@@ -53,3 +53,36 @@ export async function addEntityCounterLinkShape(database: W1ScratchDatabase): Pr
       add column if not exists sessions  integer not null default 0;
     reset role;`);
 }
+
+/**
+ * 395 (Bridges B0a): current readers select `internal.bridge_view(e.id)` for
+ * bridge rows. 409 (Bridges B2): the message readers and the projector select
+ * `internal.bridge_message_badges(ids)` for every page of messages. Historical
+ * fixtures that stop before 395 mirror only those reads' signatures: a NULL
+ * view and an empty badge list (no message crossed a bridge). No bridge rows
+ * are tested.
+ */
+export async function addBridgeProjectionShape(database: W1ScratchDatabase): Promise<void> {
+  await database.query(`set role tm8_graph_owner;
+    create or replace function internal.bridge_view(p_bridge_id uuid) returns jsonb
+      language sql stable as 'select null::jsonb';
+    grant execute on function internal.bridge_view(uuid) to tm8_app;
+    create or replace function internal.bridge_message_badges(p_ids uuid[]) returns jsonb
+      language sql stable as 'select ''[]''::jsonb';
+    grant execute on function internal.bridge_message_badges(uuid[]) to tm8_app;
+    reset role;`);
+}
+
+/**
+ * 410 adds `entities.labels` and the `label` kind's detail table, and current
+ * readers select `e.labels` and left-join `public.labels`. Historical fixtures
+ * that stop before 410 mirror only that read shape; no label rows are tested.
+ */
+export async function addLabelProjectionShape(database: W1ScratchDatabase): Promise<void> {
+  await database.query(`set role tm8_graph_owner;
+    alter table public.entities add column if not exists labels uuid[] not null default '{}';
+    create table if not exists public.labels(entity_id uuid primary key, space_id uuid, name text,
+      colour text, description text, archived_at timestamptz);
+    grant select on public.labels to tm8_app;
+    reset role;`);
+}

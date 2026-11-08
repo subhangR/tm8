@@ -2078,7 +2078,10 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['excerpt', 'activityAt'] },
     settingsHome: { section: 'connectors', label: 'Manage connectors and accounts' },
     list: baseList({ quickCreate: false, tile: { badges: [] } }),
-    panel: { archetype: 'generic', blocks: [{ block: 'settings-home' }, COLLECTIONS_BLOCK] },
+    /* The connector itself (status, tools, connections, configuration, used
+       by, recent calls); its own small "Manage connectors" link replaces the
+       full-width `settings-home` door. */
+    panel: { archetype: 'generic', blocks: [{ block: 'mcp-connector' }, COLLECTIONS_BLOCK] },
   },
 
   /*
@@ -2585,6 +2588,44 @@ const ROWS: readonly KindConfig[] = [
     },
   },
 
+  // -- bridge (395, BRIDGE-ENTITY-DESIGN §4: a provider conversation, here) ---
+  {
+    kind: 'bridge',
+    label: 'Bridge',
+    labelPlural: 'Bridges',
+    icon: '⌒',
+    iconArt: KIND_ART.bridge,
+    slug: 'bridges',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'gallery', 'tree'],
+    chip: { glyph: '⌒', tintBy: 'none' },
+    /* §4.7 names four bridge-specific card fields (provider, target, status,
+       people); the card renderer reads only the generic ones today, so the
+       row carries those and the list's words come from Settings → Bridges.
+       D46. */
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    // Born only from `bridges.create` (generic create is refused server-side,
+    // human-only, in the wizard); connections, pause and remove live in the
+    // Settings home, so Home's list and the panel link there.
+    settingsHome: { section: 'bridges', label: 'Manage in Bridges' },
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [{ source: 'messages' }] },
+    }),
+    /* GENERIC, because a bridge is operated (paused, routed, retargeted)
+       through `bridges.*`, and only the generic body is handed a command
+       executor. One `bridge-page` block draws the header and the six tabs
+       over one read; the panel's Connections tab sits beside it. */
+    panel: {
+      archetype: 'generic',
+      blocks: [
+        { block: 'bridge-page' },
+        { block: 'settings-home' },
+      ],
+    },
+  },
+
   // -- space_link (250, W6: managed from Space settings, not browsed) --------
   {
     kind: 'space_link',
@@ -2721,6 +2762,36 @@ const ROWS: readonly KindConfig[] = [
     panel: { archetype: 'generic', blocks: [{ block: 'fields', label: 'STYLE' }] },
   },
 
+  /*
+   * -- label (410: a space-wide tag — name, colour, description; D27) --
+   *
+   * MINIMAL BY DESIGN, like `style`: the row registers the kind so lists,
+   * panels and the rail can show a label. Labels are made, renamed and
+   * archived through `tm8 label` (`labels.*`, the only door — generic create
+   * is refused) and, later, a Settings section; so no quick create, no edit
+   * sheet, no `primaries`, and no launch. A label is archived, never deleted.
+   */
+  {
+    kind: 'label',
+    label: 'Label',
+    labelPlural: 'Labels',
+    /* A pentagon tag, like the drawn mark (`KIND_ART.label`). It was '⌂', which reads
+       as a house (#1424 review); same block as '⬢'/'⬡', so the same font coverage. */
+    icon: '⬠',
+    iconArt: KIND_ART.label,
+    slug: 'labels',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '⬠', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [{ source: 'createdBy' }] },
+    }),
+    panel: { archetype: 'generic', blocks: [{ block: 'fields', label: 'LABEL' }] },
+  },
+
   // -- the single custom-kind fallback row ----------------------------------
   {
     kind: CUSTOM_KIND_FALLBACK,
@@ -2780,7 +2851,10 @@ const ROWS: readonly KindConfig[] = [
  *     — but that is an argument about which verb should be PRIMARY, not about
  *     whether an agent can be pointed at the row.
  */
-const NOT_LAUNCHABLE: ReadonlySet<string> = new Set<string>([]);
+// `bridge` (BRIDGE-ENTITY-DESIGN §3.1, `spawnable: false`): you do not RUN a
+// bridge — agents answer through its target, and workers post on it by handle.
+// `label` (410): a tag on other entities — there is nothing to run.
+const NOT_LAUNCHABLE: ReadonlySet<string> = new Set<string>(['bridge', 'label']);
 
 /**
  * `run` — the launch action, in every place that renders one.

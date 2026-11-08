@@ -18,6 +18,7 @@ export type {
 } from './attention-selectors';
 export { formatAge, PENDING_STATUSES } from './attention-selectors';
 export { UNDO_WINDOW_MS } from './attention-commands';
+export { readEntityOpenAttention } from './entity-open-attention';
 export type { AttentionSeam, AttentionUndo } from './attention-commands';
 export { AttentionUndoToast } from './AttentionUndoToast';
 export { AttentionChipView, EntityAttentionChip, chipLabel, chipText, useEntityChip } from './AttentionChipView';

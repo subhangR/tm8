@@ -34,9 +34,12 @@ describe('direct story spawn on the current migration chain', () => {
     // exact signature and creates a twenty-one-argument one — so without 330
     // its drop names a function this fixture never created. Left out for the
     // same reason, and its own suites are mcp-provenance.pg.test.ts and
-    // loops.pg.test.ts, which run the real chain.
+    // loops.pg.test.ts, which run the real chain. 396 (authored_from origin
+    // index) re-creates 308's story walk and drops 308's two-argument
+    // story_walk_skips by exact signature, so it is left out with 308; its own
+    // suite is authored-from-origin-396.pg.test.ts.
     const p0b = ['_canonical_edges.sql', '_canonical_edges_rows.sql', '_session_teammate_participates_only.sql',
-                 '_launched_by.sql', '_loop_firing_provenance.sql'];
+                 '_launched_by.sql', '_loop_firing_provenance.sql', '_authored_from_origin_index.sql'];
     db.apply(files.filter(file => file !== migration && !p0b.some(suffix => file.endsWith(suffix))));
     previousOwner = (await db.query(`select pg_get_userbyid(proowner) owner from pg_proc
       where oid='public.execution_spawn(uuid,uuid,uuid[],uuid,text,text,text,text,text,text,text,text,boolean,integer,uuid,text,uuid,text)'::regprocedure`))[0]!.owner;

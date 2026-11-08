@@ -40,6 +40,12 @@ export interface PhoneEntityPageProps {
   onOpenEntity: (id: string, kind: string) => void;
   /** Opens the full discussion; absent ⇒ every loaded message is listed. */
   onViewAllMessages?: () => void;
+  /**
+   * A kind's own page body, drawn under the hero in place of its text (the
+   * bridge page, §4.1 Mobile). The host decides from registry data
+   * (`phoneBodyFor`), so this page still never asks what a kind is.
+   */
+  bodySlot?: ReactNode;
 }
 
 /** The text an entity says about itself, whatever its content shape calls it. */
@@ -96,15 +102,18 @@ export function PhoneEntityPage(props: PhoneEntityPageProps): ReactNode {
           <KindIcon kind={detail.kind} size={14} />
           {config.label}
         </span>
-        <h1 className="pp-title">{detail.title || 'Untitled'}</h1>
-        <p className="pp-meta">
+        {/* A kind with its own page body (the bridge page) draws its own title
+            line; repeating it here read as the same name twice (#1448 review).
+            The heading stays for screen readers, and the byline goes. */}
+        <h1 className={props.bodySlot ? 'pp-title pp-title--sr' : 'pp-title'}>{detail.title || 'Untitled'}</h1>
+        {props.bodySlot ? null : <p className="pp-meta">
           {author ? <span>{author}</span> : null}
           <span>
             updated <time dateTime={detail.updatedAt}>{phoneTime(detail.updatedAt, now)}</time>
           </span>
-        </p>
+        </p>}
       </header>
-      {body ? <div className="pp-body">{body}</div> : null}
+      {props.bodySlot ? <div className="pp-kindbody" data-testid="phone-kind-body">{props.bodySlot}</div> : body ? <div className="pp-body">{body}</div> : null}
       <section className="pp-sec" aria-label="Linked" data-testid="phone-linked">
         <h2 className="pp-sec__h">Linked</h2>
         {groups.length === 0 ? (

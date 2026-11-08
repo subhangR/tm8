@@ -34,10 +34,16 @@ export interface ProjectionOptions {
   readonly captureHighWater: number;
   readonly authorityScopeDigest: string;
   readonly maxBytes: number;
+  /**
+   * Bridges S (D73): a bridged chat's group conversation — its rolling summary
+   * and verbatim tail — as one record ahead of the turns. Already bounded by
+   * its producer; never reduced here. Not part of the turn coverage digest.
+   */
+  readonly groupContext?: { readonly sourceId: string; readonly content: Record<string, unknown> } | null;
 }
 interface Evidence {
   readonly sourceId: string;
-  readonly role: 'user' | 'assistant' | 'tool_evidence' | 'continuity_notice';
+  readonly role: 'user' | 'assistant' | 'tool_evidence' | 'continuity_notice' | 'group_context';
   readonly turnOrdinal: number;
   readonly content: unknown;
 }
@@ -162,6 +168,10 @@ export function projectHistory(turns: readonly HistoricalTurn[], options: Projec
     authorityScopeDigest: options.authorityScopeDigest,
     logicalHistoryDigest: historyDigest(original),
   };
+  const group: Evidence | null = options.groupContext ? { sourceId: options.groupContext.sourceId,
+    role: 'group_context', turnOrdinal: options.currentTurnOrdinal, content: options.groupContext.content } : null;
+  const groupBytes = group ? Buffer.byteLength(canonicalJson(group), 'utf8') + 1 : 0;
+  const render = (source: readonly Evidence[]) => PREFIX + canonicalJson(group ? [group, ...source] : source);
   const fits = (text: string) => Buffer.byteLength(text, 'utf8') <= options.maxBytes;
   const reduce = (source: readonly Evidence[], allowance: number) => source.map(record => {
     // Partial/unknown facts survive reduction intact.
@@ -175,11 +185,11 @@ export function projectHistory(turns: readonly HistoricalTurn[], options: Projec
   let kept: readonly Evidence[] = original;
   let records = original;
   let allowance = 8192;
-  let rendered = PREFIX + canonicalJson(records);
+  let rendered = render(records);
   // 1. Shrink oversized records, down to a floor that still says something.
   while (!fits(rendered) && allowance >= 512) {
     records = reduce(kept, allowance);
-    rendered = PREFIX + canonicalJson(records);
+    rendered = render(records);
     if (!fits(rendered)) allowance = Math.floor(allowance / 2);
   }
   // 2. A long chat outgrows the budget even so: every record keeps its source
@@ -200,7 +210,7 @@ export function projectHistory(turns: readonly HistoricalTurn[], options: Projec
       role: 'continuity_notice', turnOrdinal: ordinals[0]!, content: { omittedTurns: { fromOrdinal: ordinals[0]! - unread, throughOrdinal: through, count: count + unread },
         omittedDetail: true, instruction: 'Earlier turns were omitted to fit the history budget. '
           + 'Read them through authorized tm8 tools if they matter; do not replay them.' } });
-    let remaining = Buffer.byteLength(PREFIX, 'utf8') + 2 + sizes.reduce((sum, size) => sum + size, 0);
+    let remaining = Buffer.byteLength(PREFIX, 'utf8') + 2 + groupBytes + sizes.reduce((sum, size) => sum + size, 0);
     let index = 0;
     for (let cut = 1; cut < ordinals.length; cut += 1) {
       const through = ordinals[cut - 1]!;
@@ -210,31 +220,35 @@ export function projectHistory(turns: readonly HistoricalTurn[], options: Projec
       dropped = original.slice(0, index);
       kept = [notice, ...original.slice(index)];
       records = [notice, ...shrunk.slice(index)];
-      rendered = PREFIX + canonicalJson(records);
+      rendered = render(records);
       break;
     }
   }
   // 3. Still over (one huge latest turn): shrink what is left to the minimum.
   while (!fits(rendered) && allowance >= 32) {
     records = reduce(kept, allowance);
-    rendered = PREFIX + canonicalJson(records);
+    rendered = render(records);
     allowance = Math.floor(allowance / 2);
   }
   if (Buffer.byteLength(rendered, 'utf8') > options.maxBytes) {
     throw new Error('continuity_context_overflow: required attribution and uncertainty exceed budget');
   }
   const originals = new Set(original);
+  const groupRows = group ? [{ sourceId: group.sourceId, treatment: 'summarized' as const,
+    reason: 'bridged group conversation: deterministic rolling summary plus the verbatim recent messages' }] : [];
   const references = droppedReferences(dropped);
   const result: BootstrapContext = { schemaVersion: 1, snapshotId: options.snapshotId, coverage,
     contentHash: createHash('sha256').update(rendered).digest('hex'), renderedContext: rendered,
     manifest: [
+      ...groupRows,
       ...references,
       ...records.map(record => ({ sourceId: record.sourceId,
         treatment: originals.has(record) && !omitted(record.content) ? 'included' as const : 'summarized' as const,
         reason: originals.has(record) && !omitted(record.content) ? null : 'bounded deterministic extract; details require a current authorized source read' })),
     ] };
   if (Buffer.byteLength(JSON.stringify(result), 'utf8') <= SNAPSHOT_SEAL_BYTES) return result;
-  return { ...result, manifest: [...droppedReferences(dropped, true), ...result.manifest.slice(references.length)] };
+  return { ...result, manifest: [...groupRows, ...droppedReferences(dropped, true),
+    ...result.manifest.slice(groupRows.length + references.length)] };
 }
 
 /**

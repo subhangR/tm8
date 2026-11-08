@@ -87,7 +87,7 @@ describe('the Home icon rail', () => {
   it('seats each group exactly as ruled', () => {
     expect(kindsOf('work')).toEqual(['chat', 'story', 'task', 'work_session', 'form', 'tool', 'loop', 'project']);
     expect(kindsOf('library')).toEqual(['doc', 'drawing', 'artifact', 'file', 'collection', 'graph', 'craft']);
-    expect(kindsOf('people')).toEqual(['team_member', 'skill', 'memory', 'member', 'channel']);
+    expect(kindsOf('people')).toEqual(['team_member', 'skill', 'memory', 'member', 'channel', 'bridge']);
     expect(kindsOf('code')).toEqual(['commit', 'pull_request', 'worktree']);
     expect(kindsOf('admin')).toEqual([
       'interaction_profile',
@@ -96,6 +96,7 @@ describe('the Home icon rail', () => {
       'server',
       'mcp_server',
       'style',
+      'label',
       'spell',
       'container',
     ]);

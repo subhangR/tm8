@@ -1,4 +1,4 @@
-import { McpPicker } from '../mcp/McpPicker';
+import { McpPicker, usePickerGate } from '../mcp/McpPicker';
 import type { McpSelection } from '../mcp/port';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -141,7 +141,7 @@ export function NewSessionScreen({
 }: NewSessionScreenProps) {
   const [draft, setDraft] = useState(initialDraft ?? '');
   const [mcpSelections, setMcpSelections] = useState<McpSelection[] | undefined>();
-  const [mcpReady, setMcpReady] = useState(true);
+  const [mcpGate, onMcpGate] = usePickerGate();
   const [phase, setPhase] = useState<NewSessionPhase>('idle');
   const [sessionId, setSessionId] = useState<EntityId | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -185,7 +185,7 @@ export function NewSessionScreen({
      commits is never a surprise. */
   const derived = deriveTitle(draft);
   const title = customTitle.trim() !== '' ? customTitle.trim() : derived;
-  const ready = canDeriveTitle(draft) && refusal === null && commands !== null && mcpReady;
+  const ready = canDeriveTitle(draft) && refusal === null && commands !== null && !mcpGate.blocked;
 
   /* The slow notice is time-based BECAUSE it is a statement about elapsed
      time — it never advances the phase, it only admits the wait. */
@@ -299,7 +299,7 @@ export function NewSessionScreen({
               teamMemberId={config.teamMemberId ?? undefined}
               value={mcpSelections}
               onChange={setMcpSelections}
-              onReady={setMcpReady}
+              onReady={onMcpGate}
               disabled={transitioning}
               layout="grid"
             />
@@ -311,7 +311,7 @@ export function NewSessionScreen({
           }}
           onSubmit={() => { void start(); }}
           busy={transitioning}
-          refusal={error ?? refusal ?? (!mcpReady ? "Choose a connected account for each connector." : null)}
+          refusal={error ?? refusal ?? mcpGate.problem}
           derivedTitle={derived}
           title={customTitle}
           onTitleChange={(next) => {

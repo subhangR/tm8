@@ -20,6 +20,7 @@
 import type { EffectiveSkills, SkillReference } from './skill-reference.js';
 import type { McpSelection, McpServerEntity } from './mcp.js';
 import type { ToolEntity, ToolRun } from './tools.js';
+import type { EntityLabelsPatch, LabelEntity } from './labels.js';
 import type { LoopAction, LoopConcurrency } from './loops.js';
 import type { OperationName } from './catalog.js';
 import type { FormQuestionRow, FormSectionRow, FormSettings, FormStatus } from './forms.js';
@@ -104,7 +105,15 @@ export type CoreEntityKind =
   | 'style' | 'mcp_server' | 'tool'
   // Crafts (migration 304 as `design`, renamed by 322 on 2026-10-10): an ordered set of
   // PAGES, each any entity, held as ordered `contains` edges. See ./craft.ts.
-  | 'craft';
+  | 'craft'
+  // Bridges (migration 395, BRIDGE-ENTITY-DESIGN §3.1): one provider
+  // conversation bound to one chat, session or channel. Born only from
+  // `bridges.create`; ended only by `bridges.remove`. See ./bridges.ts.
+  | 'bridge'
+  // Labels (migration 410, BRIDGE-ENTITY-DESIGN §3.8): a flat, space-level
+  // name/colour/description. Born only from `labels.create`; entities carry
+  // label ids on the envelope (`EntitySummary.labels`). See ./labels.ts.
+  | 'label';
 
 /** A credential entity's visibility (W10a): who may launch on it. */
 export type CredentialVisibility = 'private' | 'public';
@@ -152,7 +161,7 @@ export interface ActorSummary {
    * what it is. The ONE deliberate non-additive change in the board/people
    * wave; adjudicated twice independently.
    */
-  kind: 'member' | 'team_member' | 'work_session';
+  kind: 'member' | 'team_member' | 'work_session' | 'bridge';
   displayName: string;
   avatar?: string | null;
   role?: string | null;
@@ -163,7 +172,18 @@ export interface ActorSummary {
    * is the persona, and `via.sessionId` is the run it acted through. Additive;
    * a consumer that ignores it renders the persona and is still truthful.
    */
-  via?: { sessionId: EntityId };
+  via?: {
+    sessionId?: EntityId;
+    /**
+     * Bridges (395, design §3.7) — the second deliberate non-additive change,
+     * for the same reason as `work_session`: a linked participant's message is
+     * `{kind:'member', via:{bridgeId}}`; a guest's is `{kind:'bridge', id:
+     * <bridge>, via:{bridgeId, participant}}`. No member is invented for a
+     * stranger. A consumer that ignores `via` still renders a true author.
+     */
+    bridgeId?: EntityId;
+    participant?: { displayName: string; avatar?: string | null };
+  };
   /**
    * Present only when the membership behind this actor has ENDED (migration
    * 232): a `member` who left or was removed, or a `team_member` whose owner
@@ -293,6 +313,15 @@ export interface EntitySummary {
    * that had to wait for a detail read would be wrong on every collapsed tile.
    */
   category?: StatusCategory;
+  /**
+   * The label ids this entity carries (410, `entities.labels`), in the order
+   * they were added. IDS, not names: a label is renamed in one place. Resolve
+   * them with `labels.list` (an archived label is still a valid id here).
+   *
+   * OPTIONAL and spread-when-non-empty: absent means no labels, which is also
+   * what a node that predates the column reports.
+   */
+  labels?: EntityId[];
 }
 
 /** Provenance for one task's current `assigned_to` edge. */
@@ -305,6 +334,7 @@ export interface TaskAssignment {
 export type CoreEntityState =
   | McpServerEntity
   | ToolEntity
+  | LabelEntity
   | { kind: 'task'; status: WorkStatus; priority: 'low'|'medium'|'high'|'urgent';
       axes: Record<string, string>; dueDate?: string | null; startDate?: string | null;
       assignees: ActorSummary[];
@@ -433,6 +463,14 @@ export type CoreEntityState =
        */
       sharingSetAt?: string | null;
       startedAt: string | null; exitedAt: string | null;
+      /**
+       * THE BOOT, AS THE NODE RECORDS IT (task 01a182bb) — the last phase a
+       * launch reached (`work_sessions.boot_phase`) and when it got there.
+       * OPTIONAL: absent on a node that records no boot, and the launching
+       * page then derives its phases from `status` alone.
+       */
+      bootPhase?: WorkSessionBootPhase;
+      bootPhaseAt?: string;
       /**
        * WHAT KIND OF SESSION THIS IS — the discriminator that lets a client
        * tell a private credential login terminal from ordinary work (083), and
@@ -638,6 +676,8 @@ export type CoreEntityState =
    */
   | { kind: 'space_link' }
   | { kind: 'server' }
+  /** A bridge's facts (395): state and content are the same derived view. */
+  | ({ kind: 'bridge' } & import('./bridges.js').BridgeFacts)
   /**
    * A space style's row facts (284, spec §4.3). The FULL document rides on the
    * state on purpose (sign-off decision): `entity.upsert` after a push is how
@@ -1054,6 +1094,7 @@ export interface GraphEdgeSpec { src?: string; dst?: string; type?: string; note
 export type CoreEntityContent =
   | McpServerEntity
   | ToolEntity
+  | LabelEntity
   | { kind: 'task'; description: string; acceptanceCriteria: AcceptanceCriterion[];
       pointsEstimate?: number | null }
   | { kind: 'channel'; topic: string; pinned: EntitySummary[]; autoTabs: ChannelTab[] }
@@ -1143,6 +1184,8 @@ export type CoreEntityContent =
   /** Space links (250, W6): content is `spaceLinks.list`'s; see EntityState. */
   | { kind: 'space_link' }
   | { kind: 'server' }
+  /** A bridge (395): the same facts as its state (`internal.bridge_view`). */
+  | ({ kind: 'bridge' } & import('./bridges.js').BridgeFacts)
   /** A space style (284): the same facts as its state plus the description. */
   | { kind: 'style'; description: string | null; doc: StyleDoc; resolvedHash: string | null;
       pushedBy: EntityId; pushedAt: string; sourceOwnerIdentityId: string; tags: string[] }
@@ -1466,15 +1509,77 @@ export interface CollectionQuery {
      * word in it (only separators) falls back to the literal title match.
      */
     words?: string;
+    /**
+     * Additive (410, labels): entities carrying ALL of these label ids
+     * (`entities.labels @> …`, GIN-indexed). Kind-neutral.
+     */
+    labels?: EntityId[];
+    /** Additive (410): entities carrying ANY of these label ids (`&&`). */
+    labelsAny?: EntityId[];
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
   /** `priority` added 2026-08-16 (Board tab wave) — same additive posture as the rest of the union. */
   groupBy?: 'status'|'assignee'|'priority'|`axis:${string}`;
   sort?: 'activityAt_desc'|'updatedAt_desc'|'createdAt_desc'|'position'|'dueDate'|'startDate'|'priority'|'progress';
   cursor?: Cursor; limit?: number;
+  /**
+   * Additive (S5, mobile LLD §5.1 "one query per list"): the rows under this
+   * page, down to `depth` levels, in the same trip. Level 1 reads the children
+   * of the page's rows with `childCount > 0`; level 2 reads the children of
+   * level 1's. Each level is the rows the step query
+   * `{spaceId, kinds, filters: {parentIn: <those ids>}, sort, limit: 200}`
+   * returns (the three trips a list made before), cut to the first
+   * `perParent` rows of each parent in the same sort order. Children ride
+   * along whatever their status: the page's `filters` pick the page only.
+   * See `CollectionTreeOption` for the bounds; `CollectionResult.tree` holds
+   * the levels.
+   */
+  tree?: CollectionTreeOption;
 }
 
-export interface CollectionResult { query: CollectionQuery; page: Page<EntitySummary>; groups?: CollectionGroup[] }
+/**
+ * S5 tree bounds, enforced by `CollectionQuerySchema`. A level holds at most
+ * `COLLECTION_TREE_LEVEL_MAX` rows, so the next level's parents are never more
+ * than the 200 ids `filters.parentIn` allows; the page itself is bounded by
+ * `limit` (at most 200).
+ */
+export const COLLECTION_TREE_MAX_DEPTH = 2;
+export const COLLECTION_TREE_LEVEL_MAX = 200;
+
+export interface CollectionTreeOption {
+  /** How many levels under the page to read: 1 or 2. Deeper rows stay unread; their parent's `childCount` says how many. */
+  depth: 1 | 2;
+  /**
+   * At most this many children of each parent, 1 to 200. Default 200: no cut
+   * beyond the level's own 200, which is exactly what the step query returns.
+   * The echoed `query` carries the resolved value.
+   */
+  perParent?: number;
+}
+
+export interface CollectionResult {
+  query: CollectionQuery; page: Page<EntitySummary>; groups?: CollectionGroup[];
+  /** Present exactly when the query asked for `tree`: one level per depth, 1 first. */
+  tree?: CollectionTree;
+}
+export interface CollectionTree { levels: CollectionTreeLevel[] }
+export interface CollectionTreeLevel {
+  depth: 1 | 2;
+  /**
+   * The rows whose children this level read: the rows one level up (the page
+   * for level 1) with `childCount > 0`. Empty when none has children; the
+   * level is then read from nothing and holds nothing.
+   */
+  parentIds: EntityId[];
+  /**
+   * The children, each with its own `childCount`, in the page's sort order:
+   * at most `perParent` per parent and at most `COLLECTION_TREE_LEVEL_MAX` in
+   * all. A parent's `childCount` minus its rows here is the number not shown.
+   */
+  items: EntitySummary[];
+  /** True when the level's 200-row bound cut rows the per-parent bound kept. */
+  capped: boolean;
+}
 export interface CollectionGroup {
   key: string; label: string; items: EntitySummary[]; nextCursor?: Cursor;
   /**
@@ -1485,7 +1590,8 @@ export interface CollectionGroup {
    */
   total?: number;
 }
-export interface GraphQuery extends CollectionQuery { focusId?: EntityId; hops?: number; edgeTypes?: string[]; mode?: 'free'|'dependency' }
+/** `tree` is a collection page's: a graph lens has no page for it to hang from, and `GraphQuerySchema` refuses it. */
+export interface GraphQuery extends Omit<CollectionQuery, 'tree'> { focusId?: EntityId; hops?: number; edgeTypes?: string[]; mode?: 'free'|'dependency' }
 export interface GraphResult { nodes: EntitySummary[]; edges: GraphEdgeView[]; clusters: { parentId: EntityId; childIds: EntityId[] }[];
   layout?: Record<EntityId, { x: number; y: number }> }
 
@@ -1527,6 +1633,12 @@ export interface MessageView extends EntitySummary {
    * it — the chat surface used to pull a whole `entities.feed` page for this.
    */
   sourceWorkSessionId?: EntityId;
+  /**
+   * The bridge this message crossed, with its participant, trust and delivery
+   * badge (BRIDGE-ENTITY-DESIGN §4.5, D4). Absent on a message no bridge
+   * touched; optional under the rolling-node rule.
+   */
+  bridge?: import('./bridges.js').MessageBridgeView;
 }
 
 // ---------------------------------------------------------------------------
@@ -1843,7 +1955,10 @@ export type WorkspaceEvent = WorkspaceEventEnvelope & (
      outcomeBy: EntityId | null; receiptMessageId: EntityId | null;
      outcomeSource: WorkSessionOutcomeSource | null; clientMutationId?: string }
  | { type: 'session.process_changed'; sessionId: EntityId; from: WorkSessionStatus; to: WorkSessionStatus;
-     endedKind: WorkSessionEndedKind | null; endedReason: string | null; clientMutationId?: string }
+     endedKind: WorkSessionEndedKind | null; endedReason: string | null;
+     /** 403: the node that recorded this ending itself (a ghost, a lost or auto-closed session). Absent otherwise. */
+     endedByNode?: string;
+     clientMutationId?: string }
  /**
   * A `working_on` claim ended (Spec D1 §6.3 R4). The edge row is KEPT with
   * `props.endedAt`/`props.endReason` (its own `edge.upsert` carries that); this
@@ -2278,6 +2393,7 @@ export type CommandErrorCode =
   | 'version_conflict' | 'conflict' | 'invariant_violation'
   | 'payload_too_large' | 'rate_limited' | 'limit_exceeded'
   | 'not_implemented' | 'upstream_unavailable'
+  | 'not_community_admin'
   /** c904 §2.5: the never-drop core does not fit the caller's `totalBytes`. */
   | 'context_budget_too_small'
   /**
@@ -2293,6 +2409,7 @@ export const ERROR_STATUS: Record<CommandErrorCode, number> = {
   version_conflict: 409, conflict: 409, invariant_violation: 409,
   payload_too_large: 413, rate_limited: 429, limit_exceeded: 429,
   not_implemented: 501, upstream_unavailable: 503,
+  not_community_admin: 403,
   context_budget_too_small: 422,
   form_answers_invalid: 422, form_not_open: 409, form_structure_frozen: 409,
   form_response_limit: 409, form_respondent_not_allowed: 403,
@@ -2620,7 +2737,12 @@ export type AuthSessionOrigin = 'login' | 'space_enter' | 'spawn' | 'chat' | 'li
 
 export interface AuthSessionListing {
   sessionId: string;
-  kind: AuthSessionKindView;
+  /**
+   * `bridge_runtime` (395/398): the connector runtime's session. 398 keeps it
+   * out of `list_auth_sessions`, but the kind is a real `auth_sessions` kind,
+   * so a listing row naming it still validates.
+   */
+  kind: AuthSessionKindView | 'bridge_runtime';
   createdAt: string;
   lastUsedAt: string | null;
   expiresAt: string;
@@ -2729,6 +2851,62 @@ export interface AuthClaimStatusResult {
    * exists. Optional so an older node's answer still parses; absent means true.
    */
   tokenRequired?: boolean;
+}
+
+/**
+ * `meta.get` (GET /v2/meta) — what this node speaks, so a client can learn it
+ * in one read instead of probing operation by operation (TM8 Mobile s-lld §4,
+ * version signals), and a node can tell a client it is too old, in words,
+ * before that client signs in.
+ *
+ * ANONYMOUS-READABLE BY DESIGN, like `auth.claim.status` and `/health`. A client
+ * asks while it adds a server, before it has sent a password, and the answer
+ * decides whether it may sign in at all ("This app is too old for <node>").
+ * Requiring a credential would put that check after the password it exists to
+ * stop. Every field is a fact about the build and how this node composed it,
+ * identical for every caller: no member, space, session or setting is in it.
+ *
+ * NOT `.strict()` on the wire (`MetaGetResultSchema`): the reader may be older
+ * than the node, and an old client must still parse a newer node's answer,
+ * because learning that it is too old is why it asks.
+ */
+export interface MetaGetResult {
+  /** `CONTRACT_VERSION`, the same value `/health` reports. */
+  contractVersion: string;
+  /**
+   * Lowercase hex SHA-256 of `JSON.stringify(OPERATIONS)`: the digest every
+   * `tm8 help` shard prints after `catalog sha256:`. Equal digests mean equal
+   * catalogs, row for row, flags included.
+   */
+  catalogSha256: string;
+  /** `WORKSPACE_EVENT_SCHEMA_VERSION`: the `schemaVersion` this node's events carry. */
+  eventSchemaVersion: number;
+  /**
+   * The operations this node mounts, in catalog order: every catalog row whose
+   * status is `v1` and that has a handler here (a socket row: the server frame's
+   * upgrade path). A row that is not listed is never served here: a `reserved`
+   * or unmounted row answers 501 `not_implemented`, and a row this node's
+   * catalog lacks answers 404. A listed row can still refuse when called, 501
+   * included: a few families mount every row and answer `not_implemented`, with
+   * a reason, while a switch they need is off on this node (`TM8_CONTAINERS=off`,
+   * no tool runtime, no LiveKit), so a client keeps its per-operation 501 cache.
+   * Derived from the catalog and the handler registry on every read, never kept
+   * by hand. Names, not `OperationName`s: a newer node lists operations an older
+   * reader's catalog does not know.
+   */
+  features: string[];
+  /**
+   * The oldest version of each client this node serves. The key is the product
+   * token of the client's `x-tm8-client` value, the text before its first `/`
+   * (`tm8-mobile` in `tm8-mobile/1.2.3 (ios; build 42)`). The value is
+   * `MAJOR.MINOR.PATCH`, compared number by number with the version after that
+   * `/`. A client the map does not name has no minimum here.
+   *
+   * THE REFUSAL IS THE CLIENT'S. The node states the minimum here and nowhere
+   * else: it never parses `x-tm8-client` and refuses no request for its version.
+   * A client older than its entry stops before it signs in and says why.
+   */
+  minClients: Record<string, string>;
 }
 
 /**
@@ -3190,13 +3368,17 @@ export type SpaceCredentialProviderName = 'anthropic' | 'openai' | 'github';
  * Jev's key), and never handed to a session — the spawn reader refuses them
  * in SQL and in TS, and `session_space_credentials` cannot hold one.
  */
-export type ServerOnlyCredentialProviderName = 'typesafe' | 'mcp' | 'tool';
+export type ServerOnlyCredentialProviderName = 'typesafe' | 'mcp' | 'tool' | 'whatsapp';
 
 /** Every provider a space credential row can carry: launchable or server-only. */
 export type SpaceCredentialStoredProviderName = SpaceCredentialProviderName | ServerOnlyCredentialProviderName;
 
-/** `login` is a vendor CLI login in a space home; the other two are pasted strings. */
-export type SpaceCredentialShape = 'login' | 'api_key' | 'token';
+/**
+ * `login` is a vendor CLI login in a space home; `api_key` and `token` are
+ * pasted strings; `connection` is a bridge connection offered to the space
+ * (provider whatsapp, 421): its bytes are sealed on the node, never in a column.
+ */
+export type SpaceCredentialShape = 'login' | 'api_key' | 'token' | 'connection';
 
 /** `pending` is a login that has not finished; `stale` failed its last probe. */
 export type SpaceCredentialStatus = 'pending' | 'active' | 'stale' | 'revoked';
@@ -3772,6 +3954,12 @@ export type CreatableEntityKind = Exclude<
   // `style` is born ONLY from `styles.push` (284): a space style is read-only
   // and every version is a deliberate publish from a personal style.
   | 'style'
+  // `bridge` is born ONLY from `bridges.create` (395): a human space admin who
+  // owns the connection, with the target checked and the edge written.
+  | 'bridge'
+  // `label` is born ONLY from `labels.create` (410), which checks the name is
+  // free in the space; it is archived, never deleted.
+  | 'label'
 >;
 
 export interface CreateEntityInput extends CommandContext {
@@ -3790,6 +3978,11 @@ export interface CreateEntityInput extends CommandContext {
    * (team_member, doc, artifact, drawing, file, task, collection, story, tool, loop) accept it.
    */
   header?: HeaderTextInput;
+  /**
+   * Label ids to put on the new entity, written in the same transaction
+   * (410). Each must be a live, unarchived label in the same space.
+   */
+  labels?: EntityId[];
 }
 
 /** Atomic initial edge created in the same transaction as its source entity. */
@@ -3803,6 +3996,11 @@ export interface PatchEntityInput extends CommandContext {
   expectedVersion: number;
   title?: string;
   content?: Record<string, unknown>;
+  /**
+   * Label ids to add and remove (410), under the same `expectedVersion`. Any
+   * kind may carry labels; a labels-only patch needs no content arm.
+   */
+  labels?: EntityLabelsPatch;
 }
 
 /** POST /v2/entities/:entityId/attention-requests. */
@@ -3996,6 +4194,12 @@ export interface PostMessageInput extends CommandContext {
    * appears in the message body or the transcript. Omitted ⇒ no team line.
    */
   team?: ChatTurnTeam;
+  /**
+   * Bridges §4.5, D76: *Reply here only*. True keeps this message, and every
+   * copy of its batch, in tm8: no bridge sends it, even a reply to a bridged
+   * message, which crosses by default (§2.3). Omitted ⇒ the outbound rule.
+   */
+  hereOnly?: boolean;
 }
 
 /** One owner a Coordinator may hand work to: a teammate, or a model-only worker. */
@@ -4053,6 +4257,14 @@ export interface MessageBatchResult {
    * the batch owed nobody a live copy — not that delivery failed.
    */
   delivery?: MessageDeliveryDisposition[];
+  /**
+   * 398 (Bridges): the provider delivery of each message in this batch that a
+   * bridge carries or refused, read after commit. `refused` names the reason
+   * (`bridge_paused`, `direction_in`, `worker_posting_off`, `rate_limited`
+   * with `retryAfterMs`, …): the message is stored in tm8 either way. Absent
+   * when no message of the batch crosses a bridge.
+   */
+  bridgeDelivery?: import('./bridges.js').BridgeDelivery[];
   /**
    * Advisories on a stored batch, e.g. `task_still_working` (P0g): the sending
    * session holds an anchored task that is still `working`. Absent when none.
@@ -4315,6 +4527,8 @@ export interface CreateInviteInput extends CommandContext {
   role?: Exclude<SpaceMemberRole, 'owner'>;
   maxUses?: number;
   expiresAt?: string | null;
+  /** Bridges B3 (417, D60): a one-use invite for this bridge participant; redeeming it links the joiner. */
+  bridgeParticipant?: import('./bridges.js').BridgeInviteParticipant;
 }
 
 /**
@@ -4381,6 +4595,12 @@ export type InvitePreview =
       expiresAt: string | null;
       /** W5 (K2): joining sets a space password; ask for one. */
       requiresSpacePassword?: boolean;
+      /**
+       * Bridges D60: the invite was made for one group participant. Joining
+       * grants membership only; the join page then hands the new member a
+       * `/link TM8-…` code to send from that number in the group.
+       */
+      bridgeLink?: { provider: string; masked: string };
     };
 
 // ---------------------------------------------------------------------------
@@ -5110,6 +5330,12 @@ export type Unsubscribe = () => void;
 
 /** Single writer: the execution block's transition function (R29). */
 export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'failed';
+/**
+ * The phases a launch's boot passes through, in order, or its failure —
+ * `work_sessions.boot_phase`. Each step names the fact REACHED: `lane` is
+ * "checkout ready", `briefing` "prompt composed", `agent` "process started".
+ */
+export type WorkSessionBootPhase = 'admitted' | 'lane' | 'briefing' | 'agent' | 'live' | 'failed';
 
 /**
  * Worktree SEMANTIC lifecycle, forward-only: active → merged|abandoned → deleted.
@@ -6503,10 +6729,27 @@ export interface ExecutionSpawnResult extends CommandResult {
   createdTaskId?: EntityId;
   /**
    * What the new session actually launched with — the RESOLVED posture, not
-   * an echo of the request, which may name none of it. Absent from a server
-   * that predates it.
+   * an echo of the request, which may name none of it. ABSENT AT ADMISSION
+   * (404): `execution.spawn` answers before the boot resolves the credentials,
+   * so a current server never carries it here. Read it from `execution.launch`
+   * (`SessionLaunchRecord.launch`) once the session's manifest is recorded —
+   * by the time it is `running`. Only a server older than admission answers
+   * with it.
    */
   launch?: ExecutionSpawnLaunch;
+  /** Where this request's time went, phase by phase. Absent from a server that predates it. */
+  timings?: ExecutionSpawnTimings;
+}
+
+/**
+ * The wall clock of one `execution.spawn`, in milliseconds. DIAGNOSTIC ONLY:
+ * the phase names are the server's internal steps and change when those
+ * steps do, so nothing may branch on them. Phases that ran concurrently
+ * overlap and need not sum to `totalMs`.
+ */
+export interface ExecutionSpawnTimings {
+  totalMs: number;
+  phases: Record<string, number>;
 }
 
 /**
@@ -7367,8 +7610,17 @@ export interface ExecutionLiveness {
   liveEntityIds: EntityId[];
   nodeBootId: string;
   checkedAt: string;
-  /** Node-wide admission truth used by execution.spawn's concurrency gate. */
-  capacity: { used: number; total: number };
+  /**
+   * Node-wide admission truth used by execution.spawn's concurrency gate.
+   *
+   * `ghosts` (403): how many of `used` are recorded against THIS node while it
+   * holds no process for them — dead rows the reaper will retire, which still
+   * count until it does. Lets a full cap say why. Present only when the read
+   * asks for it (`?ghosts=1`), so a client that does not know the field gets
+   * the same bytes as before; absent from a node that does not report it.
+   * Never a reason to read `used` differently.
+   */
+  capacity: { used: number; total: number; ghosts?: number };
   /**
    * The durable event high-water mark for this space — `space_event_seq
    * .last_seq`, read under the CALLER's claims, exactly as the WS `subscribe`
@@ -7592,6 +7844,27 @@ export interface SessionLaunchRecord {
    * manifest. Unlike `manifest`, this is filtered for the viewer.
    */
   launchContext: SessionLaunchContext | null;
+  /**
+   * The spawn receipt's posture rows — the resolved access mode and where it
+   * came from, the credential each provider ran on, the parent — rebuilt from
+   * the recorded manifest, exactly as `execution.spawn` reported them when it
+   * answered only once the session ran (404). Absent when no manifest was
+   * recorded, and on a manifest that predates the access-mode source.
+   */
+  launch?: ExecutionSpawnLaunch;
+}
+
+/**
+ * `execution.bootState` (404): how far a session's boot has got, read from its
+ * row. `bootPhase`/`bootPhaseAt` are absent on a row written before boot
+ * phases; `endedReason` says why a session that ended, ended.
+ */
+export interface WorkSessionBootState {
+  sessionId: EntityId;
+  status: WorkSessionStatus;
+  bootPhase?: WorkSessionBootPhase;
+  bootPhaseAt?: string;
+  endedReason: string | null;
 }
 
 /** What an entity was in the launch. */
@@ -8440,6 +8713,8 @@ export interface EntityContextV2View {
   /** 299 (Spec D1): open | completed | stopped — the work, not the process. */
   outcome?: string | null;
   receiptMessageId?: string | null;
+  /** 404: the last phase the launch's boot reached (`WorkSessionBootPhase`), while it boots or when it failed. */
+  bootPhase?: string | null;
   tasks?: EntityContextRef[];
   /**
    * 330 (chat and work_session): the sessions this one launched — their

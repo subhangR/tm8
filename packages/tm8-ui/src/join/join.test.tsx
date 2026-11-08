@@ -195,6 +195,32 @@ describe('the join screen', () => {
     expect(h.joined).toEqual([{ spaceId: 'space-7', joined: true }]);
   });
 
+  it('an invite made for a group participant joins, then hands over a /link code; the number links only from the phone (Bridges D60)', async () => {
+    const minted: string[] = [];
+    const h = mount({
+      onPreview: async () => ({ ...VALID, bridgeLink: { provider: 'whatsapp', masked: '…0002' } }),
+      onBeginLink: async (provider) => { minted.push(provider); return { code: 'TM8-ABCDEF', expiresAt: '2026-10-30T19:00:00Z' }; },
+    });
+    fireEvent.click(await screen.findByTestId('join-accept'));
+    expect((await screen.findByTestId('join-link-code')).textContent).toBe('/link TM8-ABCDEF');
+    expect(minted).toEqual(['whatsapp']);
+    expect(screen.getByTestId('join-link').textContent).toMatch(/from …0002 count as you, send this from that phone, in the group/);
+    expect(h.joined).toEqual([]);
+    fireEvent.click(screen.getByTestId('join-link-continue'));
+    expect(h.joined).toEqual([{ spaceId: 'space-7', joined: true }]);
+  });
+
+  it('a pinned invite whose code cannot be minted still joins and says where to make one', async () => {
+    const h = mount({
+      onPreview: async () => ({ ...VALID, bridgeLink: { provider: 'whatsapp', masked: '…0002' } }),
+      onBeginLink: async () => { throw new Error('too many codes'); },
+    });
+    fireEvent.click(await screen.findByTestId('join-accept'));
+    expect((await screen.findByTestId('join-link-later')).textContent).toMatch(/Account → Linked identities/);
+    fireEvent.click(screen.getByTestId('join-link-continue'));
+    expect(h.joined).toEqual([{ spaceId: 'space-7', joined: true }]);
+  });
+
   it('already-a-member is a SUCCESS, not a refusal', async () => {
     const h = mount({ onRedeem: async () => ({ ...REDEEMED, joined: false }) });
     fireEvent.click(await screen.findByTestId('join-accept'));

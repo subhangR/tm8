@@ -59,10 +59,17 @@ export const SESSION_TTL_MS = {
   agent: 7 * DAY,
   agent_runtime: DAY,
   link: 90 * DAY,
+  // 398 (Bridges B1b-2): the connector runtime's session. Re-minted on every
+  // sidecar start and before half its life is spent (bridges/runtime/supervisor.ts).
+  bridge_runtime: 7 * DAY,
 } as const;
 
-/** The kinds a login or mint here produces. A `link` session is never one of them. */
-export type LoginKind = Exclude<keyof typeof SESSION_TTL_MS, 'link'>;
+/**
+ * The kinds a login or mint here produces. A `link` session is never one of
+ * them, and neither is `bridge_runtime` (398): the connector runtime's session
+ * is minted for a sidecar and never appears in an auth response or listing.
+ */
+export type LoginKind = Exclude<keyof typeof SESSION_TTL_MS, 'link' | 'bridge_runtime'>;
 
 /** `public.resolve_auth_session` result (007:110-124) — camelCase by construction. */
 export interface ResolvedAuthSession {
@@ -74,7 +81,8 @@ export interface ResolvedAuthSession {
   displayName: string | null;
   isNodeAdmin: boolean;
   isOwner: boolean;
-  kind: LoginKind;
+  /** `bridge_runtime` resolves (its doors need it) but is refused on every other route. */
+  kind: LoginKind | 'bridge_runtime';
   actingAsTeamMemberId: string | null;
   workSessionId: string | null;
   runtimeMemberId: string | null;
@@ -156,6 +164,36 @@ export interface IssuedLogin {
     createdAt: string;
     expiresAt: string;
   };
+}
+
+export interface IssuedBridgeRuntimeSession {
+  token: string;
+  sessionId: string;
+  expiresAt: string;
+}
+
+/**
+ * Mint the connector runtime's `bridge_runtime` session (BRIDGE-ENTITY-DESIGN
+ * §2.5, the 105 agent_runtime precedent): no persona, no work session, no
+ * space pin. The node calls this as its owner when it starts the sidecar; the
+ * SQL refuses anyone but a node admin. Every older live session with the same
+ * label is revoked once the new one exists, so one sidecar holds one token.
+ * Plaintext leaves this function exactly once, to the sidecar's token file.
+ */
+export async function issueBridgeRuntimeSession(
+  db: Db,
+  claims: DbClaims,
+  label: string,
+): Promise<IssuedBridgeRuntimeSession> {
+  const secret = generateSecret();
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS.bridge_runtime).toISOString();
+  const session = await db.rpc<SessionRowJson>(claims, 'issue_bridge_runtime_session', [
+    hashToken(secret),
+    expiresAt,
+    label,
+  ]);
+  await db.rpc(claims, 'revoke_bridge_runtime_sessions', [label, session.id]);
+  return { token: formatToken(session.id, secret), sessionId: session.id, expiresAt: session.expires_at };
 }
 
 export interface IssuedAgentRuntimeSession {
@@ -879,4 +917,13 @@ export function hashSpacePassword(password: string): Promise<string> {
 /** W5: does this live invite code join a space that requires a space password? */
 export function inviteRequiresSpacePassword(db: Db, code: string): Promise<boolean> {
   return db.rpc<boolean>({}, 'invite_requires_space_password', [code]);
+}
+
+/**
+ * Bridges B3 follow-up (D60): the participant a live invite was pinned to,
+ * masked, so the join page can hand the new member a /link code. Null for an
+ * unpinned or dead code. Claim-free, like the space-password probe above.
+ */
+export function inviteBridgeLink(db: Db, code: string): Promise<{ provider: string; masked: string } | null> {
+  return db.rpc<{ provider: string; masked: string } | null>({}, 'invite_bridge_link', [code]);
 }

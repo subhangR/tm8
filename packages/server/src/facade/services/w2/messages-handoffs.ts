@@ -7,6 +7,7 @@ import {
   encodeCursor,
   isCollabError,
   type AddMessageAttachmentsInput,
+  type BridgeDelivery,
   type DeleteMessageInput,
   type HandoffDeliveryStatus,
   type HandoffRecordStatus,
@@ -398,7 +399,8 @@ function deliveryRecord(row: DeliveryRow): MessageDeliveryRecord {
  * while team members hold 129 and 127. The two exceptions are `--as`
  * impersonation from a human's token, which sharpens the rule rather than
  * weakening it: the discriminator is the CREDENTIAL, not the author's kind.
- * `edges_authored_from_source_idx` is UNIQUE on `src_id`, so the edge is
+ * `edges_authored_from_source_idx` is UNIQUE on `src_id` for the session/chat
+ * origin (bridge provenance edges sit outside it, 396), so the origin is
  * single-valued and cannot resolve to one of several sessions.
  *
  * WHY THE TS-SIDE VALUE IS EXACT AND NOT A GUESS. `w2_post_message_batch`
@@ -513,6 +515,9 @@ export class W2MessagesHandoffsService {
       ]);
       // 328: the Coordinator's team rides the TURN, never the body.
       await stampChatTurnTeam(q, result.messageIds, input.team);
+      // §4.5, D76: *Reply here only*, marked before commit, which is when the
+      // deferred outbound rule (398, 419) reads it.
+      if (input.hereOnly) await q.rpc('mark_bridge_here_only', [result.messageIds]);
       // FOUR target classes come back from here, not one: the anchor when it
       // IS a work_session (072), the session being answered (076), the caller's
       // explicit pokes (099), and — since 121 — every LIVE session with a
@@ -621,6 +626,21 @@ export class W2MessagesHandoffsService {
 
     this.options.onMessagesCommitted?.(viewerIdentityId, stored.messages);
 
+    // 398 (Bridges §2.7): a bridged post's provider outcome is decided at
+    // commit (the outbound rule is a deferred trigger), so it is read back
+    // here, after it. A refusal never fails the post; it is told to the sender
+    // (`rate_limited` with its retryAfterMs), never silently queued.
+    // A read only: if it fails, the post (already stored) still answers, and
+    // the badge reaches the sender on the message itself (message.updated).
+    let bridgeDelivery: BridgeDelivery[] = [];
+    try {
+      const [row] = await this.deps.db.query<{ d: BridgeDelivery[] | null }>(
+        claims, 'select internal.bridge_message_delivery($1::uuid[]) as d', [stored.result.messageIds]);
+      bridgeDelivery = Array.isArray(row?.d) ? row.d : [];
+    } catch (err) {
+      console.warn(`[bridges] delivery read-back failed for batch ${stored.result.messageBatchId}: ${(err as Error).message}`);
+    }
+
     return {
       messageBatchId: stored.result.messageBatchId,
       messages: stored.messages,
@@ -634,6 +654,7 @@ export class W2MessagesHandoffsService {
       // target, because one post can name several sessions and they can
       // disagree.
       ...(dispositions.length > 0 ? { delivery: dispositions } : {}),
+      ...(bridgeDelivery.length > 0 ? { bridgeDelivery } : {}),
       // Absent unless the sender holds an anchored task still `working` (P0g).
       ...(stored.statusNudges.length > 0 ? { warnings: stored.statusNudges } : {}),
     };

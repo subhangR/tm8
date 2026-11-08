@@ -55,8 +55,7 @@ import type { Querier } from '../db/types.js';
 // The ONE unread definition, shared with the facade assembler on purpose — see
 // the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
 // so this direction adds no cycle.
-import { chatContextOf, isEndedKind, outcomeFacts, loadChatSubjects, loadUnreadCounts, storySummaryOf, craftSummaryOf, taskProgressOf, type ChatSubject } from '../facade/entity-read.js';
-// The ONE narrowing of the status columns, shared with the read path. Both
+import { bootPhaseFacts, bridgeEntityOf, bridgeTitleOf, chatContextOf, isEndedKind, outcomeFacts, loadChatSubjects, loadUnreadCounts, storySummaryOf, craftSummaryOf, labelFactsOf, labelsFragment, taskProgressOf, type ChatSubject } from '../facade/entity-read.js';// The ONE narrowing of the status columns, shared with the read path. Both
 // files used to narrow `work_status` on their own and DISAGREED about an
 // unrecognised value; `facade/status.ts` is the fix and its docblock is the
 // argument. `WorkStatusDriftError` is re-exported below because it was this
@@ -211,6 +210,8 @@ interface SummaryRow {
   created_by: string;
   /** 147; optional keeps pre-147 row fixtures source-compatible. */
   status_category?: string | null;
+  /** 410; optional keeps pre-397 row fixtures source-compatible. */
+  labels?: string[] | null;
   likes: number | null;
   dislikes: number | null;
   stars: number | null;
@@ -279,6 +280,9 @@ interface SummaryRow {
   ws_ended_kind: string | null;
   ws_skills?: EffectiveSkills | null;
   ws_ended_reason: string | null;
+  /** 404. Optional so pre-404 row fixtures stay source-compatible. */
+  ws_boot_phase?: string | null;
+  ws_boot_phase_at?: Date | string | null;
   ws_outcome?: string | null;
   ws_outcome_at?: Date | string | null;
   ws_outcome_by?: string | null;
@@ -370,12 +374,18 @@ interface SummaryRow {
   drawing_element_count: number | null;
   mcp_definition?: unknown;
   tool_content?: unknown; ws_tool_run?: unknown; ws_session_kind?: string | null;
+  /** 395 — MIRRORS entity-read.ts: `internal.bridge_view`, null off a bridge row. */
+  bridge_view?: Record<string, unknown> | null;
   story_title: string | null;
   story_description: string | null;
   story_summary: unknown;
   craft_title?: string | null;
   craft_description?: string | null;
   craft_summary?: unknown;
+  label_name?: string | null;
+  label_colour?: string | null;
+  label_description?: string | null;
+  label_archived_at?: Date | string | null;
   task_progress?: unknown;
   sty_title?: string | null;
   sty_description?: string | null;
@@ -445,6 +455,8 @@ select
   -- omitting it here would make a live status change move a row on refresh but
   -- not on the socket, which reads as a caching bug for a week.
   e.status_category,
+  -- 410: MIRRORS entity-read.ts ENTITY_COLUMNS.
+  e.labels,
   c.likes, c.dislikes, c.stars, c.points, c.messages,
   c.human_messages, c.agent_messages, c.docs, c.memories,
   c.prs, c.artifacts, c.drawings, c.sessions,
@@ -492,6 +504,8 @@ select
   ws.workdir_mode    as ws_workdir_mode,
   ws.ended_kind      as ws_ended_kind,
   ws.ended_reason    as ws_ended_reason,
+  ws.boot_phase      as ws_boot_phase,
+  ws.boot_phase_at   as ws_boot_phase_at,
   ws.outcome         as ws_outcome,
   ws.outcome_at      as ws_outcome_at,
   ws.outcome_by      as ws_outcome_by,
@@ -605,6 +619,8 @@ select
   -- and the event path must never move it. The elements are content.
   coalesce(jsonb_array_length(drw.elements), 0) as drawing_element_count,
   mcp.definition as mcp_definition,
+  -- 395 — MIRRORS entity-read.ts: the one SQL function both read paths select.
+  case when e.kind = 'bridge' then internal.bridge_view(e.id) end as bridge_view,
   ${TOOL_CONTENT_SQL} as tool_content,
   ${TOOL_RUN_SQL} as ws_tool_run,
   ws.session_kind as ws_session_kind,
@@ -617,6 +633,10 @@ select
   dsg.title          as craft_title,
   dsg.description    as craft_description,
   case when e.kind = 'craft' then internal.craft_summary(e.id) end as craft_summary,
+  lbl.name           as label_name,
+  lbl.colour         as label_colour,
+  lbl.description    as label_description,
+  lbl.archived_at    as label_archived_at,
   -- 307: likewise the SAME function entity-read.ts selects.
   case when e.kind = 'task' then internal.task_progress(e.id) end as task_progress,
   -- Space styles (284): the WHOLE document rides the summary on purpose (spec
@@ -722,6 +742,7 @@ left join public.graphs gr           on gr.entity_id = e.id
 left join public.drawings drw         on drw.entity_id = e.id
 left join public.stories sty          on sty.entity_id = e.id
 left join public.crafts dsg          on e.kind = 'craft' and dsg.entity_id = e.id
+left join public.labels lbl          on e.kind = 'label' and lbl.entity_id = e.id
 left join public.mcp_servers mcp on e.kind='mcp_server' and mcp.entity_id=e.id
 left join public.styles stl           on e.kind = 'style' and stl.entity_id = e.id
 left join public.forms frm            on frm.entity_id = e.id
@@ -1089,6 +1110,8 @@ export class PgEntityProjector implements EntityProjector {
       // MIRRORS entity-read's toEntitySummary, spread for spread: the key is
       // ABSENT when the entity has no status, never a defaulted bucket.
       ...categoryFragment(r.status_category, r.id),
+      // MIRRORS entity-read's toEntitySummary: present only when non-empty.
+      ...labelsFragment(r.labels),
       counters,
       state: this.stateOf(
         r, actors, assignees, assignments, members, unreadCounts, containsCounts, chatSubjects,
@@ -1238,6 +1261,9 @@ export class PgEntityProjector implements EntityProjector {
       case 'craft':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
         return r.craft_title ?? 'Craft';
+      case 'label':
+        // MIRRORS entity-read.ts titleOf.
+        return r.label_name ?? 'Label';
       case 'style':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
         return r.sty_title ?? 'Style';
@@ -1263,6 +1289,9 @@ export class PgEntityProjector implements EntityProjector {
       case 'server':
         // Its own name — MIRRORS entity-read.ts titleOf.
         return r.srv_name ?? 'Server';
+      case 'bridge':
+        // The conversation's title — MIRRORS entity-read.ts titleOf.
+        return bridgeTitleOf(r.bridge_view);
       case 'space_link':
         // Never the target's name (P8) — MIRRORS entity-read.ts titleOf.
         return 'Space link';
@@ -1465,6 +1494,8 @@ export class PgEntityProjector implements EntityProjector {
             : { sharingSetAt: iso(r.ws_sharing_set_at) }),
           startedAt: iso(r.ws_started_at),
           exitedAt: iso(r.ws_exited_at),
+          // 404 — the boot facts, the same helper as entity-read.
+          ...bootPhaseFacts(r),
           // The lane facts (107) — MIRRORS entity-read.ts stateOf: an
           // explicit null branch renders no claim; the mode key is spread
           // in only when the column holds a CHECK value, because absence
@@ -1624,6 +1655,9 @@ export class PgEntityProjector implements EntityProjector {
         // MIRRORS entity-read.ts stateOf: the same `internal.craft_summary`
         // jsonb through the same coercion.
         return craftSummaryOf(r.craft_summary);
+      case 'label':
+        // MIRRORS entity-read.ts stateOf.
+        return labelFactsOf(r);
       case 'form':
         // MIRRORS entity-read.ts stateOf: lifecycle status and question count.
         return {
@@ -1717,6 +1751,9 @@ export class PgEntityProjector implements EntityProjector {
         // hypothetical stray envelope projectable instead of poisoning the feed
         // on a strict-schema refusal.
         return { kind: 'artifact', revisionNumber: r.artifact_revision_number ?? 1 };
+      case 'bridge':
+        // 395 — MIRRORS entity-read.ts stateOf.
+        return bridgeEntityOf(r.bridge_view);
       case 'space_link':
       case 'server':
         // 250 (W6): no row facts on the entity; `spaceLinks.list` answers for a

@@ -16,7 +16,7 @@ import { McpSettings } from '../mcp/McpSettings';
 import { PendingFormsProvider, usePendingFormsStoreFor } from '../forms/pending';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { useStore } from 'zustand';
-import type { ChatMode, EntityId, EntitySummary, ProjectTrustLevel, SpaceId } from '@tm8/contract';
+import type { BridgeProvider, ChatMode, EntityId, EntitySummary, ProjectTrustLevel, SpaceId } from '@tm8/contract';
 import { startFolderImport } from '../files-explorer/folder-import';
 import {
   MenuRail,
@@ -118,6 +118,7 @@ import { useSidePanelKinds } from './useSidePanelKinds';
 import { useLaunchSheet } from './useLaunchSheet';
 import { REFERENCE_KINDS } from '../domain/launch-selection';
 import { useLaunchPort } from './useLaunchPort';
+import { setLaunchLanding } from './useLaunchHandoff';
 import { useTheme } from '../theme/useTheme';
 import { useStyleSync } from '../theme/useStyleSync';
 import { useCustomKindsSync } from '../data/custom-kinds';
@@ -163,6 +164,7 @@ import {
   writeSetupDismissed,
 } from '../settings-credentials';
 import { SpaceLinksSection, spaceLinksPortFromSeam } from '../settings-space-links';
+import { BridgesSection } from '../bridges';
 import { McpTokensSection } from '../settings-mcp-tokens';
 import { readLastSpace, readLastTarget, WORK_PLACE, writeLastTarget } from './last-place';
 import { desktopModes } from '../shell/desktop-modes';
@@ -693,6 +695,13 @@ export function GateApp(props: GateAppProps = {}) {
   /* Under the pinned-rail layout the three modes are the rail's own icons, so
      a stale `desktop-modes=legacy` rollback is ignored there too. */
   const threeModes = shell !== 'mobile' && (isPinnedRailEnabled() || modes === 'three');
+  /* THE LAUNCH HAND-OFF LANDS IN WORK (task 01a182d2), which only the
+     three-mode desktop has; elsewhere a popup keeps its in-card state. Read at
+     press time, so an effect is early enough. */
+  useEffect(() => {
+    setLaunchLanding(threeModes ? 'work' : null);
+    return () => setLaunchLanding(null);
+  }, [threeModes]);
   const threeModesRef = useRef(threeModes);
   threeModesRef.current = threeModes;
   const navView = useNavStore((s) => s.view);
@@ -2540,6 +2549,12 @@ export function GateApp(props: GateAppProps = {}) {
                 ...(spaceLinksPort
                   ? { 'space-links': <SpaceLinksSection port={spaceLinksPort} onOpen={openFromSettings} /> }
                   : {}),
+                /* §4.2: the bridges' management home, on the seam's own
+                   `commands.bridges` (absent on a seam without it, and the
+                   shell then states the section is not mounted). */
+                ...(data.seam.commands.bridges && data.spaceId
+                  ? { bridges: <BridgesSection port={data.seam.commands.bridges} spaceId={data.spaceId} onOpen={openFromSettings} /> }
+                  : {}),
                 ...(mcpTokensPort ? { 'mcp-tokens': <McpTokensSection port={mcpTokensPort} /> } : {}),
                 ...(spaceCredentialsPort
                   ? {
@@ -2723,6 +2738,10 @@ export function GateApp(props: GateAppProps = {}) {
                     clientMutationId: newJoinMutationId(),
                     ...(spacePassword ? { spacePassword } : {}),
                   }),
+                // Bridges D60: a pinned invite makes the member; the number
+                // links when they send this code from it, in the group.
+                onBeginLink: (provider: string) =>
+                  data.seam.commands.beginBridgeLink(provider as BridgeProvider),
               }
             : {})}
           onJoined={(spaceId) => {

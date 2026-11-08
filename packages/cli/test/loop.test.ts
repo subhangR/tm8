@@ -18,6 +18,8 @@ const SESSION = '66666666-6666-7666-8666-666666666666';
 const OTHER_TOOL = '77777777-7777-7777-8777-777777777777';
 const OTHER_SPACE = '88888888-8888-7888-8888-888888888888';
 const MEMORY = '99999999-9999-7999-8999-999999999999';
+// Bridges L: two test bridges the --target names resolve against.
+const INFRA = '0a0a0a0a-0a0a-7a0a-8a0a-0a0a0a0a0a0a', GAMING = '0b0b0b0b-0b0b-7b0b-8b0b-0b0b0b0b0b0b';
 const SUBJECT = 'aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa';
 let loop: LoopView;
 let tools: Record<string, ToolView>;
@@ -59,6 +61,7 @@ beforeAll(async () => {
         : { valid: false, problem: 'every 0m is not a schedule', summary: '', next: [] };
       // A decoy whose title CONTAINS the real one: a substring match would find two loops.
       else if (url.pathname.endsWith('/loops') && req.method === 'GET') data = { items: [{ ...loop, id: RUN, definition: { ...loop.definition, title: `${loop.definition.title} v2` } }, loop], nextCursor: null };
+      else if (url.pathname.endsWith('/bridges')) data = { items: [{ id: INFRA, title: 'Infra' }, { id: GAMING, title: 'Gaming' }] };
       else if (url.pathname.endsWith('/tools')) data = { items: Object.values(tools), nextCursor: null };
       else if (url.pathname.startsWith('/v2/tools/')) data = tools[url.pathname.slice('/v2/tools/'.length)];
       else if (url.pathname.endsWith('/collections/query')) data = { page: { items: [{ id: MEMBER, title: 'Opus 5.5 1M Teammate' }], nextCursor: null } };
@@ -116,6 +119,48 @@ const writes = () => requests.filter(r => r.method !== 'GET' && !r.path.endsWith
 const asToolLoop = (inputs: Record<string, unknown> = { repo: 'owner/repo', limit: 5 }, persona: string | null = null) => {
   loop = { ...loop, definition: { ...loop.definition, action: 'tool', toolId: TOOL, teamMemberId: persona, toolInputs: inputs as never } };
 };
+
+describe('tm8 loop create with bridge targets (Bridges L, D26)', () => {
+  it('arms a loop targeting two groups by name, each with its own instruction, replace and interactive', async () => {
+    expect(await run(['loop', 'create', 'Standup', '--schedule', '0 9 * * 1-5', '--teammate', MEMBER,
+      '--target', 'Infra=post yesterday\'s merged PRs', '--target', `${GAMING}=post the open bugs`,
+      '--concurrency', 'replace', '--interactive', '--mutation-id', 'mut-l1'])).toBe(0);
+    const create = writes().find(r => r.path.endsWith('/loops'))!;
+    expect(create.body.definition).toMatchObject({
+      action: 'spawn', concurrency: 'replace', mode: 'interactive',
+      targets: [{ bridgeId: INFRA, text: 'post yesterday\'s merged PRs' }, { bridgeId: GAMING, text: 'post the open bugs' }],
+    });
+  });
+
+  it('--post makes a post loop; it needs a target, and a bare --target posts the prompt', async () => {
+    expect(await run(['loop', 'create', 'Reminder', '--schedule', '0 20 * * 0', '--post', '--prompt', 'Papers due Monday',
+      '--target', 'Infra', '--quiet-hours-exempt', 'on', '--mutation-id', 'mut-l2'])).toBe(0);
+    expect(writes().find(r => r.path.endsWith('/loops'))!.body.definition).toMatchObject({
+      action: 'post', prompt: 'Papers due Monday', quietHoursExempt: true, targets: [{ bridgeId: INFRA, text: null }],
+    });
+    requests = [];
+    expect(await run(['loop', 'create', 'Reminder', '--schedule', '0 20 * * 0', '--post', '--mutation-id', 'mut-l3'])).toBe(2);
+    expect(stderr).toContain('--post needs at least one --target');
+    expect(writes()).toEqual([]);
+  });
+
+  it('refuses an unknown group, a repeated target and conflicting modes before writing', async () => {
+    expect(await run(['loop', 'create', 'X', '--schedule', 'every 1d', '--teammate', MEMBER, '--target', 'Nope'])).not.toBe(0);
+    expect(stderr).toContain('No bridge in this Space is named "Nope"');
+    expect(await run(['loop', 'create', 'X', '--schedule', 'every 1d', '--teammate', MEMBER, '--target', 'Infra', '--target', INFRA])).toBe(2);
+    expect(await run(['loop', 'create', 'X', '--schedule', 'every 1d', '--teammate', MEMBER, '--interactive', '--one-shot'])).toBe(2);
+    expect(writes()).toEqual([]);
+  });
+
+  it('edit --clear-targets empties the list; show renders targets and mode', async () => {
+    loop = { ...loop, definition: { ...loop.definition, targets: [{ bridgeId: INFRA, text: 'hi' }], mode: 'interactive', quietHoursExempt: false } };
+    expect(await run(['loop', 'show', LOOP])).toBe(0);
+    expect(stdout).toContain('targets (interactive):');
+    expect(stdout).toContain(`${INFRA}: hi`);
+    expect(await run(['loop', 'edit', LOOP, '--clear-targets', '--expect-version', '4'])).toBe(0);
+    expect(writes().at(-1)!.body.definition).toEqual({ targets: [] });
+  });
+});
 
 describe('tm8 loop create', () => {
   it('resolves a teammate name and sends a spawn definition with launch config', async () => {

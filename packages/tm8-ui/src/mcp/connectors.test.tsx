@@ -91,9 +91,9 @@ describe('§10.0 — one status, one row, everywhere', () => {
     expect(STATUS_ROWS.ready).toMatchObject({ icon: '✓', toggle: true, action: null, group: 'connected' });
     expect(STATUS_ROWS.credential_required).toMatchObject({ toggle: false, action: 'connect', group: 'unconnected' });
     expect(STATUS_ROWS.needs_reconnect).toMatchObject({ icon: '⚠', toggle: false, action: 'reconnect' });
-    expect(STATUS_ROWS.credential_definition_changed).toMatchObject({ action: 'reconnect', label: 'Connector settings changed by an admin' });
+    expect(STATUS_ROWS.credential_definition_changed).toMatchObject({ action: 'reconnect', label: 'Connector settings changed' });
     expect(STATUS_ROWS.not_approved).toMatchObject({ icon: '⏳', action: 'approve', adminOnly: true });
-    expect(STATUS_ROWS.disabled).toMatchObject({ action: null, label: 'Disabled by an admin' });
+    expect(STATUS_ROWS.disabled).toMatchObject({ action: null, label: 'Disabled' });
     // The one row whose toggle stays ON: the probe failed, the call may not.
     expect(STATUS_ROWS.server_unavailable).toMatchObject({ toggle: true, action: 'test' });
     // S5: the launch has no human behind it. Nothing to connect, so no action
@@ -198,5 +198,21 @@ describe('S7 — the Discover card has one button, and B22/B25 decides which', (
     const soon = await screen.findByRole('button', { name: 'Coming soon' });
     expect(soon.getAttribute('aria-disabled')).toBe('true');
     expect(screen.queryByRole('button', { name: 'Add to Space' })).toBeNull();
+  });
+});
+
+describe('an administrator\'s custom connector', () => {
+  it('registers approved, so the admin is never asked to approve their own connector', async () => {
+    const live = port();
+    render(<McpProvider port={live}>
+      <ConnectorsTable catalog={{ servers: [], defaults: [], canRegister: true, canAttach: true }} port={live}
+        admin busy={false} run={async action => { await action(); }} refresh={() => {}} loading={false}
+        tab="yours" setTab={() => {}} sheet={{ kind: 'custom' }} setSheet={() => {}} />
+    </McpProvider>);
+    fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'local_test' } });
+    fireEvent.change(screen.getByLabelText('Server URL'), { target: { value: 'http://127.0.0.1:8787/mcp' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add connector' }));
+    await waitFor(() => expect(live.register).toHaveBeenCalledWith(expect.objectContaining({ approved: true })));
+    expect(live.request).not.toHaveBeenCalled();
   });
 });

@@ -99,6 +99,10 @@ function harness(opts: {
   claims?: LoopRunClaim[];
   fire?: LoopExecutorPort['fire'];
   stop?: LoopExecutorPort['stopSession'];
+  /** Bridges L: runs `replace` ends, interactive runs gone idle, held posts released. */
+  toReplace?: Array<{ runId: string; sessionId: string }>;
+  idle?: Array<{ runId: string; loopId: string; spaceId: string; sessionId: string; actAsIdentity: string | null }>;
+  released?: number;
 }): { db: Db; port: LoopExecutorPort; rec: Recorded } {
   const rec: Recorded = { rpcs: [], fired: [], stopped: [] };
   const claims = opts.claims ?? [{ claimed: true, runId: 'run-1', launch: 'fired', attempt: 1 }];
@@ -112,6 +116,7 @@ function harness(opts: {
     }
     if (fn === 'loop_run_settle') return { runId: args[0], outcome: args[1] };
     if (fn === 'loop_run_launch_failed') return { runId: args[0], retryAt: null };
+    if (fn === 'loop_release_held') return opts.released ?? 0;
     return {};
   };
   const db = {
@@ -119,6 +124,8 @@ function harness(opts: {
       if (sql.includes('loops_park_orphans')) return (opts.parked ?? []) as unknown as R[];
       if (sql.includes('loops_claimable')) return (opts.due ?? []) as unknown as R[];
       if (sql.includes('loop_runs_open_for_executor')) return (opts.open ?? []) as unknown as R[];
+      if (sql.includes('loop_runs_to_replace')) return (opts.toReplace ?? []) as unknown as R[];
+      if (sql.includes('loop_runs_idle_interactive')) return (opts.idle ?? []) as unknown as R[];
       throw new Error(`unexpected query: ${sql}`);
     },
     rpc: async <T>(_c: DbClaims, fn: string, args: readonly unknown[] = []): Promise<T> => rpc(fn, args) as Promise<T>,
@@ -248,7 +255,8 @@ describe('concurrency (§3.3)', () => {
     });
     const outcome = await createLoopsJob({ db, port }).run(ctx());
     expect(rec.fired).toHaveLength(0);
-    expect(rec.rpcs.map((r) => r.fn)).toEqual(['loop_run_claim']);
+    // The tick's own sweep (Bridges L: held posts released) is not a write for this loop.
+    expect(rec.rpcs.map((r) => r.fn).filter((fn) => fn !== 'loop_release_held')).toEqual(['loop_run_claim']);
     expect(outcome).toMatchObject({ detail: { queued: 1, fired: 0, skipped: 0 } });
   });
 
@@ -617,6 +625,54 @@ describe('the max-runtime and settle sweep (§3.3)', () => {
     expect(outcomeOfExitedSession({ sessionStatus: 'exited', sessionKind: 'agent', toolExitCode: null, exitCode: 1 })?.outcome).toBe('completed');
     expect(outcomeOfExitedSession({ sessionStatus: 'failed', sessionKind: 'agent', toolExitCode: null, exitCode: null })?.outcome).toBe('failed');
     expect(outcomeOfExitedSession({ sessionStatus: 'exited', sessionKind: 'tool', toolExitCode: 3, exitCode: 3 })?.outcome).toBe('failed');
+  });
+});
+
+describe('bridge loops (Bridges L, D26)', () => {
+  it('a post loop fires with no session and settles at delivery', async () => {
+    const { db, port, rec } = harness({
+      due: [dueLoop({ action: 'post', teamMemberId: null })],
+      fire: async (loop, _c, firedAt, runId) => {
+        rec.fired.push({ loopId: loop.entityId, firedAt: firedAt.toISOString(), runId, identity: undefined });
+        return { taskId: null, sessionId: null };
+      },
+    });
+    await createLoopsJob({ db, port }).run(ctx());
+    expect(rpcsNamed(rec, 'loop_run_launched').map(r => r.args)).toEqual([['run-1', null, null]]);
+    expect(rpcsNamed(rec, 'loop_run_settle').map(r => r.args)).toEqual([['run-1', 'completed', null]]);
+  });
+
+  it('concurrency replace stops the previous live run and settles it stopped BEFORE claiming the new one', async () => {
+    const { db, port, rec } = harness({
+      due: [dueLoop({ concurrency: 'replace' })],
+      toReplace: [{ runId: 'run-old', sessionId: 'session-old' }],
+      live: ['session-old'],
+    });
+    await createLoopsJob({ db, port }).run(ctx());
+    expect(rec.stopped.map(s => s.sessionId)).toEqual(['session-old']);
+    expect(rec.stopped[0]!.identity).toBe('identity-space-1-owner');
+    const order = rec.rpcs.map(r => `${r.fn}:${String(r.args[0])}`);
+    expect(order.indexOf('loop_run_settle:run-old')).toBeLessThan(order.indexOf('loop_run_claim:loop-1'));
+    expect(rpcsNamed(rec, 'loop_run_settle')[0]!.args).toEqual(['run-old', 'stopped', 'replaced by a newer run']);
+    expect(rec.fired).toHaveLength(1);
+  });
+
+  it('a skip loop never stops a previous run', async () => {
+    const { db, port, rec } = harness({ due: [dueLoop()], toReplace: [{ runId: 'run-old', sessionId: 'session-old' }] });
+    await createLoopsJob({ db, port }).run(ctx());
+    expect(rec.stopped).toEqual([]);
+  });
+
+  it('closes an interactive run idle for 30 minutes (stop, then completed) and reports held posts released', async () => {
+    const { db, port, rec } = harness({
+      idle: [{ runId: 'run-i', loopId: 'loop-i', spaceId: 'space-1', sessionId: 'session-i', actAsIdentity: 'identity-space-1-owner' }],
+      released: 2,
+    });
+    const outcome = await createLoopsJob({ db, port }).run(ctx());
+    expect(rec.stopped).toEqual([{ sessionId: 'session-i', reason: 'interactive loop idle for 30 minutes', identity: 'identity-space-1-owner' }]);
+    expect(rpcsNamed(rec, 'loop_run_settle').map(r => r.args)).toEqual([['run-i', 'completed', null]]);
+    expect(rpcsNamed(rec, 'loop_release_held')).toHaveLength(1);
+    expect(outcome).toMatchObject({ detail: { idleClosed: 1, released: 2 } });
   });
 });
 

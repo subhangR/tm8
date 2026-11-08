@@ -17,7 +17,8 @@ import type { CollectionMode, GroupByKey, QueryFilter, SortKey } from '../domain
  */
 export const SETTINGS_ROUTE_SECTIONS = [
   'overview', 'projects', 'menu', 'connectors', 'credentials', 'mcp-tokens', 'configs', 'space-credentials', 'space-links',
-  'profile', 'account', 'my-sessions', 'members', 'invites', 'sessions', 'sharing',
+  'bridges',
+  'profile', 'account', 'my-sessions', 'linked-identities', 'members', 'invites', 'sessions', 'sharing',
   'axes', 'workflows', 'models', 'chat-defaults', 'kinds', 'danger',
   'node-credentials', 'filesystem-access',
 ] as const;

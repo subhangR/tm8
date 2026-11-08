@@ -54,6 +54,7 @@
  * caller who still passes one gets the ordinary unknown-option refusal quoting
  * the real syntax — which is now the honest answer.
  */
+import { resolveLabelIds } from './label.js';
 import { CoreEntityKindSchema, normalizeKindAlias, WorkStatusSchema } from '@tm8/contract';
 
 import { readJsonSource } from '../args.js';
@@ -344,9 +345,41 @@ function renderHierarchy(dto: unknown): string {
   return lines.length > 0 ? lines.join('\n') : 'no hierarchy';
 }
 
+interface TreeRowLike extends SummaryLike {
+  parentId?: unknown;
+  childCount?: unknown;
+}
+
+/**
+ * A collection page. With `tree` (S5) each row's children are indented under
+ * it, two spaces a level, and a row with children that are not drawn says
+ * `▸ N more`: its `childCount` minus the rows under it, the node's number.
+ */
 function renderCollection(dto: unknown): string {
-  const result = dto as { page?: unknown } | undefined;
-  return renderPage(result?.page ?? dto);
+  const result = dto as { page?: { items?: unknown; nextCursor?: unknown }; tree?: { levels?: unknown } } | undefined;
+  const levels = result?.tree?.levels;
+  if (!Array.isArray(levels)) return renderPage(result?.page ?? dto);
+
+  const kidsOf = new Map<string, TreeRowLike[]>();
+  for (const level of levels as Array<{ items?: unknown }>) {
+    for (const row of (Array.isArray(level.items) ? level.items : []) as TreeRowLike[]) {
+      const parentId = String(row.parentId ?? '');
+      kidsOf.set(parentId, [...(kidsOf.get(parentId) ?? []), row]);
+    }
+  }
+  const lines: string[] = [];
+  const draw = (row: TreeRowLike, depth: number): void => {
+    lines.push(`${'  '.repeat(depth)}${summaryLine(row)}`);
+    const kids = depth < levels.length ? (kidsOf.get(String(row.id ?? '')) ?? []) : [];
+    for (const kid of kids) draw(kid, depth + 1);
+    const notShown = (typeof row.childCount === 'number' ? row.childCount : 0) - kids.length;
+    if (notShown > 0) lines.push(`${'  '.repeat(depth + 1)}▸ ${notShown} more`);
+  };
+  const roots = Array.isArray(result?.page?.items) ? (result.page.items as TreeRowLike[]) : [];
+  for (const row of roots) draw(row, 0);
+  const nextCursor = result?.page?.nextCursor;
+  if (typeof nextCursor === 'string' && nextCursor.length > 0) lines.push(`next-cursor: ${nextCursor}`);
+  return lines.length > 0 ? lines.join('\n') : 'no results';
 }
 
 function renderFeed(dto: unknown): string {
@@ -695,8 +728,7 @@ function refuseUnknownQueryValues(kinds: readonly string[], status: readonly str
  */
 async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('entity query', cmd.options.value('mutation-id'));
-  assertKnownOptions(cmd, ['kind', 'subtree', 'parent', 'roots', 'status', 'assignee', 'ready', 'title-contains', 'words', 'limit', 'cursor']);
-
+  assertKnownOptions(cmd, ['kind', 'subtree', 'parent', 'roots', 'status', 'assignee', 'ready', 'title-contains', 'words', 'label', 'label-any', 'limit', 'cursor', 'tree-depth', 'per-parent']);
   const kinds = cmd.options.values('kind').map(normalizeKindAlias);
   const subtreeOf = cmd.options.value('subtree');
   /* `--parent <id|none>` names the DIRECT parent (`CollectionQuery.parentId`);
@@ -718,6 +750,15 @@ async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   const ready = cmd.options.bool('ready');
   const limit = cmd.options.integer('limit');
   const cursor = cmd.options.value('cursor');
+  /* `--tree-depth` reads the levels under the page in the same request
+     (`CollectionQuery.tree`, S5); the bounds are the Server's to enforce, so
+     an out-of-range number reaches it and comes back refused in its words.
+     `--per-parent` only means something inside a tree. */
+  const treeDepth = cmd.options.integer('tree-depth');
+  const perParent = cmd.options.integer('per-parent');
+  if (perParent !== undefined && treeDepth === undefined) {
+    throw new CliError('--per-parent bounds the children of each row in a tree; pass --tree-depth 1|2 with it', EXIT_USAGE);
+  }
 
   const filters: Record<string, unknown> = {};
   if (status.length > 0) filters.status = status;
@@ -727,6 +768,12 @@ async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   const words = cmd.options.value('words');
   if (titleContains !== undefined) filters.titleContains = titleContains;
   if (words !== undefined) filters.words = words;
+  // 410: all of (--label) / any of (--label-any); archived labels still match
+  // the entities that carry them, so names resolve among them too.
+  const allLabels = cmd.options.values('label');
+  const anyLabels = cmd.options.values('label-any');
+  if (allLabels.length > 0) filters.labels = await resolveLabelIds(cmd, allLabels, { includeArchived: true });
+  if (anyLabels.length > 0) filters.labelsAny = await resolveLabelIds(cmd, anyLabels, { includeArchived: true });
 
   const body: Record<string, unknown> = { spaceId: requireSpace(cmd.ctx) };
   if (kinds.length > 0) body.kinds = kinds;
@@ -735,6 +782,7 @@ async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   if (Object.keys(filters).length > 0) body.filters = filters;
   if (limit !== undefined) body.limit = limit;
   if (cursor !== undefined) body.cursor = cursor;
+  if (treeDepth !== undefined) body.tree = { depth: treeDepth, ...(perParent === undefined ? {} : { perParent }) };
 
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'collections.query', { body });
   cmd.out.data(data, renderCollection);
@@ -856,7 +904,7 @@ export function taskContentFlags(cmd: CommandContext, kind: string, content: unk
 async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, [
     'parent', 'position', 'content', 'attach-to', 'relate-to', 'connect', 'mutation-id',
-    'no-session-link', 'criterion', 'estimate', ...HEADER_TEXT_OPTIONS,
+    'no-session-link', 'criterion', 'estimate', 'label', ...HEADER_TEXT_OPTIONS,
   ]);
   const kind = normalizeKindAlias(requireArg(cmd, 0, '<kind>'));
   // A space style is born only by `styles.push` (284): the Server refuses a
@@ -865,6 +913,13 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
   if (kind === 'style') {
     throw new CliError('a space style is created only by publishing a personal style: `tm8 style push <personal-ref>`', EXIT_USAGE, {
       hint: 'author one first with `tm8 style create <title> --foundation <builtin-ref>`, or copy one with `tm8 style pull <ref>`',
+    });
+  }
+  // A bridge is born only by `bridges.create` (395): the number's owner, a
+  // space admin, with the target checked and the bridged_to edge written.
+  if (kind === 'bridge') {
+    throw new CliError('use `tm8 bridge create`: a bridge is created by a space admin who owns the connection', EXIT_USAGE, {
+      hint: 'tm8 bridge create --connection <connection-id> --conversation <external-id> --to <chat|session|channel id>',
     });
   }
   const title = requireArg(cmd, 1, '<title>');
@@ -888,6 +943,9 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
   if (connections.length > 0) body.connections = connections;
   const header = headerTextOptions(cmd);
   if (header !== undefined) body.header = header;
+  // 410: `--label <name|id>` (repeatable); names resolve through labels.list.
+  const labelRefs = cmd.options.values('label');
+  if (labelRefs.length > 0) body.labels = await resolveLabelIds(cmd, labelRefs);
 
   const data = await withErrorReceipt(cmd, errorInput(cmd, 'entity.create', { mutationId }), () =>
     observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.create', {
@@ -902,7 +960,7 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
 }
 
 async function entityUpdate(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['expect-version', 'title', 'content', 'status', 'mutation-id']);
+  assertKnownOptions(cmd, ['expect-version', 'title', 'content', 'status', 'add-label', 'remove-label', 'mutation-id']);
   const id = requireArg(cmd, 0, '<entity-id>');
   const expectedVersion = cmd.options.integer('expect-version');
   if (expectedVersion === undefined) {
@@ -924,9 +982,20 @@ async function entityUpdate(cmd: CommandContext): Promise<ExitCode> {
     body.content = { ...(body.content as Record<string, unknown> | undefined), status };
   }
 
-  if (title === undefined && content === undefined && status === undefined) {
+  // 410: label names or ids, added and removed under the same version.
+  const addLabels = cmd.options.values('add-label');
+  const removeLabels = cmd.options.values('remove-label');
+  if (addLabels.length > 0 || removeLabels.length > 0) {
+    body.labels = {
+      ...(addLabels.length > 0 ? { add: await resolveLabelIds(cmd, addLabels) } : {}),
+      // An archived label can always be removed (410 D2), so its name resolves.
+      ...(removeLabels.length > 0 ? { remove: await resolveLabelIds(cmd, removeLabels, { includeArchived: true }) } : {}),
+    };
+  }
+
+  if (title === undefined && content === undefined && status === undefined && body.labels === undefined) {
     throw new CliError('`tm8 entity update` needs something to change', EXIT_USAGE, {
-      hint: 'pass --title, --content or --status',
+      hint: 'pass --title, --content, --status, --add-label or --remove-label',
     });
   }
 

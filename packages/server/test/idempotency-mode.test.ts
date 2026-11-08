@@ -10,6 +10,7 @@ import {
 
 import { ConfigError, loadConfig } from '../src/http/config.js';
 import { normalizeCommandInputForIdempotencyMode } from '../src/http/idempotency.js';
+import { INPUT_SCHEMAS } from '../src/facade/input-schemas.js';
 
 const command = {
   name: 'entities.create', method: 'POST', path: '/v2/entities', kind: 'command', status: 'v1',
@@ -84,3 +85,35 @@ describe('idempotency test mode', () => {
     expect(normalizeCommandInputForIdempotencyMode(command, 'not-an-object', false)).toBe('not-an-object');
   });
 });
+
+describe('idempotency test mode never injects a key a strict DTO refuses', () => {
+  it('leaves mcp.proxy.request alone, so a connector call from a chat or session validates', () => {
+    const op = binding('mcp.proxy.request');
+    const body = { sessionId: '00000000-0000-4000-8000-000000000001', serverId: '00000000-0000-4000-8000-000000000002',
+      message: { jsonrpc: '2.0', id: 1, method: 'tools/list' } };
+    const normalized = normalizeCommandInputForIdempotencyMode(op, body, false, INPUT_SCHEMAS['mcp.proxy.request']);
+    expect(normalized).toEqual(body);
+    expect(INPUT_SCHEMAS['mcp.proxy.request']!.safeParse(normalized).success).toBe(true);
+  });
+
+  it('holds for every mounted command: an injected id is never the reason a body fails', () => {
+    // Was 9 commands (mcp.proxy.request, chat.interrupt, mcp.oauth.callback,
+    // spaceLinks.invoke, bridges.listen, bridges.handles.claim and three
+    // spacePassword ops) on a server with the ledger off, the default.
+    const refused: string[] = [];
+    for (const op of OPERATIONS as readonly OperationBinding[]) {
+      const schema = INPUT_SCHEMAS[op.name as keyof typeof INPUT_SCHEMAS];
+      if (op.kind !== 'command' || !schema) continue;
+      const parsed = schema.safeParse(normalizeCommandInputForIdempotencyMode(op, {}, false, schema));
+      if (!parsed.success && parsed.error.issues.some(i => i.code === 'unrecognized_keys' && (i as { keys: string[] }).keys.includes('clientMutationId'))) refused.push(op.name);
+    }
+    expect(refused).toEqual([]);
+  });
+
+  it('still injects for a command whose DTO declares the id', () => {
+    const op = binding('entities.create');
+    const normalized = normalizeCommandInputForIdempotencyMode(op, { title: 'x' }, false, INPUT_SCHEMAS['entities.create']) as { clientMutationId?: string };
+    expect(typeof normalized.clientMutationId).toBe('string');
+  });
+});
+

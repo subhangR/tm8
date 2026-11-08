@@ -58,8 +58,15 @@ it('S14(a): posts one type, to its own origin, and nothing else',async()=>{
   const postMessage=vi.fn();
   const opener={postMessage} as unknown as Window;
   const complete=vi.fn(async()=>({id:'cred',accountLabel:'subhang@gmail.com',returnTo:'/#/s/space/settings/connectors'}));
-  render(<McpOAuthCallback callback={callback} complete={complete} opener={opener}/>);
+  // A stand-in window, as the §10.2 cell below uses: after posting, the page
+  // closes ITS window 150ms later, and on the real jsdom window that close
+  // tore the document down under whichever test happened to be running then —
+  // `document.body` undefined in the next cell on a slow machine.
+  const close=vi.fn();
+  const view={location:{origin:window.location.origin,replace:vi.fn()},setTimeout:window.setTimeout.bind(window),close,opener} as unknown as Window;
+  render(<McpOAuthCallback callback={callback} complete={complete} opener={opener} view={view}/>);
   await waitFor(()=>expect(postMessage).toHaveBeenCalled());
+  await waitFor(()=>expect(close).toHaveBeenCalled());
   expect(postMessage).toHaveBeenCalledWith(
     {type:OAUTH_MESSAGE_TYPE,status:'connected',credentialId:'cred',accountLabel:'subhang@gmail.com'},
     window.location.origin,

@@ -321,6 +321,17 @@ describe('message delivery', () => {
    * "pending" without saying the message is stored invites a resend of a
    * message that was never lost.
    */
+  it.each(['pending', 'sent', 'failed_retryable', 'failed_permanent', 'refused'])('shows bridge delivery %s even without a session delivery', async (status) => {
+    reply = () => envelope({ message: { id: MESSAGE, bridge: {
+      bridgeId: ANCHOR, direction: 'out', delivery: { status, ...(status === 'refused' ? { reason: 'bridge_paused' } : status.startsWith('failed') ? { detail: 'whatsapp_unavailable' } : {}) },
+    } }, deliveries: [] });
+    const r = await dispatch(['message', 'delivery', MESSAGE]);
+    expect(r.stdout).toContain(`bridge ${ANCHOR}  ${status}`);
+    expect(r.stdout).not.toContain('no live delivery');
+    if (status.startsWith('failed')) expect(r.stdout).toContain('whatsapp_unavailable');
+    if (status === 'refused') expect(r.stdout).toContain('bridge_paused');
+  });
+
   it('never renders a pending delivery as a lost message', async () => {
     reply = () => envelope({
       message: { id: MESSAGE },
@@ -454,6 +465,14 @@ describe('message send', () => {
       body: 'reply',
       clientMutationId: 'mut-reply',
     });
+  });
+
+  it('--here-only sends hereOnly: true, and its absence sends no hereOnly at all', async () => {
+    reply = () => envelope(batch([MESSAGE]));
+    expect((await dispatch(['message', 'send', '--to', ANCHOR, 'local', '--here-only', '--mutation-id', 'mut-here'])).code).toBe(0);
+    expect(seen[0]?.body).toMatchObject({ anchorIds: [ANCHOR], body: 'local', hereOnly: true });
+    expect((await dispatch(['message', 'send', '--to', ANCHOR, 'crosses', '--mutation-id', 'mut-there'])).code).toBe(0);
+    expect(seen[1]?.body).not.toHaveProperty('hereOnly');
   });
 
   it('collapses duplicate anchors preserving first-occurrence order', async () => {
@@ -659,6 +678,18 @@ describe('message reply', () => {
       mentionIds: [ANCHOR_2],
       attachmentIds: [FILE],
       clientMutationId: 'reply-1',
+    });
+  });
+
+  it('--here-only on a reply sends hereOnly: true (a reply to a bridged message would otherwise cross)', async () => {
+    reply = () => envelope({ messageBatchId: 'reply-here', messages: [{ id: MESSAGE }] });
+    const r = await dispatch(['message', 'reply', MESSAGE, 'local', '--here-only', '--mutation-id', 'reply-here']);
+    expect(r.code).toBe(0);
+    expect(seen[0]?.body).toEqual({
+      replyToMessageId: MESSAGE,
+      body: 'local',
+      hereOnly: true,
+      clientMutationId: 'reply-here',
     });
   });
 

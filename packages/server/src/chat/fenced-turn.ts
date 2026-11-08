@@ -9,6 +9,7 @@ import type { ClaimedTurn } from './orchestrator.js';
 import type { ChatTurnPublisher } from './publisher.js';
 import type { createChatPreparedLaunchResolver, PreparedChatLaunch } from './harness-composition.js';
 import { historyDigest, projectHistory, readPortableHistory } from './continuity.js';
+import { GROUP_CONTEXT_MAX_BYTES, readGroupContext, type GroupContextRecord } from '../bridges/summary.js';
 import { ChatLeaseLostError, ChatPhaseTimeoutError, StepTimeoutError, TurnLease, deadline, retryTransient } from './lease.js';
 
 export interface TurnAuthority {
@@ -412,11 +413,23 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
     snapshotId=randomUUID();
     const attempt: AttemptRef={turnId:turn.turnId,attemptId:snapshotId,configRevision:turn.configRevision};
     step='history read';
-    const history=await bounded('reading chat history',readPortableHistory(db,{identityId:turn.claimedAuthority.identityId,authKind:turn.claimedAuthority.authKind,
-      sessionSpaceId:turn.spaceId,...(turn.claimedAuthority.authSessionId ? {authSessionId:turn.claimedAuthority.authSessionId} : {})},
+    const historyClaims: DbClaims={identityId:turn.claimedAuthority.identityId,authKind:turn.claimedAuthority.authKind,
+      sessionSpaceId:turn.spaceId,...(turn.claimedAuthority.authSessionId ? {authSessionId:turn.claimedAuthority.authSessionId} : {})};
+    const history=await bounded('reading chat history',readPortableHistory(db,historyClaims,
       turn.chatId,turn.turnOrdinal,turn.captureHighWater));
+    // Bridges S (D73): a bridged chat also carries its group's rolling summary and recent messages.
+    // A failed read never fails the turn: the history says the group context is missing instead.
+    step='group context read';
+    const groupContext=await bounded('reading the group conversation',readGroupContext(db,historyClaims,turn.chatId,
+      Math.min(GROUP_CONTEXT_MAX_BYTES,Math.floor(options.historyBudgetBytes/2)))).catch((error): GroupContextRecord => {
+      if (error instanceof ChatLeaseLostError) throw error;
+      options.onError?.(error);
+      return {sourceId:'bridge-summary:unavailable',content:{unavailable:true,omittedDetail:true,
+        instruction:'The group conversation could not be read for this turn. Read it with `tm8 bridge log` if it matters.'}};
+    });
+    step='history read';
     const bootstrap=projectHistory(history,{snapshotId,currentTurnOrdinal:turn.turnOrdinal,captureHighWater:turn.captureHighWater,
-      authorityScopeDigest:historyDigest({authority:turn.claimedAuthority,mode:turn.chatMode}),maxBytes:options.historyBudgetBytes});
+      authorityScopeDigest:historyDigest({authority:turn.claimedAuthority,mode:turn.chatMode}),maxBytes:options.historyBudgetBytes,groupContext});
     step='snapshot seal';
     const sealed=await bounded('sealing the turn',rpc<{inputDigest:string}>('seal_chat_turn_snapshot',[turn.chatId,leaseFence,snapshotId,{
       desired:turn.claimedConfiguration,authority:turn.claimedAuthority,

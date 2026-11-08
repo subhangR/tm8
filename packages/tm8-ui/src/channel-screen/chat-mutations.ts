@@ -113,6 +113,7 @@ export function createChatMutationController({
         parentMessageId: input.parentMessageId,
         ...(input.mentionIds?.length ? { mentionIds: input.mentionIds } : {}),
         ...(input.attachmentIds?.length ? { attachmentIds: input.attachmentIds } : {}),
+        ...(input.hereOnly ? { hereOnly: true } : {}),
       };
       const journal: ChatMutationJournalEntry = {
         clientMutationId,

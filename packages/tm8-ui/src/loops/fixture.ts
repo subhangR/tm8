@@ -19,6 +19,7 @@ export function fixtureLoopView(id: EntityId, spaceId: SpaceId, definition: Loop
     teamMemberId: null, subjectId: null, toolId: null, toolInputs: {}, prompt: '',
     config: {}, concurrency: 'skip', maxRuntimeSeconds: null,
     ...definition,
+    targets: definition.targets ?? [], mode: definition.mode ?? 'one-shot', quietHoursExempt: definition.quietHoursExempt ?? false,
     retry: { attempts: 0, delaySeconds: 300, ...definition.retry },
   };
   return {
@@ -117,8 +118,11 @@ export function createFixtureLoopsClient(seed: readonly LoopView[] = []): LoopsC
         status: 'running', skipReason: null, error: null, taskId: null, sessionId: null,
         startedAt: null, endedAt: null, durationMs: null, exitCode: null, outputTail: null,
         actedAs: FIXTURE_ACTOR, endedKind: null, usage: null,
+        // Bridges L: a post run answers per group; the fixture posts to every target at once.
+        targets: loop.definition.targets.map(t => ({ bridgeId: t.bridgeId, result: 'posted' as const, reason: null, messageId: null })),
       };
       runs.set(run.id, run);
+      loops.set(loopId, { ...loop, runs: { ...loop.runs, total: loop.runs.total + 1, last: run } });
       return { run };
     },
     runsList: async loopId => ({ items: [...runs.values()].filter(run => run.loopId === loopId), nextCursor: null }),

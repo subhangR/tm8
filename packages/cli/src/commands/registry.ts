@@ -2,6 +2,7 @@ import { MCP_COMMANDS } from './mcp.js';
 import { MCP_IMPORT_COMMAND } from './mcp-import.js';
 import { TOOL_COMMANDS } from './tool.js';
 import { LOOP_COMMANDS } from './loop.js';
+import { BRIDGE_COMMANDS } from './bridge.js';
 /**
  * THE COMMAND REGISTRY — the one composition point.
  *
@@ -39,6 +40,7 @@ import { KIND_COMMANDS } from './kind.js';
 // group reports its files landed — which is why no two domain slots ever share a
 // line in this file. Order here is registration order only; it carries no meaning.
 import { SKILL_COMMANDS } from './skill.js';
+import { LABEL_COMMANDS } from './label.js';
 import { SPACE_COMMANDS } from './space.js';
 import { IDENTITY_COMMANDS } from './identity.js';
 import { AUTH_COMMANDS } from './auth.js';
@@ -123,10 +125,12 @@ export const COMMANDS: CommandModule[] = [
   ...SERVER_COMMANDS,
   ...KIND_COMMANDS,
   ...SKILL_COMMANDS,
+  ...LABEL_COMMANDS,
   ...MCP_COMMANDS,
   MCP_IMPORT_COMMAND,
   ...TOOL_COMMANDS,
   ...LOOP_COMMANDS,
+  ...BRIDGE_COMMANDS,
   ...SPACE_COMMANDS,
   ...IDENTITY_COMMANDS,
   ...AUTH_COMMANDS,

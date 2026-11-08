@@ -44,7 +44,8 @@ import {
   type WorkspaceStateFrame,
   type WorkspaceControlFrame,
 } from '@tm8/contract';
-import type { CraftWorkspaceFrame, CraftWorkspacesFrame } from '@tm8/contract';
+import type { BridgeConnectionAuthFrame, CraftWorkspaceFrame, CraftWorkspacesFrame } from '@tm8/contract';
+import { BridgeConnectionAuthFrameSchema } from '@tm8/contract';
 import {
   isChatContextFrame,
   isChatTurnFrame,
@@ -120,6 +121,11 @@ export interface SocketHandlers {
   onWorkspaceSync?(frame: WorkspaceSyncFrame): void;
   /** Lane L3: this identity's craft workspaces changed. */
   onCraftWorkspacePush?(frame: CraftWorkspacePushFrame): void;
+  /**
+   * Bridges B1b-5 (§2.5): the QR or pairing code for a `bridges.connections.begin`
+   * this identity made, pushed to its own sockets only and never stored.
+   */
+  onBridgeConnectionAuth?(frame: BridgeConnectionAuthFrame): void;
   /** Socket closed or errored. Fires at most once per socket. */
   onClose(): void;
   /**
@@ -178,6 +184,7 @@ export type ParsedFrame =
   | { kind: 'workspace-command'; frame: WorkspaceBridgeCommandFrame }
   | { kind: 'workspace-sync'; frame: WorkspaceSyncFrame }
   | { kind: 'craft-workspace'; frame: CraftWorkspacePushFrame }
+  | { kind: 'bridge-connection-auth'; frame: BridgeConnectionAuthFrame }
   | { kind: 'presence' }
   | { kind: 'malformed'; reason: string };
 
@@ -226,6 +233,15 @@ export function parseFrame(raw: unknown): ParsedFrame {
       return { kind: 'malformed', reason: `${type} has no ${type === 'craft.workspace' ? 'workspace' : 'items'}` };
     }
     return { kind: 'craft-workspace', frame: raw as unknown as CraftWorkspacePushFrame };
+  }
+
+  // Bridges B1b-5: the same identity-addressed route, for a linking number's
+  // QR or pairing code. Shape-checked by the contract's own schema; a frame
+  // that fails it is malformed, never half-drawn.
+  if (type === 'bridge.connection.auth') {
+    const parsed = BridgeConnectionAuthFrameSchema.safeParse(raw);
+    if (!parsed.success) return { kind: 'malformed', reason: 'bridge.connection.auth failed its schema' };
+    return { kind: 'bridge-connection-auth', frame: parsed.data };
   }
 
   // R8: dropped here so no consumer downstream can ever observe one. The
@@ -280,6 +296,7 @@ export function openSocket(
       case 'workspace-command': handlers.onWorkspaceCommand?.(frame.frame); return;
       case 'workspace-sync': handlers.onWorkspaceSync?.(frame.frame); return;
       case 'craft-workspace': handlers.onCraftWorkspacePush?.(frame.frame); return;
+      case 'bridge-connection-auth': handlers.onBridgeConnectionAuth?.(frame.frame); return;
       case 'presence': return;
       case 'malformed': handlers.onMalformed?.(parsed, frame.reason); return;
     }

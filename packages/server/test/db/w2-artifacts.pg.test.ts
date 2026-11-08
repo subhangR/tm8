@@ -6,10 +6,13 @@
  *  - create → publish drives a NON-debounced entity version (two rapid publishes
  *    by the same actor yield two `entity_versions` rows — design §5.3);
  *  - export is deterministic (two exports of one revision are byte-identical);
- *  - manifest refusals and unregistered blobs map to `invalid_input`.
+ *  - manifest refusals and unregistered blobs map to `invalid_input`;
+ *  - the previewUrl preview.start mints is the URL the renderer serves, per
+ *    node shape the preview-origin decision allows (§9.2, §12.2).
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { request as httpRequest, type IncomingHttpHeaders } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -18,6 +21,7 @@ import {
   isCollabError,
   manifestSha256,
   type ArtifactManifest,
+  type ArtifactPreviewSession,
   type ArtifactsCreateInput,
   type ArtifactsPublishInput,
   type CommandResult,
@@ -31,6 +35,9 @@ import { HandlerRegistry } from '../../src/facade/registry.js';
 import { registerW2ArtifactHandlers } from '../../src/facade/handlers/w2/artifacts.js';
 import { W2ArtifactsService } from '../../src/facade/services/w2/artifacts.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
+import { createArtifactPreviewHandler, createArtifactPreviewServer } from '../../src/http/artifact-preview.js';
+import { loadConfig } from '../../src/http/config.js';
+import { createFacadeServer } from '../../src/http/server.js';
 import type { RequestContext } from '../../src/http/types.js';
 import { createW2BlobStore, type W2BlobStore } from '../../src/files/w2-blob-store.js';
 import type { LoopbackOwner } from '../../src/identity/loopback.js';
@@ -371,6 +378,131 @@ describe('W2 artifacts service (pg)', () => {
     expect(preview.previewUrl).toBe(
       `http://127.0.0.1:4610/p/${preview.previewSessionId}/${preview.token}/`,
     );
+  });
+
+  /**
+   * The chain a client depends on: boot config → mint → GET. Each node shape
+   * comes from loadConfig, never a hand-written PreviewConfig, and each minted
+   * URL is spent over HTTP with its OWN authority as the Host — so a drift
+   * between what resolvePreview names, what previewStart mints and what the
+   * renderer answers fails here.
+   */
+  describe('the previewUrl preview.start mints is the URL the renderer serves', () => {
+    const BOOT_ENV = { TM8_DATABASE_URL: '', TM8_LAUNCH_BOOTSTRAP: '0' };
+    const HTML = '<!doctype html><title>served preview</title><p>served</p>';
+
+    async function mintOn(env: Record<string, string>) {
+      const config = loadConfig({ ...BOOT_ENV, ...env });
+      const minting = new W2ArtifactsService({ db, config, owner: async () => owner }, { blobStore });
+      const html = await registerBytes(HTML);
+      const created = (await minting.create(
+        ctx('artifacts.create', {}, {
+          clientMutationId: `create-${randomUUID()}`,
+          spaceId: fixture.spaceId,
+          name: 'Served Preview Target',
+          manifest: {
+            schema: 'tm8.web-artifact/1',
+            runtime: 'web-static-v1',
+            entrypoint: 'index.html',
+            files: [{ path: 'index.html', mediaType: 'text/html', size: html.size, sha256: html.sha256 }],
+          },
+        } satisfies ArtifactsCreateInput),
+      )) as CommandResult;
+      const session = (await minting.previewStart(
+        ctx('artifacts.preview.start', { artifactId: created.entity!.id }, { clientMutationId: `prev-${randomUUID()}` }),
+      )) as ArtifactPreviewSession;
+      return { config, session };
+    }
+
+    /** GET a minted URL from a loopback socket, sending the URL's own authority as Host. */
+    function spend(port: number, previewUrl: string, host = new URL(previewUrl).host) {
+      return new Promise<{ status: number; headers: IncomingHttpHeaders; body: string }>((resolve, reject) => {
+        const req = httpRequest(
+          { host: '127.0.0.1', port, path: new URL(previewUrl).pathname, method: 'GET', headers: { host } },
+          (res) => {
+            const chunks: Buffer[] = [];
+            res.on('data', (chunk: Buffer) => chunks.push(chunk));
+            res.on('end', () =>
+              resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks).toString('utf8') }),
+            );
+          },
+        );
+        req.on('error', reject);
+        req.end();
+      });
+    }
+
+    it('a default-config node mints the app origin, and the app socket serves that URL', async () => {
+      const { config, session } = await mintOn({});
+      expect(config.preview?.sameOrigin).toBe(true);
+      expect(session.previewUrl).toBe(`http://127.0.0.1:4610/p/${session.previewSessionId}/${session.token}/`);
+
+      const facade = createFacadeServer({
+        // Only the bind port is substituted (ephemeral); the minted origin stays :4610.
+        config: { ...config, port: 0 },
+        registry: new HandlerRegistry(),
+        identityResolver: async () => ({ kind: 'anonymous' as const }),
+        artifactPreviewRoute: createArtifactPreviewHandler({
+          preview: config.preview!,
+          db,
+          blobStore,
+          owner: async () => owner,
+        }),
+      });
+      try {
+        const { port } = await facade.listen();
+        const served = await spend(port, session.previewUrl!);
+        expect(served.status).toBe(200);
+        expect(served.body).toBe(HTML);
+        expect(served.headers['content-type']).toBe('text/html');
+        expect(served.headers['content-security-policy']).toContain('sandbox allow-scripts');
+      } finally {
+        await facade.close();
+      }
+    });
+
+    it('a published node mints its own public preview origin, and only the preview listener serves that URL', async () => {
+      const { config, session } = await mintOn({
+        TM8_ENV: 'prod',
+        TM8_PORT: '17777',
+        TM8_PUBLIC_ORIGIN: 'https://tm8.sh',
+        TM8_ALLOWED_HOSTNAMES: 'tm8.sh',
+        TM8_ALLOWED_ORIGINS: 'https://tm8.sh',
+        TM8_PREVIEW_PUBLIC_ORIGIN: 'https://artifacts.tm8.sh',
+        TM8_PREVIEW_PORT: '17778',
+      });
+      expect(config.preview?.sameOrigin).toBe(false);
+      // What a client signed in to https://tm8.sh opens: https, never the app origin.
+      expect(session.previewUrl).toBe(`https://artifacts.tm8.sh/p/${session.previewSessionId}/${session.token}/`);
+
+      const listener = createArtifactPreviewServer({
+        preview: { ...config.preview!, port: 0 },
+        bindHost: '127.0.0.1',
+        db,
+        blobStore,
+        owner: async () => owner,
+      });
+      try {
+        const { port } = await listener.listen();
+        // Host: artifacts.tm8.sh — the name the TLS proxy forwards.
+        const served = await spend(port, session.previewUrl!);
+        expect(served.status).toBe(200);
+        expect(served.body).toBe(HTML);
+        expect(served.headers['content-security-policy']).toContain('sandbox allow-scripts');
+        // The same capability reached by the app's name is refused: it is spendable at the preview origin only.
+        expect((await spend(port, session.previewUrl!, 'tm8.sh')).status).toBe(403);
+      } finally {
+        await listener.close();
+      }
+    });
+
+    it('a node with TM8_PREVIEW_ENABLED=0 mints the session with no previewUrl at all', async () => {
+      const { config, session } = await mintOn({ TM8_PREVIEW_ENABLED: '0' });
+      expect(config.preview).toBeUndefined();
+      expect(session.previewSessionId).toBeTruthy();
+      expect(session.token).toMatch(/^[a-f0-9]{64}$/);
+      expect(session).not.toHaveProperty('previewUrl');
+    });
   });
 
   it('rejects a manifest with a traversal path as invalid_input', async () => {

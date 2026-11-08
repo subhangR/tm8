@@ -343,6 +343,12 @@ export function describeProfile(resolution: ProfileResolution): string {
 export interface LaunchCapacity {
   slotsFree: number;
   slotsTotal: number;
+  /**
+   * How many of the used slots are held by sessions with no process on the
+   * node (403): dead rows the lost-session reaper retires within its window.
+   * Absent when the node does not report it, and then nothing is said.
+   */
+  ghosts?: number;
 }
 
 /** Launch resource view models hydrated from the active seam. */
@@ -461,11 +467,16 @@ export const CORE_CHAT_LAUNCH_PRESENTATION = Object.freeze({
 const EFFECTIVELY_UNLIMITED_SLOTS = 100_000;
 
 export function describeCapacity(c: LaunchCapacity): string {
+  // A full cap with dead rows in it reads as a refusal for no reason unless
+  // it says so: the slots come back when the reaper retires them.
+  const dead = c.ghosts !== undefined && c.ghosts > 0
+    ? ` · ${String(c.ghosts)} held by dead sessions, reaping`
+    : '';
   if (c.slotsTotal >= EFFECTIVELY_UNLIMITED_SLOTS) {
     const used = c.slotsTotal - c.slotsFree;
-    return `${used} live · no session limit`;
+    return `${used} live · no session limit${dead}`;
   }
-  return `${c.slotsFree} of ${c.slotsTotal} session slots free`;
+  return `${c.slotsFree} of ${c.slotsTotal} session slots free${dead}`;
 }
 
 /** The launch card's compact count: "12/40", or "14/∞" when the node has no cap. */

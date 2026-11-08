@@ -20,6 +20,7 @@ export type SettingsSectionId =
   | 'profile'
   | 'account'
   | 'my-sessions'
+  | 'linked-identities'
   | 'members'
   | 'invites'
   | 'sessions'
@@ -35,6 +36,7 @@ export type SettingsSectionId =
   | 'node-credentials'
   | 'filesystem-access'
   | 'space-links'
+  | 'bridges'
   | 'projects'
   | 'menu'
   | 'kinds'
@@ -70,6 +72,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   /* W4 — the account half of settings: every place YOU are signed in, beside
      "Your profile" because both are about the person, not the space. */
   { id: 'my-sessions', label: 'Sign-ins & devices', heading: 'Sign-ins & devices' },
+  /* Bridges B3 (§4.6): the numbers on other networks that count as you. An
+     identity fact like the two above, so it sits with them. */
+  { id: 'linked-identities', label: 'Linked identities', heading: 'Linked identities' },
   { id: 'members', label: 'Members & roles', heading: 'Members & roles' },
   { id: 'invites', label: 'Invites', heading: 'Invites' },
   /* W4 — the admin's view: sessions pinned to THIS space, anyone's. After
@@ -123,6 +128,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
      link is another sign-in your agents act with; built in
      `settings-space-links/` and injected through `sections`. */
   { id: 'space-links', label: 'Linked spaces', heading: 'Space links', externallyOwned: true },
+  /* BRIDGE-ENTITY-DESIGN §4.2 — WhatsApp groups, Slack channels and DMs
+     bound to a chat, session or channel here, and the accounts they ride on.
+     Built in `bridges/` and injected through `sections`. */
+  { id: 'bridges', label: 'Bridges', heading: 'Bridges', externallyOwned: true },
   { id: 'projects', label: 'Linked projects', heading: 'Linked projects', externallyOwned: true },
   { id: 'menu', label: 'Sidebar menu', heading: 'Sidebar menu' },
   { id: 'kinds', label: 'Custom kinds', heading: 'Custom kinds', externallyOwned: true },

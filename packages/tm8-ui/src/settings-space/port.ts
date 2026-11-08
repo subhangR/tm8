@@ -49,6 +49,10 @@ import type {
   SpaceConfigsView,
   AuthSessionsListResult,
   AuthSessionsRevokeResult,
+  BridgeIdentityLink,
+  BridgeLinkCode,
+  BridgeLinksList,
+  BridgeProvider,
   SpaceId,
   SpaceInviteView,
   SpaceMemberRole,
@@ -306,6 +310,13 @@ export interface SettingsPort {
   /** `auth.sessions.revoke` — the server decides who may; its refusal is drawn. */
   revokeSession?(sessionId: string): Promise<AuthSessionsRevokeResult>;
   /**
+   * Account → Linked identities (`bridges.links.*`, B3). Optional like the
+   * sessions readers: without them the section says it is not wired.
+   */
+  loadBridgeLinks?(): Promise<BridgeLinksList>;
+  beginBridgeLink?(provider: BridgeProvider): Promise<BridgeLinkCode>;
+  revokeBridgeLink?(linkId: string): Promise<BridgeIdentityLink>;
+  /**
    * The host's sign-out, run when a revoke ends THIS browser's own session
    * (the "sign out here" row): the pass is dead, so the list must not be
    * re-read with it. Not a seam call — the host passes it in.
@@ -495,6 +506,18 @@ export function settingsPortFromSeam(seam: Seam, spaceId: SpaceId, opts: Setting
 
     revokeSession(sessionId) {
       return seam.commands.revokeAuthSession(sessionId);
+    },
+
+    loadBridgeLinks() {
+      return seam.bridgeLinks();
+    },
+
+    beginBridgeLink(provider) {
+      return seam.commands.beginBridgeLink(provider);
+    },
+
+    revokeBridgeLink(linkId) {
+      return seam.commands.revokeBridgeLink(linkId);
     },
 
     chatDefaults: {

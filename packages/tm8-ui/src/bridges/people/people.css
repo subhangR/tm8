@@ -1,0 +1,100 @@
+/* The bridge People tab (BRIDGE-ENTITY-DESIGN §4.4, D51). Every class is
+   prefixed `brp`; tokens only — `src/hex-ban.test.ts` walks this file. */
+
+.brp { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; min-width: 0; container-type: inline-size; }
+.brp p { margin: 0; }
+.brp__muted { font-size: 10.5px; line-height: 1.5; color: var(--pn-ink-3); }
+.brp__notice { font-family: var(--pn-mono); font-size: 9.5px; color: var(--pn-run); }
+.brp__fail { font-size: 10.5px; line-height: 1.5; color: var(--pn-block); }
+.brp__empty {
+  padding: 18px 12px;
+  border: 1px dashed var(--pn-line);
+  border-radius: var(--pn-r-md);
+  font-size: 11px;
+  color: var(--pn-ink-3);
+  text-align: center;
+}
+
+.brp__bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brp__summary { font-size: 11.5px; color: var(--pn-ink-2); }
+.brp__filter { display: inline-flex; border: 1px solid var(--pn-line); border-radius: var(--pn-r-sm); overflow: hidden; }
+.brp__seg {
+  padding: 3px 10px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.brp__seg + .brp__seg { border-left: 1px solid var(--pn-line); }
+.brp__seg--on { background: var(--pn-hover); color: var(--pn-ink); }
+
+.brp__list { display: flex; flex-direction: column; list-style: none; margin: 0; padding: 0; }
+.brp__row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 9px 4px;
+  border-top: 1px solid var(--pn-line-2);
+}
+.brp__row:first-child { border-top: 0; }
+.brp__guest-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--pn-hover);
+  color: var(--pn-idle);
+  font-family: var(--pn-mono);
+  font-size: 11px;
+}
+.brp__who { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.brp__line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.brp__name { font-size: 12px; color: var(--pn-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brp__you { font-family: var(--pn-mono); font-size: 9.5px; color: var(--pn-brand); }
+.brp__meta { font-size: 10.5px; color: var(--pn-ink-3); gap: 10px; }
+.brp__id { font-family: var(--pn-mono); font-size: 10px; color: var(--pn-ink-2); }
+.brp__member { display: inline-flex; align-items: center; gap: 4px; }
+.brp__member { color: var(--pn-ink-2); }
+/* A <button> keeps the UA's black text unless told otherwise: unreadable in dark. */
+.brp__chip { padding: 0; border: 0; background: transparent; font: inherit; color: inherit; cursor: pointer; }
+
+/* align-items: flex-start: an inline panel opened in this row (B3's Invite)
+   is taller than the buttons; stretch would grow its siblings with it. */
+.brp__actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; align-items: flex-start; }
+.brp__btn {
+  padding: 3px 9px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  font: inherit;
+  font-size: 10.5px;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+.brp__btn:hover:not(:disabled) { background: var(--pn-hover); color: var(--pn-ink); }
+.brp__btn:disabled { opacity: 0.5; cursor: default; }
+.brp__btn--primary { border-color: var(--pn-brand); color: var(--pn-brand); }
+
+.brp__assert {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--pn-wait) 40%, transparent);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-hover);
+}
+.brp__select { font: inherit; font-size: 11px; padding: 2px 4px; max-width: 220px; }
+
+/* Narrow panels and phones: the actions drop under the row instead of
+   squeezing its text into a sliver (measured at 390px). */
+@container (max-width: 560px) {
+  .brp__row { grid-template-columns: 32px minmax(0, 1fr); }
+  .brp__actions { grid-column: 2; justify-content: flex-start; }
+}

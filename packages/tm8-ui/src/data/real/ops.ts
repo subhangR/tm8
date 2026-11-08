@@ -209,6 +209,10 @@ import {
   type SpaceConfigsView,
   type AuthSessionsListResult,
   type AuthSessionsRevokeResult,
+  type BridgeIdentityLink,
+  type BridgeLinkCode,
+  type BridgeLinksList,
+  type BridgeProvider,
   type ChatDefault,
   type ChatDefaultsView,
   type PersonalStyleCreateInput,
@@ -1064,6 +1068,18 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<AuthSessionsListResult>('auth.sessions.list', spaceId ? { query: { spaceId } } : {});
     },
 
+    bridgeLinks(): Promise<BridgeLinksList> {
+      return http.call<BridgeLinksList>('bridges.links.list', {});
+    },
+
+    beginBridgeLink(provider: BridgeProvider): Promise<BridgeLinkCode> {
+      return http.call<BridgeLinkCode>('bridges.links.begin', { body: { provider } });
+    },
+
+    revokeBridgeLink(linkId: string): Promise<BridgeIdentityLink> {
+      return http.call<BridgeIdentityLink>('bridges.links.revoke', { params: { linkId }, body: {} });
+    },
+
     revokeAuthSession(sessionId: string): Promise<AuthSessionsRevokeResult> {
       // Body-less by contract (UNBOUND_COMMAND_OPERATIONS): the session id in
       // the path is the whole request.
@@ -1451,6 +1467,8 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       const raw = await http.callPath<Omit<LivenessSnapshot, 'spaceId'> & { spaceId?: SpaceId }>(
         'GET',
         livenessPath(spaceId),
+        // 403: ask for the dead share of the cap, so a full cap can say why.
+        { query: { ghosts: '1' } },
       );
       // The read is per-space and the response shape C-1 fixed does not echo
       // the id, so it is stamped from the request rather than trusted absent.

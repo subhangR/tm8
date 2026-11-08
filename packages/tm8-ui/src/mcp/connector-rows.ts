@@ -55,9 +55,9 @@ export const STATUS_ROWS: Record<ConnectorStatus, StatusRow> = {
   credential_expired: RECONNECT,
   credential_revoked: RECONNECT,
   needs_reconnect: RECONNECT,
-  credential_definition_changed: { icon: '⚠', label: 'Connector settings changed by an admin', toggle: false, action: 'reconnect', tone: 'warn', group: 'attention' },
+  credential_definition_changed: { icon: '⚠', label: 'Connector settings changed', toggle: false, action: 'reconnect', tone: 'warn', group: 'attention' },
   not_approved: { icon: '⏳', label: 'Awaiting approval', toggle: false, action: 'approve', adminOnly: true, tone: 'wait', group: 'attention' },
-  disabled: { icon: '⦸', label: 'Disabled by an admin', toggle: false, action: null, tone: 'off', group: 'attention' },
+  disabled: { icon: '⦸', label: 'Disabled', toggle: false, action: null, tone: 'off', group: 'attention' },
   stdio_not_trusted: { icon: '⛔', label: 'Local command not trusted on this node', toggle: false, action: 'settings', adminOnly: true, tone: 'off', group: 'attention' },
   // Enabled on purpose (§10.0): the health check failed, but a live call may
   // still succeed, and refusing the toggle would hide a working connector

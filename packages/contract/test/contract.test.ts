@@ -51,9 +51,16 @@ describe('error taxonomy (DEV-8)', () => {
       version_conflict: 409, conflict: 409, invariant_violation: 409,
       payload_too_large: 413, context_budget_too_small: 422, rate_limited: 429, limit_exceeded: 429,
       not_implemented: 501, upstream_unavailable: 503,
+      not_community_admin: 403,
       form_answers_invalid: 422, form_not_open: 409, form_structure_frozen: 409,
       form_response_limit: 409, form_respondent_not_allowed: 403,
     });
+  });
+
+  it('not_community_admin is a non-retryable permission refusal', () => {
+    const e = new CollabError('not_community_admin', 'Make the linked number a community admin');
+    expect(e.status).toBe(403);
+    expect(e.retryable).toBe(false);
   });
 
   it('limit_exceeded (AM-2 §4 governance) is 429 and retryable by default', () => {

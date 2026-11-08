@@ -11,11 +11,13 @@ export {
 } from './secret-redaction.js';
 export {
   SpawnService,
+  type AdmitOptions,
   type CredentialContainmentCause,
   type CredentialContainmentResult,
   type SessionLiveCause,
   type SessionLiveListener,
   type SpawnServiceOptions,
+  type TerminalWait,
 } from './SpawnService.js';
 export {
   DEFAULT_AGENT_TOOL,
@@ -93,7 +95,7 @@ export {
   type AgentCredentialHomePort,
   type AgentCredentialProvider,
 } from './agent-credentials.js';
-export { SpawnError } from './types.js';
+export { emptySweep, SpawnError } from './types.js';
 export { DISPATCHER_ROSTER_READ_MAX, TOOL_INDEX_FETCH, TOOL_INDEX_READ_MAX } from './context-index.js';
 export {
   codexMcpHomesRoot,
@@ -129,11 +131,15 @@ export {
   type CredentialResolutionInput,
   type ResolvedSessionCredentials,
 } from './credential-resolution.js';
+export { SpawnPhaseTimer, type SpawnTimings } from './spawn-timings.js';
 export {
   branchNameFor,
+  materializeWorktree,
   provisionWorktree,
+  reserveWorktree,
   type ProvisionedWorktree,
   type ProvisionWorktreeParams,
+  type ReservedWorktree,
 } from './worktree-provisioning.js';
 export {
   reconcileNodeWorktrees,
@@ -186,6 +192,10 @@ export type {
   SpawnContext,
   SpawnRequest,
   SpawnResult,
+  SpawnAdmission,
+  SpawnBootOutcome,
+  AdmittedSpawn,
+  BootProgressPhase,
   TaskContext,
   TeamMemberContext,
   Tm8Manifest,
@@ -196,7 +206,12 @@ export type {
   WorkSessionStatus,
   WorktreeAllocationRow,
   WorktreeAllocationState,
-  GhostReconcileReport,
+  NodeEndingSweepReport,
+  NodeEndedKind,
+  NodeSessionEnding,
+  SessionUsageFacts,
+  BridgeOrigin,
+  SpawnServerFacts,
 } from './types.js';
 
 export { computeEffectiveSkills, type EffectiveSkillsInput } from './effective-skills.js';

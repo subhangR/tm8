@@ -11,6 +11,7 @@ import type {
   Page,
   StatusCategory,
 } from '@tm8/contract';
+import { LABEL_DEFAULT_COLOUR } from '@tm8/contract';
 import { ada, noor, forge, scout } from './actors';
 import { FORM_FIXTURE_FORMS, FORM_FIXTURE_IDS } from '../forms/fixtures';
 import { STORY_FIXTURE } from '../story/fixture';
@@ -935,6 +936,102 @@ export const loopFailing = summary({
   },
 });
 
+// ---------------------------------------------------------------------------
+// bridge — a provider conversation bound to a chat, session or channel (395)
+// ---------------------------------------------------------------------------
+
+type BridgeState = Extract<EntitySummary['state'], { kind: 'bridge' }>;
+
+const BRIDGE_POLICY_MENTION: BridgeState['policy'] = {
+  trigger: 'mention', direction: 'both', outbound: 'replies', whoMayTrigger: 'linked', voice: 'named',
+  style: 'short and readable: lead with the answer',
+};
+
+function bridgeState(over: Partial<BridgeState>): BridgeState {
+  return {
+    kind: 'bridge',
+    provider: 'whatsapp',
+    connectionId: '0b9f3c1e-6b1a-4c55-9a51-7d3a0c1b9494',
+    // 421 (B1b-5, D32): every bridge rides a space credential for its number.
+    connectionCredentialId: '019f0000-0000-7000-8000-0000000000c1',
+    conversation: { externalId: '1203630xxxx@g.us', kind: 'group', title: 'Infra', memberCount: 14 },
+    /* Target ids are UUIDs: the contract's bridge arm validates them. The
+       chat and channel here are the bridge's own targets, not fixture rows. */
+    target: { kind: 'chat', id: '019f0000-0000-7000-8000-0000000000b1', title: 'Infra main' },
+    policy: BRIDGE_POLICY_MENTION,
+    status: 'live',
+    health: {
+      connection: 'linked', lastInboundAt: T.morning, lastOutboundAt: T.morning, queued: 0, failed24h: 0, detail: null,
+    },
+    people: { participants: 9, linked: 3, guestsSeen7d: 4 },
+    handles: 2,
+    retentionDays: null,
+    teammateId: '019f0000-0000-7000-8000-0000000000b2',
+    purpose: 'Deploys, incidents and the on-call rota',
+    quietHours: { start: '22:00', end: '08:00' },
+    workerPosting: true,
+    workers: { wake: 'directed' },
+    pausedAt: null,
+    endedAt: null,
+    ...over,
+  };
+}
+
+/**
+ * Three bridges, one per status a list must tell apart (status is colour AND
+ * word): a live group, a paused channel, and a degraded DM whose connection
+ * the runtime lost — the row that has to say why.
+ */
+export const bridgeInfra = summary({
+  id: 'ent-bridge-infra',
+  kind: 'bridge',
+  title: 'Infra',
+  excerpt: 'Deploys, incidents and the on-call rota',
+  createdBy: ada,
+  state: bridgeState({}),
+});
+
+export const bridgeDeploys = summary({
+  id: 'ent-bridge-deploys',
+  kind: 'bridge',
+  title: '#deploys',
+  createdBy: ada,
+  state: bridgeState({
+    provider: 'slack',
+    connectionId: '5d3e8a10-2f4b-4c7e-8a9d-0c1f2e3d4a5b',
+    conversation: { externalId: 'C04DEPLOYS', kind: 'channel', title: '#deploys', memberCount: 31 },
+    target: { kind: 'channel', id: '019f0000-0000-7000-8000-0000000000b3', title: 'deploys' },
+    policy: { ...BRIDGE_POLICY_MENTION, trigger: 'none', outbound: 'all', style: null },
+    status: 'paused',
+    pausedAt: T.old,
+    people: { participants: 22, linked: 1, guestsSeen7d: 0 },
+    handles: 0,
+    teammateId: null,
+    purpose: null,
+    quietHours: null,
+  }),
+});
+
+export const bridgeRahul = summary({
+  id: 'ent-bridge-rahul',
+  kind: 'bridge',
+  title: 'Rahul',
+  createdBy: noor,
+  state: bridgeState({
+    conversation: { externalId: '+91 ···· 0001', kind: 'dm', title: 'Rahul', memberCount: 2 },
+    target: { kind: 'work_session', id: '019f0000-0000-7000-8000-000000000031', title: 'forge · tm8-ui kit' },
+    status: 'degraded',
+    health: {
+      connection: 'offline', lastInboundAt: T.old, lastOutboundAt: T.old, queued: 3, failed24h: 1,
+      detail: 'The runtime has not checked in for 4 minutes',
+    },
+    people: { participants: 1, linked: 1, guestsSeen7d: 0 },
+    handles: 1,
+    retentionDays: 90,
+    quietHours: null,
+  }),
+});
+
 /**
  * scout's persona entity. Needed as the SUBJECT of the T5-5 capacity line
  * ("scout — 1 live session already"): a capacity statement needs a teammate
@@ -1184,6 +1281,20 @@ export const styleMidnight = summary({
 });
 
 /**
+ * The seeded `bug` label (410, D29: a bug is a task labelled `bug`). Its
+ * colour is the contract's default rather than a literal: a fixture carrying
+ * colour values would put raw colour literals in `src/` (§14).
+ */
+export const labelBug = summary({
+  id: 'label-bug',
+  kind: 'label',
+  title: 'bug',
+  excerpt: 'Something is broken',
+  createdBy: ada,
+  state: { kind: 'label', name: 'bug', colour: LABEL_DEFAULT_COLOUR, description: 'Something is broken', archivedAt: null },
+});
+
+/**
  * Forms — question sets an agent asked a human (migration 209). The five
  * fixture forms live in `forms/fixtures.ts` with their responses (the forms
  * seam serves those); here they become rows, so every state the questionnaire
@@ -1418,12 +1529,14 @@ export const fixtureSummaries: EntitySummary[] = [
   teamMemberScout,
   memoryTokens, memoryDisputed, memorySuperseded,
   loopDreamer, loopFailing,
+  bridgeInfra, bridgeDeploys, bridgeRahul,
   chatLaunchPlan, chatStoppedWithWork,
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
   profileHouseStyle, credentialTeamKey, mcpCalendar, toolFixture, designCheckout, customRitual, artifactPulseBoard, drawingLoginFlow,
   storyAsAnEntity,
   styleMidnight,
+  labelBug,
   ...formSummaries,
   ...containerFixtures,
 ];
@@ -1669,6 +1782,9 @@ export const fixtureDetails: Record<string, EntityDetail> = {
       unresolvedHardDependencyCount: 0,
     },
   }),
+
+  // 395: a bridge's content is the same derived facts as its state.
+  [bridgeInfra.id]: detail(bridgeInfra, { content: { ...(bridgeInfra.state as Extract<EntitySummary['state'], { kind: 'bridge' }>) } }),
 
   [loopDreamer.id]: detail(loopDreamer, {
     content: {
@@ -1961,6 +2077,10 @@ export const fixtureDetails: Record<string, EntityDetail> = {
 
   [credentialTeamKey.id]: detail(credentialTeamKey, {
     content: { kind: 'credential', provider: 'anthropic', shape: 'api_key', visibility: 'public', status: 'active', ownerAccountId: null },
+  }),
+
+  [labelBug.id]: detail(labelBug, {
+    content: { kind: 'label', name: 'bug', colour: LABEL_DEFAULT_COLOUR, description: 'Something is broken', archivedAt: null },
   }),
 
   [styleMidnight.id]: detail(styleMidnight, {

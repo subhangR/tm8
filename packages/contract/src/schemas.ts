@@ -1,5 +1,7 @@
 import { McpServerEntitySchema, McpSelectionsSchema } from './mcp.js';
 import { ToolEntitySchema, ToolRunSchema } from './tools.js';
+import { BridgeDeliverySchema, BridgeEntitySchema, MessageBridgeViewSchema } from './bridges.js';
+import { ENTITY_LABELS_MAX, EntityLabelsPatchSchema, LabelEntitySchema } from './labels.js';
 import { WORKSPACE_WINDOW_CAPS } from './workspace-bridge.js';
 /**
  * Zod schemas for every contract shape — the single validation source
@@ -17,6 +19,8 @@ import { z } from 'zod';
 import { isOperationName } from './catalog.js';
 import type { OperationName } from './catalog.js';
 import {
+  COLLECTION_TREE_LEVEL_MAX,
+  COLLECTION_TREE_MAX_DEPTH,
   MAX_CONTROL_FRAME_SPACES,
   PROJECT_FOLDER_UPLOAD_MAX_DIRECTORIES,
   PROJECT_FOLDER_UPLOAD_MAX_FILES,
@@ -69,6 +73,7 @@ import type {
   AmendmentErrorReason,
   ActivityItem, ActorSummary, AddMessageAttachmentsInput,
   AuthAccountView, AuthClaimInput, AuthClaimReissueResult, AuthClaimResult, AuthClaimStatusResult,
+  MetaGetResult,
   AuthInviteSignupInput, AuthInviteSignupResult,
   AuthLoginInput, AuthLoginResult, AuthLogoutInput,
   AuthLogoutResult, AuthPasswordChangeInput, AuthPasswordChangeResult,
@@ -77,6 +82,7 @@ import type {
   SpacePasswordLockInput, SpacePasswordResetInput, SpacePasswordSetRequiredInput,
   AuthSignupResult, ChannelTab, ChatContextFrame, ChatTurnFrame, ChatTurnUsage,
   ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
+  CollectionTree, CollectionTreeLevel, CollectionTreeOption,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
   ContainerLifecycle, ContainerLifecycleInput, ContainerMount, ContainerMountInput,
   ContainerNetworkPolicy, ContainerProviderDescriptor, ContainerSpec, ContainerSpecInput,
@@ -179,7 +185,7 @@ import type {
   ResultWarning, UndoToken, UpdateInteractionProfileDraftInput, UpdateMemberRoleInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
   ExecutionTerminalStartInput,
-  WorkInput, WorkSessionDriveMode, WorkSessionEndedKind, WorkSessionOutcome, WorkSessionOutcomeSource, ClaimEndReason, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
+  WorkInput, WorkSessionDriveMode, WorkSessionEndedKind, WorkSessionOutcome, WorkSessionOutcomeSource, ClaimEndReason, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionBootPhase, WorkSessionBootState, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
   WorkspaceEvent,
 } from './contract.js';
 import type { WireErrorBody } from './envelope.js';
@@ -246,6 +252,10 @@ export const CoreEntityKindSchema = z.enum([
   // Crafts (304; renamed from design in 322): ordered pages by `contains`. Creatable through the generic
   // envelope.
   'craft',
+  // Bridges (395). Not in `CreatableEntityKind`: `bridges.create` is its door.
+  'bridge',
+  // Labels (410). Not in `CreatableEntityKind`: `labels.create` is its door.
+  'label',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -371,6 +381,9 @@ export const VisibilitySchema = z.enum(['space', 'restricted']);
 export const PrioritySchema = z.enum(['low', 'medium', 'high', 'urgent']);
 export const WorkSessionStatusSchema: z.ZodType<WorkSessionStatus> =
   z.enum(['spawning', 'running', 'idle', 'exited', 'failed']);
+/** Mirrors `work_sessions.boot_phase`'s CHECK exactly — 404. */
+export const WorkSessionBootPhaseSchema: z.ZodType<WorkSessionBootPhase> =
+  z.enum(['admitted', 'lane', 'briefing', 'agent', 'live', 'failed']);
 export const WorkSessionShareModeSchema: z.ZodType<WorkSessionShareMode> =
   z.enum(['none', 'space', 'explicit']);
 /**
@@ -420,13 +433,17 @@ export const WorktreeStatusSchema: z.ZodType<WorktreeStatus> =
 
 export const ActorSummarySchema: z.ZodType<ActorSummary> = z.object({
   id: EntityIdSchema,
-  kind: z.enum(['member', 'team_member', 'work_session']),
+  kind: z.enum(['member', 'team_member', 'work_session', 'bridge']),
   displayName: z.string(),
   avatar: z.string().nullable().optional(),
   role: z.string().nullable().optional(),
   ownerMemberId: EntityIdSchema.optional(),
   isAgent: z.boolean(),
-  via: z.object({ sessionId: EntityIdSchema }).strict().optional(),
+  via: z.object({
+    sessionId: EntityIdSchema.optional(),
+    bridgeId: EntityIdSchema.optional(),
+    participant: z.object({ displayName: z.string(), avatar: z.string().nullable().optional() }).strict().optional(),
+  }).strict().optional(),
   memberStatus: z.enum(['left', 'removed']).optional(),
 }).strict();
 
@@ -692,6 +709,10 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     // reason driveMode is above — this arm is `.strict()`, so a field the
     // reader spreads and this schema does not name stops the event stream.
     sharingSetAt: z.string().nullable().optional(),
+    // 404: the last phase the launch's boot reached, and when. Absent on a
+    // node (or a row) that records no boot. Named here for the reason above.
+    bootPhase: WorkSessionBootPhaseSchema.optional(),
+    bootPhaseAt: z.string().optional(),
   }).strict(),
   z.object({
     kind: z.literal('collection'),
@@ -763,6 +784,8 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   CraftStateSchema,
   McpServerEntitySchema,
   ToolEntitySchema,
+  // 410 — a label's name, colour, description and archive mark.
+  LabelEntitySchema,
   // 209 — a form's lifecycle status and its question count.
   z.object({
     kind: z.literal('form'),
@@ -775,6 +798,8 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   // answers for them. `server` has no detail row until W8.
   z.object({ kind: z.literal('space_link') }).strict(),
   z.object({ kind: z.literal('server') }).strict(),
+  // 395 — a bridge's derived facts; state and content are the same view.
+  BridgeEntitySchema,
   // 284 — a space style carries its FULL doc on state (spec §4.3: the push
   // event is how viewers repaint, so it must not need a fetch).
   z.object({
@@ -958,6 +983,8 @@ function entitySummaryShape() {
     // in this phase AND the truth a pre-column node reports. See the field's
     // docblock on `EntitySummary`.
     category: StatusCategorySchema.optional(),
+    // 410: label ids, spread when non-empty (see `EntitySummary.labels`).
+    labels: z.array(EntityIdSchema).optional(),
   };
 }
 
@@ -1208,6 +1235,7 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   CraftContentSchema,
   McpServerEntitySchema,
   ToolEntitySchema,
+  LabelEntitySchema,
   // 209 — a form: settings (defaults applied), sections and questions in order.
   z.object({
     kind: z.literal('form'),
@@ -1225,6 +1253,8 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   // 250 (W6) — a space link's content is `spaceLinks.list`'s answer.
   z.object({ kind: z.literal('space_link') }).strict(),
   z.object({ kind: z.literal('server') }).strict(),
+  // 395 — a bridge's derived facts; state and content are the same view.
+  BridgeEntitySchema,
   // 284 — a space style's content: its state plus the description.
   z.object({
     kind: z.literal('style'),
@@ -1374,6 +1404,10 @@ const CollectionFiltersSchema = z.object({
   titleContains: z.string().trim().min(1).max(200).optional(),
   // Every word, in title or description (collections.ts). Same trim rule.
   words: z.string().trim().min(1).max(200).optional(),
+  // Labels (410): all of / any of these label ids. Non-empty: an empty
+  // all-of matches everything and an empty any-of matches nothing.
+  labels: z.array(EntityIdSchema).min(1).max(32).optional(),
+  labelsAny: z.array(EntityIdSchema).min(1).max(32).optional(),
 }).strict().superRefine((f, ctx) => {
   // A22: refused, not silently empty. The two filters are kind-disjoint (no
   // row is both a task and a work_session), so their conjunction can only
@@ -1411,8 +1445,43 @@ function collectionQueryShape() {
   };
 }
 
+/**
+ * `tree` (S5, mobile LLD §5.1): the page plus up to two levels under it, in
+ * one trip. THE BOUNDS ARE THE CONTRACT, and a value outside them is refused,
+ * never clamped (a client that asked for three levels and drew two would show
+ * a tree that looks whole and is not):
+ *   - `depth`: 1 or 2 (`COLLECTION_TREE_MAX_DEPTH`).
+ *   - `perParent`: an integer from 1 to 200; omitted means 200, no cut beyond
+ *     the level's own, so each level is exactly the step query's rows.
+ *   - every level holds at most 200 rows (`COLLECTION_TREE_LEVEL_MAX`), so the
+ *     next level's parents are at most the 200 ids `filters.parentIn` allows;
+ *     a level the bound cut says `capped: true`.
+ *   - the page is bounded by `limit` (at most 200), so level 1's parents are too.
+ * Only `collections.query` takes it: `GraphQuerySchema` has no `tree`, so a
+ * graph read refuses it instead of ignoring it.
+ */
+export const CollectionTreeOptionSchema: z.ZodType<CollectionTreeOption> = z.object({
+  depth: z.union([z.literal(1), z.literal(2)], {
+    errorMap: () => ({
+      message: `tree.depth must be 1 or 2: at most ${COLLECTION_TREE_MAX_DEPTH} levels are read under the page`,
+    }),
+  }),
+  perParent: z.number().int().min(1).max(COLLECTION_TREE_LEVEL_MAX).optional(),
+}).strict();
+
 export const CollectionQuerySchema: z.ZodType<CollectionQuery> =
-  z.object(collectionQueryShape()).strict();
+  z.object({ ...collectionQueryShape(), tree: CollectionTreeOptionSchema.optional() }).strict();
+
+export const CollectionTreeLevelSchema: z.ZodType<CollectionTreeLevel> = z.lazy(() => z.object({
+  depth: z.union([z.literal(1), z.literal(2)]),
+  parentIds: z.array(EntityIdSchema).max(COLLECTION_TREE_LEVEL_MAX),
+  items: z.array(EntitySummarySchema).max(COLLECTION_TREE_LEVEL_MAX),
+  capped: z.boolean(),
+}).strict());
+
+export const CollectionTreeSchema: z.ZodType<CollectionTree> = z.lazy(() => z.object({
+  levels: z.array(CollectionTreeLevelSchema).min(1).max(COLLECTION_TREE_MAX_DEPTH),
+}).strict());
 
 export const CollectionGroupSchema: z.ZodType<CollectionGroup> = z.lazy(() => z.object({
   key: z.string(),
@@ -1426,6 +1495,7 @@ export const CollectionResultSchema: z.ZodType<CollectionResult> = z.lazy(() => 
   query: CollectionQuerySchema,
   page: pageOf(EntitySummarySchema),
   groups: z.array(CollectionGroupSchema).optional(),
+  tree: CollectionTreeSchema.optional(),
 }).strict());
 
 export const GraphQuerySchema: z.ZodType<GraphQuery> = z.object({
@@ -1723,6 +1793,7 @@ export const MessageViewSchema: z.ZodType<MessageView> = z.lazy(() => z.object({
   parts: z.array(MessagePartSchema).optional(),
   turnInFlight: z.boolean().optional(),
   sourceWorkSessionId: EntityIdSchema.optional(),
+  bridge: MessageBridgeViewSchema.optional(),
 }).strict());
 
 export const MessageDeliveryDispositionSchema: z.ZodType<MessageDeliveryDisposition> = z.lazy(() =>
@@ -1741,6 +1812,7 @@ export const MessageBatchResultSchema: z.ZodType<MessageBatchResult> = z.lazy(()
   // Optional, not nullable: absent means the batch named no session. An empty
   // array would read as "every target failed" and is therefore never emitted.
   delivery: z.array(MessageDeliveryDispositionSchema).min(1).optional(),
+  bridgeDelivery: z.array(BridgeDeliverySchema).min(1).optional(),
   warnings: z.array(ResultWarningSchema).min(1).optional(),
 }).strict());
 
@@ -1843,6 +1915,7 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
     to: WorkSessionStatusSchema,
     endedKind: WorkSessionEndedKindSchema.nullable(),
     endedReason: z.string().nullable(),
+    endedByNode: z.string().min(1).optional(),
     clientMutationId: z.string().optional(),
   }).strict(),
   z.object({
@@ -2348,7 +2421,7 @@ export const AuthSessionsListInputSchema: z.ZodType<AuthSessionsListInput> = z.o
 
 export const AuthSessionListingSchema: z.ZodType<AuthSessionListing> = z.object({
   sessionId: z.string().uuid(),
-  kind: z.enum(['browser', 'cli', 'agent', 'agent_runtime']),
+  kind: z.enum(['browser', 'cli', 'agent', 'agent_runtime', 'bridge_runtime']),
   createdAt: IsoTimestamp,
   lastUsedAt: IsoTimestamp.nullable(),
   expiresAt: IsoTimestamp,
@@ -2415,6 +2488,20 @@ export const AuthClaimStatusResultSchema: z.ZodType<AuthClaimStatusResult> = z.o
   projectIsolation: z.enum(['shared', 'isolated']),
   tokenRequired: z.boolean().optional(),
 }).strict();
+
+/**
+ * `meta.get`. Deliberately NOT `.strict()` and lenient on version strings: an
+ * older reader must parse a newer node's answer (unknown fields are stripped,
+ * unknown operation names kept), because that answer is how it learns it is too
+ * old. The digest is the one field with a fixed form.
+ */
+export const MetaGetResultSchema: z.ZodType<MetaGetResult> = z.object({
+  contractVersion: z.string().min(1),
+  catalogSha256: z.string().regex(/^[0-9a-f]{64}$/),
+  eventSchemaVersion: z.number().int().positive(),
+  features: z.array(z.string().min(1)),
+  minClients: z.record(z.string().min(1), z.string().min(1)),
+});
 
 export const AuthClaimReissueResultSchema: z.ZodType<AuthClaimReissueResult> = z.object({
   token: z.string().min(1),
@@ -2602,15 +2689,15 @@ export const CredentialsServiceKeyDeleteResultSchema: z.ZodType<CredentialsServi
 export const SpaceCredentialProviderNameSchema: z.ZodType<SpaceCredentialProviderName> =
   z.enum(['anthropic', 'openai', 'github']);
 /** server_only_space_credentials: stored as a space credential, spent server-side, never bound by a session. */
-export const SERVER_ONLY_CREDENTIAL_PROVIDERS: readonly ServerOnlyCredentialProviderName[] = Object.freeze(['typesafe', 'mcp', 'tool']);
-export const ServerOnlyCredentialProviderNameSchema: z.ZodType<ServerOnlyCredentialProviderName> = z.enum(['typesafe', 'mcp', 'tool']);
+export const SERVER_ONLY_CREDENTIAL_PROVIDERS: readonly ServerOnlyCredentialProviderName[] = Object.freeze(['typesafe', 'mcp', 'tool', 'whatsapp']);
+export const ServerOnlyCredentialProviderNameSchema: z.ZodType<ServerOnlyCredentialProviderName> = z.enum(['typesafe', 'mcp', 'tool', 'whatsapp']);
 export const SpaceCredentialStoredProviderNameSchema: z.ZodType<SpaceCredentialStoredProviderName> =
-  z.enum(['anthropic', 'openai', 'github', 'typesafe', 'mcp', 'tool']);
+  z.enum(['anthropic', 'openai', 'github', 'typesafe', 'mcp', 'tool', 'whatsapp']);
 /** True for a provider that must never reach a session (gate 8). */
 export function isServerOnlyCredentialProvider(provider: string): provider is ServerOnlyCredentialProviderName {
   return (SERVER_ONLY_CREDENTIAL_PROVIDERS as readonly string[]).includes(provider);
 }
-export const SpaceCredentialShapeSchema: z.ZodType<SpaceCredentialShape> = z.enum(['login', 'api_key', 'token']);
+export const SpaceCredentialShapeSchema: z.ZodType<SpaceCredentialShape> = z.enum(['login', 'api_key', 'token', 'connection']);
 export const SpaceCredentialStatusSchema: z.ZodType<SpaceCredentialStatus> =
   z.enum(['pending', 'active', 'stale', 'revoked']);
 export const CredentialPolicySourceSchema: z.ZodType<CredentialPolicySource> = z.enum(['member', 'space', 'node']);
@@ -2984,6 +3071,10 @@ export const ExecutionSpawnResultSchema: z.ZodType<ExecutionSpawnResult> = z.laz
   warnings: z.array(ResultWarningSchema).optional(),
   createdTaskId: EntityIdSchema.optional(),
   launch: ExecutionSpawnLaunchSchema.optional(),
+  timings: z.object({
+    totalMs: z.number().nonnegative(),
+    phases: z.record(z.number().nonnegative()),
+  }).strict().optional(),
 }).strict());
 
 export const ExecutionSpawnLaunchSchema: z.ZodType<ExecutionSpawnLaunch> = z.lazy(() => z.object({
@@ -3058,7 +3149,7 @@ export const CreatableEntityKindSchema = acceptingKindAliases(z.union([
   // `form` likewise: `forms.create` writes its questions and requesting
   // session in the same call (FORMS-DESIGN §6). `credential` is human-only
   // and born under a SQL guard from credentials.space.* (W10a).
-  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server', 'style']),
+  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server', 'style', 'bridge', 'label']),
   CustomEntityKindSchema,
 ]));
 
@@ -3074,6 +3165,7 @@ export const CreateEntityInputSchema: z.ZodType<CreateEntityInput> = z.object({
   attachTo: attachToSchema.optional(),
   connections: uniqueArray(InitialConnectionInputSchema).optional(),
   header: HeaderTextInputSchema.optional(),
+  labels: z.array(EntityIdSchema).min(1).max(ENTITY_LABELS_MAX).optional(),
 }).strict() as z.ZodType<CreateEntityInput>;
 
 export const PatchEntityInputSchema: z.ZodType<PatchEntityInput> = z.object({
@@ -3081,6 +3173,7 @@ export const PatchEntityInputSchema: z.ZodType<PatchEntityInput> = z.object({
   expectedVersion: z.number().finite(),
   title: z.string().optional(),
   content: z.record(z.unknown()).optional(),
+  labels: EntityLabelsPatchSchema.optional(),
 }).strict();
 
 // artifacts — command inputs (TM8-ARTIFACTS-DESIGN §8.1). The manifest is the
@@ -3290,6 +3383,7 @@ const PostMessageWireInputSchema: z.ZodType<PostMessageWireInput> = z.object({
   pokeSessionIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
   mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']).optional(),
   team: ChatTurnTeamSchema.optional(),
+  hereOnly: z.boolean().optional(),
 }).strict();
 
 export const PostMessageInputSchema: z.ZodType<PostMessageInput, z.ZodTypeDef, PostMessageWireInput> =
@@ -4461,6 +4555,7 @@ export const ExecutionLivenessSchema: z.ZodType<ExecutionLiveness> = z.object({
   capacity: z.object({
     used: z.number().int().nonnegative(),
     total: z.number().int().positive(),
+    ghosts: z.number().int().nonnegative().optional(),
   }).strict(),
   // Nullable, never optional: "the mark cannot be established" is an ANSWER
   // this read has to be able to give, and an absent field is the shape a
@@ -4544,6 +4639,14 @@ export const SessionJournalPageSchema: z.ZodType<SessionJournalPage> = z.object(
  * its interior would make this read fail closed on exactly the sessions a
  * debug surface most needs to explain. The envelope around it is strict.
  */
+export const WorkSessionBootStateSchema: z.ZodType<WorkSessionBootState> = z.object({
+  sessionId: EntityIdSchema,
+  status: WorkSessionStatusSchema,
+  bootPhase: WorkSessionBootPhaseSchema.optional(),
+  bootPhaseAt: z.string().optional(),
+  endedReason: z.string().nullable(),
+}).strict();
+
 export const SessionLaunchRecordSchema: z.ZodType<SessionLaunchRecord> = z.object({
   sessionId: EntityIdSchema,
   available: z.boolean(),
@@ -4574,6 +4677,7 @@ export const SessionLaunchRecordSchema: z.ZodType<SessionLaunchRecord> = z.objec
     unlinkedMemories: z.array(z.string()),
     unlinkedSkillCount: z.number().int().nonnegative(),
   }).strict().nullable(),
+  launch: ExecutionSpawnLaunchSchema.optional(),
 }).strict();
 
 /**
@@ -5091,6 +5195,7 @@ export const EntityContextV2ViewSchema: z.ZodType<EntityContextV2View> = z.objec
   endedReason: NullableString,
   outcome: NullableString,
   receiptMessageId: NullableString,
+  bootPhase: NullableString,
   tasks: z.array(ContextRefSchema).optional(),
   launchedSessions: z.array(ContextRefSchema).optional(),
   runtimeState: NullableString,
@@ -5639,6 +5744,7 @@ export const CommandErrorCodeSchema: z.ZodType<CommandErrorCode> = z.enum([
   'version_conflict', 'conflict', 'invariant_violation',
   'payload_too_large', 'rate_limited', 'limit_exceeded',
   'not_implemented', 'upstream_unavailable',
+  'not_community_admin',
   'context_budget_too_small',
   'form_answers_invalid', 'form_not_open', 'form_structure_frozen',
   'form_response_limit', 'form_respondent_not_allowed',

@@ -24,8 +24,14 @@
  *
  * WHAT THIS DOES NOT OWN: `onSpawn` and `onFullOptions`. Those are the HOST's
  * verbs — where a spawned session gets opened, and whether a full launch sheet
- * is even mounted on this screen — so each caller supplies its own and the
- * panel's existing disabled-with-reason path covers a host that has neither.
+ * is even mounted on this screen — so each caller supplies its own.
+ *
+ * WHAT IT COMPOSES: the launch hand-off (task 01a182d2, `useLaunchHandoff`).
+ * A host's spawn verb runs through it, so a press the popup hands over lands at
+ * once on the launching page whichever screen it came from, and the host's own
+ * `onSpawn` is what runs for a launch the popup did not hand over. A host with
+ * no `onSpawn` keeps Launch refused with its reason (R5 #9): the hand-off
+ * lands a launch, it does not invent a launch surface.
  */
 import { useCallback, useMemo, useRef } from 'react';
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
@@ -37,9 +43,14 @@ import { sharedRead } from '../data/shared-read';
 import { jevKeyUsable } from '../jev';
 import type { LaunchSources } from '../panels';
 import type { GateData } from './useGateData';
+import { useLaunchHandoff, type LaunchHandoff } from './useLaunchHandoff';
 
 export interface LaunchPortOptions {
-  /** Commits the spawn. Absent ⇒ Launch renders disabled-with-reason (R5 #9). */
+  /**
+   * The host's own spawn verb — what runs for a launch the popup did NOT hand
+   * over (no seam, the phone, the legacy desktop). Absent ⇒ Launch renders
+   * disabled-with-reason (R5 #9), hand-off or not.
+   */
   onSpawn?: (input: ExecutionSpawnInput) => void | Promise<void>;
   /** Opens the five-section sheet. Absent ⇒ the escape says it is not here. */
   onFullOptions?: (entityId: string) => void;
@@ -52,7 +63,24 @@ export interface LaunchPortOptions {
  */
 export type LaunchPort = LaunchSources & {
   profileFor: NonNullable<LaunchSources['profileFor']>;
+  /** The hand-off this port's spawn verb runs through — the launching page's host reads it. */
+  handoff: LaunchHandoff;
 };
+
+/**
+ * AFTER A SPAWN TIMEOUT: sessions working on the subject that started at or
+ * after `since` — the launch that may have gone through. The one read both
+ * the card's in-card check and the launch hand-off ask.
+ */
+export function useSessionsSince(seam: GateData['seam']) {
+  return useCallback(async (subjectId: string, since: string) => {
+    const page = await seam.connections(subjectId as EntityId, { types: ['working_on'], direction: 'incoming', limit: 50 });
+    return page.items
+      .map((edge) => edge.source)
+      .filter((s) => s.kind === 'work_session' && s.createdAt >= since)
+      .map((s) => ({ id: s.id, title: s.title }));
+  }, [seam]);
+}
 
 /**
  * How long a reopened launch card reuses what the last open read for its
@@ -232,16 +260,7 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
     [data.seam, data.spaceId],
   );
 
-  /* AFTER A SPAWN TIMEOUT: sessions working on the subject that started at or
-     after `since` — the launch that may have gone through. The ledger only
-     replays a FINISHED attempt, so the card must look before retrying. */
-  const sessionsSince = useCallback(async (subjectId: string, since: string) => {
-    const page = await data.seam.connections(subjectId as EntityId, { types: ['working_on'], direction: 'incoming', limit: 50 });
-    return page.items
-      .map((edge) => edge.source)
-      .filter((s) => s.kind === 'work_session' && s.createdAt >= since)
-      .map((s) => ({ id: s.id, title: s.title }));
-  }, [data.seam]);
+  const sessionsSince = useSessionsSince(data.seam);
 
   /* ✦'s key: the member's stored TypeSafe key, else the node's fallback. A
      usable key is reused while fresh; "no key" never is — the person may be
@@ -260,6 +279,19 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
     // eslint-disable-next-line react-hooks/exhaustive-deps -- viewerId is the reader's identity, not a value it reads
   }, [seam, viewerId]);
 
+  /* THE HAND-OFF: the popup's press lands on the launching page at once; the
+     host's own verb is the fallback for a launch it did not hand over. */
+  const handoff = useLaunchHandoff({
+    viewerId: data.viewerActor?.id,
+    spaceId: data.spaceId,
+    spawnSession: data.spawn,
+    sessionsSince,
+  });
+  const spawn = useMemo(
+    () => (onSpawn ? (input: ExecutionSpawnInput) => handoff.spawn(input, onSpawn) : undefined),
+    [handoff, onSpawn],
+  );
+
   return useMemo(
     () => ({
       spaceId: data.spaceId ?? '',
@@ -273,13 +305,14 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
       ...(capacity ? { capacity } : {}),
       ...(jev ? { jev } : {}),
       ...(loadInstalledPlugins ? { loadInstalledPlugins } : {}),
-      ...(onSpawn ? { onSpawn } : {}),
+      ...(spawn ? { onSpawn: spawn, onLaunchStarted: handoff.onLaunchStarted } : {}),
+      handoff,
       ...(onFullOptions ? { onFullOptions } : {}),
       ...(upload ? { upload } : {}),
       ...(data.spaceId ? { dispatch } : {}),
       jevKeyStatus,
       sessionsSince,
     }),
-    [data.spaceId, selection, teammates, projects, profileFor, descriptionOf, onUpdateEntity, capacity, jev, loadInstalledPlugins, onSpawn, onFullOptions, upload, dispatch, jevKeyStatus, sessionsSince],
+    [data.spaceId, selection, teammates, projects, profileFor, descriptionOf, onUpdateEntity, capacity, jev, loadInstalledPlugins, spawn, handoff, onFullOptions, upload, dispatch, jevKeyStatus, sessionsSince],
   );
 }

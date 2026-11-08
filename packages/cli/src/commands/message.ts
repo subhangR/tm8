@@ -39,11 +39,11 @@
  * for arbitration rather than normalised away — see `refuseMentionEdit` and the
  * `--order` note on `messageList`.
  */
-import { plainExcerpt } from '@tm8/contract';
+import { plainExcerpt, type BridgeDelivery } from '@tm8/contract';
 import { readTextSource } from '../args.js';
 import { UnsettledDeliveryError } from '../errors.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
-import { callerMutationId, successReceipt, type ReceiptOp } from '../receipt.js';
+import { bridgeRefusalText, callerMutationId, successReceipt, type ReceiptOp } from '../receipt.js';
 import { errorInput, withErrorReceipt } from '../receipt-error.js';
 import { noticeStatusNudges } from '../status-nudge.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
@@ -360,6 +360,7 @@ async function messageSend(cmd: CommandContext): Promise<ExitCode> {
   if (replyTo) request.parentMessageId = replyTo;
   if (cmd.ctx.actor) request.actorId = cmd.ctx.actor.value;
   if (cmd.ctx.sessionId) request.workSessionId = cmd.ctx.sessionId;
+  if (cmd.options.bool('here-only')) request.hereOnly = true;
 
   return postMessage(cmd, request, wait, 'message.send');
 }
@@ -384,6 +385,7 @@ async function messageReply(cmd: CommandContext): Promise<ExitCode> {
   if (mentionIds.length > 0) request.mentionIds = mentionIds;
   if (attachmentIds.length > 0) request.attachmentIds = attachmentIds;
   if (cmd.ctx.actor) request.actorId = cmd.ctx.actor.value;
+  if (cmd.options.bool('here-only')) request.hereOnly = true;
   return postMessage(cmd, request, wait, 'message.reply');
 }
 
@@ -620,6 +622,14 @@ function renderBatch(dto: unknown): string {
     const label = status === 'undelivered' ? 'NOT DELIVERED' : status;
     lines.push(`  ${String(row.targetWorkSessionId ?? '')}  ${label}${reason}`.trimEnd());
   }
+  // 398 (Bridges §2.7): the provider copy of a bridged post. Stored either
+  // way; a refusal says why, and `rate_limited` says when to try again.
+  const bridged = (dto as { bridgeDelivery?: unknown })?.bridgeDelivery;
+  for (const entry of Array.isArray(bridged) ? bridged : []) {
+    const row = entry as Record<string, unknown>;
+    const status = row.status === 'refused' ? `REFUSED ${bridgeRefusalText(row)}` : String(row.status ?? 'unknown');
+    lines.push(`  bridge ${String(row.bridgeId ?? '')}  ${status}`);
+  }
   return lines.join('\n');
 }
 
@@ -630,7 +640,14 @@ export function renderDelivery(dto: unknown): string {
   // Storage and delivery are different facts, and the stored one is stated
   // first: a pending delivery is not a message that went missing.
   const lines = [`${idOf(message)}  stored`];
-  if (rows.length === 0) lines.push('  no live delivery was requested for this message');
+  const bridge = (message as { bridge?: { bridgeId?: string; direction?: string; delivery?: BridgeDelivery } })?.bridge;
+  if (bridge?.direction === 'out' && bridge.delivery) {
+    const detail = bridge.delivery.reason ?? bridge.delivery.detail;
+    const reason = detail ? ` (${detail})` : '';
+    lines.push(`  bridge ${bridge.bridgeId ?? ''}  ${bridge.delivery.status ?? 'unknown'}${reason}`);
+  } else if (rows.length === 0) {
+    lines.push('  no live delivery was requested for this message');
+  }
   for (const row of rows) {
     lines.push(`  ${String(row.targetWorkSessionId ?? '')}  ${String(row.status ?? 'unknown')}`.trimEnd());
   }
@@ -661,12 +678,12 @@ export const MESSAGE_COMMANDS: CommandModule[] = [
   { path: ['message', 'list'], run: known(['for', 'limit', 'root', 'order', 'cursor', 'mutation-id'], messageList) },
   {
     path: ['message', 'send'],
-    run: known(['to', 'conversation', 'reply-to', 'body', 'mention', 'attach', 'wait', 'mutation-id'], messageSend),
+    run: known(['to', 'conversation', 'reply-to', 'body', 'mention', 'attach', 'here-only', 'wait', 'mutation-id'], messageSend),
   },
   {
     path: ['message', 'reply'],
     // --to/--conversation are read only to refuse them with a reason.
-    run: known(['to', 'conversation', 'body', 'mention', 'attach', 'wait', 'mutation-id'], messageReply),
+    run: known(['to', 'conversation', 'body', 'mention', 'attach', 'here-only', 'wait', 'mutation-id'], messageReply),
   },
   // --mention is read only to refuse it with a reason (refuseMentionEdit).
   { path: ['message', 'update'], run: known(['body', 'mention', 'expect-version', 'mutation-id'], messageUpdate) },

@@ -35,6 +35,7 @@ import {
   EXIT_USAGE,
   type ExitCode,
 } from './exit.js';
+import { isRecord } from './guards.js';
 
 /**
  * The wire taxonomy → §7.6. Exhaustive by type.
@@ -53,6 +54,7 @@ export const EXIT_BY_COMMAND_ERROR: Record<CommandErrorCode, ExitCode> = {
   invalid_cursor: EXIT_USAGE,
   unauthenticated: EXIT_UNAUTHENTICATED,
   forbidden: EXIT_FORBIDDEN,
+  not_community_admin: EXIT_FORBIDDEN,
   not_found: EXIT_NOT_FOUND,
   version_conflict: EXIT_CONFLICT,
   conflict: EXIT_CONFLICT,
@@ -102,9 +104,6 @@ function reasonOf(details: unknown): string | undefined {
   return typeof reason === 'string' ? reason : undefined;
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 
 /**
  * The EntityDetail a `version_conflict` carries under `details.current` (the
