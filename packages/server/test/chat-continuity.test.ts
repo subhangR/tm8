@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HISTORY_PART_WINDOW, HISTORY_TURN_WINDOW, projectHistory, readPortableHistory, sameCoverage, type HistoricalTurn } from '../src/chat/continuity.js';
+import { HISTORY_PART_WINDOW, HISTORY_TURN_WINDOW, SNAPSHOT_SEAL_BYTES, projectHistory, readPortableHistory, sameCoverage, type HistoricalTurn } from '../src/chat/continuity.js';
 import type { Db } from '../src/db/types.js';
 const turn=(ordinal:number,overrides:Partial<HistoricalTurn>={}):HistoricalTurn => ({turnId:`t${ordinal}`,ordinal,
   userMessageId:`u${ordinal}`,agentMessageId:`a${ordinal}`,input:{body:`request ${ordinal}`,attachments:['image-ref'],actorId:'member'},
@@ -69,6 +69,23 @@ describe('portable history',() => {
     expect(result.manifest.some(x => x.treatment==='reference' && x.sourceId==='u1')).toBe(true);
     expect(result.coverage.throughTurnOrdinal).toBe(60);
     expect(projectHistory(turns,{...options,currentTurnOrdinal:61,maxBytes:32768})).toEqual(result);
+  });
+  it('keeps the sealed snapshot under the DB cap when thousands of tool records are dropped (UHN AI main chat, 2026-11-08)',() => {
+    // The full read window (256 turns x 16 tool parts = 4096) used to put one
+    // manifest row per dropped record in the bootstrap: ~560 KB against
+    // seal_chat_turn_snapshot's 256 KiB, so every turn failed "snapshot seal failed".
+    const calls=(ordinal:number)=>Array.from({length:8},(_,i)=>[
+      {seq:i*2,kind:'tool_call',payload:{id:`toolu_${ordinal}_${i}_${'k'.repeat(24)}`,name:'Bash',args:{command:'ls'}}},
+      {seq:i*2+1,kind:'tool_result',payload:{tool_call_id:`toolu_${ordinal}_${i}_${'k'.repeat(24)}`,content:'y'.repeat(200)}},
+    ]).flat();
+    const id=(prefix:string,n:number)=>`${prefix}${String(n).padStart(35,'0')}`;
+    const turns=Array.from({length:256},(_,i)=>turn(i+1,{userMessageId:id('u',i+1),agentMessageId:id('a',i+1),parts:calls(i+1)}));
+    const result=projectHistory(turns,{...options,currentTurnOrdinal:257,maxBytes:32768});
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(SNAPSHOT_SEAL_BYTES);
+    const references=result.manifest.filter(x => x.treatment==='reference');
+    expect(references.length).toBeGreaterThan(0);
+    expect(references.every(x => x.sourceId.startsWith('u'))).toBe(true);
+    expect(new Set(references.map(x => x.sourceId)).size).toBe(references.length);
   });
   it('ignores excluded future-input capture changes for semantic resume equality',() => {
     const a=projectHistory([turn(1)],options).coverage;

@@ -224,15 +224,43 @@ export function projectHistory(turns: readonly HistoricalTurn[], options: Projec
     throw new Error('continuity_context_overflow: required attribution and uncertainty exceed budget');
   }
   const originals = new Set(original);
-  return { schemaVersion: 1, snapshotId: options.snapshotId, coverage,
+  const references = droppedReferences(dropped);
+  const result: BootstrapContext = { schemaVersion: 1, snapshotId: options.snapshotId, coverage,
     contentHash: createHash('sha256').update(rendered).digest('hex'), renderedContext: rendered,
     manifest: [
-      ...dropped.map(record => ({ sourceId: record.sourceId, treatment: 'reference' as const,
-        reason: 'omitted to fit the history budget; details require a current authorized source read' })),
+      ...references,
       ...records.map(record => ({ sourceId: record.sourceId,
         treatment: originals.has(record) && !omitted(record.content) ? 'included' as const : 'summarized' as const,
         reason: originals.has(record) && !omitted(record.content) ? null : 'bounded deterministic extract; details require a current authorized source read' })),
     ] };
+  if (Buffer.byteLength(JSON.stringify(result), 'utf8') <= SNAPSHOT_SEAL_BYTES) return result;
+  return { ...result, manifest: [...droppedReferences(dropped, true), ...result.manifest.slice(references.length)] };
+}
+
+/**
+ * `seal_chat_turn_snapshot` refuses a bootstrap whose jsonb text passes 256 KiB
+ * ("invalid immutable chat snapshot"); jsonb text adds a space after every ':'
+ * and ',', so the JSON measured here keeps headroom under that cap.
+ */
+export const SNAPSHOT_SEAL_BYTES = 192 * 1024;
+const DROPPED_REASON = 'omitted to fit the history budget; details require a current authorized source read';
+
+/**
+ * Manifest rows for the turns dropped behind the omission notice: ONE per turn,
+ * named by its user message, not one per record. A long tool-heavy chat drops
+ * thousands of tool records; a row each made the sealed snapshot ~560 KB and
+ * every later turn of that chat failed with "snapshot seal failed" (UHN AI
+ * main chat, 2026-11-08). `whole` collapses the range into a single row.
+ */
+function droppedReferences(dropped: readonly Evidence[], whole = false) {
+  const turns = new Map<number, string>();
+  for (const record of dropped) {
+    if (!turns.has(record.turnOrdinal) || record.role === 'user') turns.set(record.turnOrdinal, record.sourceId);
+  }
+  const ordinals = [...turns.keys()];
+  if (whole && ordinals.length) return [{ sourceId: `dropped-turns:${ordinals[0]}-${ordinals[ordinals.length - 1]}`,
+    treatment: 'reference' as const, reason: DROPPED_REASON }];
+  return [...turns.values()].map(sourceId => ({ sourceId, treatment: 'reference' as const, reason: DROPPED_REASON }));
 }
 
 /** Newest turns read into one history; older ones are named by a notice, never silently dropped. */
