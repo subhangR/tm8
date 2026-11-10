@@ -115,6 +115,22 @@ export const LAUNCH_MODEL_CATALOG = [
     efforts: CLAUDE_CODE_EFFORTS,
   },
   {
+    model: 'claude-fable-5-2',
+    label: 'Claude Fable 5.2',
+    provider: 'anthropic',
+    agentTool: 'claude-code',
+    note: 'Anthropic model via Claude Code — verified on Claude Code 2.1.319',
+    efforts: CLAUDE_CODE_EFFORTS,
+  },
+  {
+    model: 'claude-fable-5-2[1m]',
+    label: 'Claude Fable 5.2 (1M)',
+    provider: 'anthropic',
+    agentTool: 'claude-code',
+    note: '1M-context variant via Claude Code — verified on Claude Code 2.1.319',
+    efforts: CLAUDE_CODE_EFFORTS,
+  },
+  {
     model: 'gpt-6-astra',
     label: 'OpenAI GPT 6 Astra',
     provider: 'openai',
