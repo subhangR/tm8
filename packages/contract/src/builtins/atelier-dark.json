@@ -1,7 +1,7 @@
 {
   "id": "builtin:atelier-dark",
   "title": "Atelier Dark",
-  "builtinRevision": 2,
+  "builtinRevision": 3,
   "darkSibling": "builtin:atelier-dark",
   "tokens": {
     "--pn-active": "#302A1D",
@@ -47,6 +47,8 @@
     "--pn-paper": "#1D1912",
     "--pn-pr-merged": "#9C82C9",
     "--pn-pr-merged-soft": "rgba(156, 130, 201, 0.20)",
+    "--pn-provider-tile": "#fff",
+    "--pn-provider-tile-line": "#e5e7eb",
     "--pn-r-lg": "14px",
     "--pn-r-md": "10px",
     "--pn-r-pill": "999px",

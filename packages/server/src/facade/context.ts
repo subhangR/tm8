@@ -24,6 +24,7 @@
  * acting-as case, which `can_act_as` then authorizes properly).
  */
 import { CollabError, ISO_TIMESTAMP_RE } from '@tm8/contract';
+import type { ResolvedMcpToken } from '../identity/mcp-token.js';
 import type { DbClaims } from '../db/types.js';
 import type { LoopbackOwner } from '../identity/loopback.js';
 import type { RequestContext } from '../http/types.js';
@@ -198,4 +199,17 @@ export function limitOf(raw: string | number | undefined | null, fallback = DEFA
     throw new CollabError('invalid_input', `limit must be a positive integer, got ${String(raw)}`);
   }
   return Math.min(n, MAX_LIMIT);
+}
+
+/**
+ * The claims one external call runs under. `authKind: 'mcp'` is what
+ * `require_human_auth_kind()` refuses — so the token reaches no human door — and
+ * what 357's own functions demand. `sessionSpaceId` is 227's pin, bound only
+ * once a Space has been admitted, so for the rest of the call RLS answers for
+ * that Space alone. No `actorId`, and never node admin (§5.5: "Node admin
+ * rights never widen it").
+ */
+export function externalMcpClaims(token: ResolvedMcpToken, requestId: string, spaceId?: string): DbClaims {
+  return { identityId: token.identityId, authKind: 'mcp', nodeAdmin: false, requestId,
+    ...(spaceId ? { sessionSpaceId: spaceId } : {}) };
 }

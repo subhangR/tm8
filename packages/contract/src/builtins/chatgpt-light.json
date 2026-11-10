@@ -1,7 +1,7 @@
 {
   "id": "builtin:chatgpt-light",
   "title": "ChatGPT Light",
-  "builtinRevision": 2,
+  "builtinRevision": 3,
   "darkSibling": "builtin:chatgpt-dark",
   "tokens": {
     "--pn-active": "#E8E8E8",
@@ -47,6 +47,8 @@
     "--pn-paper": "#FFFFFF",
     "--pn-pr-merged": "#7B5EA7",
     "--pn-pr-merged-soft": "rgba(123, 94, 167, 0.14)",
+    "--pn-provider-tile": "#fff",
+    "--pn-provider-tile-line": "#e5e7eb",
     "--pn-r-lg": "16px",
     "--pn-r-md": "12px",
     "--pn-r-pill": "999px",

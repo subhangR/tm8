@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { mcpCatalogEntry } from '@tm8/contract';
 import { beforeAll, afterAll, expect, it, vi } from 'vitest';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 import { createDb } from '../../src/db/client.js';
@@ -65,6 +66,12 @@ it('SQL admits a preregistered client secret only as a TM8_MCP_CLIENT_SECRET_ va
   {clientId:'issued',clientSecret:'fixture-secret'},
  ]) await expect(create('secret-env-reject-'+randomUUID().slice(0,8),oauth(auth))).rejects.toBeTruthy();
 });
+it('accepts a complete provider scope set but rejects scope count and string overflow',async()=>{
+ const scoped=(count:number)=>({auth:{type:'oauth2',scopes:Array.from({length:count},(_,i)=>`scope:${i}`)}});
+ await expect(create('scope-capacity',scoped(64))).resolves.toBeTruthy();
+ await expect(create('scope-overflow',scoped(65))).rejects.toBeTruthy();
+ await expect(create('scope-string-overflow',{auth:{type:'oauth2',scopes:['x'.repeat(257)]}})).rejects.toBeTruthy();
+});
 it('equips defaults require approval; an account-less space resolves nothing; [] disables',async()=>{
  const c=await create('default');const denied=await create('unapproved');
  // 405 approves every connector on arrival; switching approval off is now the only way to hold one back.
@@ -115,4 +122,23 @@ it('deletes a connector through mcp.servers.delete and through the generic entit
  await new W2EntitiesCommandsTrackingService(deps).deleteEntity(ctx({clientMutationId:randomUUID()},{id:viaGeneric.entity.id}));
  const live=await scratch.query<{id:string}>('select id from public.entities where id=any($1::uuid[]) and deleted_at is null',[[viaMcp.entity.id,viaGeneric.entity.id]]);
  expect(live).toEqual([]);
+});
+
+it('persists large provider catalogs without removing the bounded health cache limit',async()=>{
+ const c=await create('large_catalog');
+ const result={ready:true,reason:'ready',tools:[{name:'read_page',description:'x'.repeat(300_000),inputSchema:{type:'object'}}],checkedAt:new Date().toISOString()};
+ await as(ownerIdentity,q=>q.rpc('record_mcp_server_health',[c.entity.id,JSON.stringify(result)]));
+ expect((await as(ownerIdentity,q=>loadMcpServer(q,c.entity.id))).health?.tools[0]?.description).toHaveLength(300_000);
+ const oversized={...result,tools:[{...result.tools[0],description:'x'.repeat(4_194_304)}]};
+ await expect(as(ownerIdentity,q=>q.rpc('record_mcp_server_health',[c.entity.id,JSON.stringify(oversized)]))).rejects.toThrow(/invalid MCP health result/);
+ expect((await as(memberIdentity,q=>loadMcpServer(q,c.entity.id))).health).toBeUndefined();
+});
+
+it('keeps Figma API and official remote MCP resource identities distinct in SQL',async()=>{
+ const entry=mcpCatalogEntry('figma.api');
+ if(!entry?.definition)throw Error('Missing Figma API catalog');
+ const made=await as(memberIdentity,q=>q.rpc<{entity:{id:string}}>('create_mcp_server_entity',[spaceId,JSON.stringify(entry.definition),null,randomUUID()]));
+ expect((await as(memberIdentity,q=>loadMcpServer(q,made.entity.id))).definition).toMatchObject({catalogId:'figma.api',firstParty:true,url:'https://api.figma.com/v1'});
+ await expect(as(memberIdentity,q=>q.rpc('create_mcp_server_entity',[spaceId,JSON.stringify({...entry.definition,name:'forged-figma',url:'https://mcp.figma.com/mcp'}),null,randomUUID()]))).rejects.toBeTruthy();
+ await expect(as(memberIdentity,q=>q.rpc('create_mcp_server_entity',[spaceId,JSON.stringify({...entry.definition,name:'forged-remote',firstParty:false}),null,randomUUID()]))).rejects.toBeTruthy();
 });

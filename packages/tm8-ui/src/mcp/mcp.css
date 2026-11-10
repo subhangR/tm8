@@ -682,3 +682,16 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+.mcp-connect-handoff { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: var(--pn-paper); color: var(--pn-ink); }
+.mcp-connect-handoff__card { width: min(100%, 400px); text-align: center; }
+.mcp-connect-handoff__brand { display: block; font-weight: 700; font-size: 20px; margin-bottom: 44px; }
+.mcp-connect-handoff__indicator { display: grid; place-items: center; width: 40px; height: 40px; margin: 0 auto 20px; border: 2px solid var(--pn-line); border-radius: 50%; font-size: 20px; }
+.mcp-connect-handoff__indicator[data-phase='pending'] { border-top-color: currentColor; animation: mcp-connect-spin .8s linear infinite; }
+.mcp-connect-handoff h1 { font-size: 22px; font-weight: 600; line-height: 1.3; margin: 0 0 12px; }
+.mcp-connect-handoff p { color: var(--pn-ink-2); font-size: 14px; line-height: 1.6; margin: 0; }
+.mcp-connect-handoff__action { display: inline-flex; justify-content: center; align-items: center; min-height: 40px; padding: 0 18px; margin: 24px 0 12px; border-radius: 6px; background: var(--pn-ink); color: var(--pn-paper); text-decoration: none; font-size: 14px; font-weight: 600; }
+.mcp-connect-handoff__action:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+.mcp-connect-handoff .mcp-connect-handoff__hint { font-size: 12px; }
+@keyframes mcp-connect-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .mcp-connect-handoff__indicator[data-phase='pending'] { animation: none; } }

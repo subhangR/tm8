@@ -1,32 +1,4 @@
-/**
- * SETTINGS → CONNECTORS (§10.1 personal view, §10.3 Space-admin view, D1).
- *
- * This replaces the card list `McpSettings.tsx` used to render. The old screen
- * was a stack of `<article>` cards, one per connector, each repeating the
- * connector's URL and approval state and hiding the account work two clicks
- * deep behind "Manage <name>" — so the one question the page exists to answer,
- * *which of my connectors are actually working*, took N clicks to read.
- *
- * WHAT THE SHAPE IS, AND WHY IT IS THREE TABS ON ONE PAGE.
- *
- *  - **Yours** — every connector in this Space, with the §10.0 status. This is
- *    the page as a table: Connector / Type / Access / Status, one row each,
- *    the thing D1 asked for.
- *  - **Discover** — the catalog, from `mcp.catalog.list` (B16), NOT from the
- *    old `ui/mcp/directory.ts`. That file held the same three presets as
- *    UI-only data, so the CLI could not offer them and no server could tell
- *    which preset a connector came from. Each card's button comes from the
- *    entry's `available` and `added` (S7).
- *  - **Space admin** — §10.3. It is a TAB rather than a route because the one
- *    settings nav has a single `connectors` section id and the section
- *    contract forbids this lane editing the shell, the nav or the section
- *    types (S19 accepted this). A non-admin never sees the tab, and that is
- *    presentation only: every write it offers is checked by the server.
- *
- * ONE RULE WORTH STATING. A catalog load error NEVER blocks anything here, and
- * nothing on this page is the gate for a send or a launch — the server resolves
- * defaults itself (today's `McpPicker` rule, kept).
- */
+import { AppCatalog } from './AppCatalog';
 import { useEffect, useMemo, useState } from 'react';
 import type { McpCatalogEntry } from '@tm8/contract';
 import { SectionFrame } from '../settings-space';
@@ -36,7 +8,7 @@ import { ConnectorForm } from './ConnectorForm';
 import { ImportMcpJson } from './ImportMcpJson';
 import { accessLabel, limitedAccessCount, matchesFilter, matchesSearch, rowStatusOf, statusLabel, typeLabel, FILTERING, NO_FILTER, STATUS_ROWS, type ConnectorFilter } from './connector-rows';
 import { useMcpCatalog } from './context';
-import { takeConnectedToast } from './oauth-callback';
+import { takeConnectedToast, takeConnectionFailure } from './oauth-callback';
 import { McpUiError } from './errors';
 import { connectorAdmin } from './ConnectorEntityBlock';
 import { useConnectorRun } from './useConnectorRun';
@@ -92,52 +64,6 @@ function StatusCell({ server, admin, busy, onConnect, onApprove, onTest }: {
   </span>;
 }
 
-/** S7: the Discover card's one button, decided by `available` and `added`. */
-function DiscoverCard({ entry, admin, busy, onAdd, onRequest, onOpen }: {
-  entry: McpCatalogEntry; admin: boolean; busy: boolean;
-  onAdd(): void; onRequest(): void; onOpen(serverId: string): void;
-}) {
-  const added = entry.added ?? [];
-  const approved = added.find(row => row.approved);
-  const open = added.find(row => !row.approved);
-  return <article className="mcp-card mcp-discover" key={entry.id}>
-    <header><ConnectorLogo logo={entry.logo} title={entry.title} /><h3>{entry.title}</h3></header>
-    <p>{entry.summary}</p>
-    {!!entry.scopeLabels?.length && <ul className="mcp-scopes">{entry.scopeLabels.map(scope => <li key={scope}>{scope}</li>)}</ul>}
-    {entry.requirement && <p className="mcp-note"><strong>Requires:</strong> {entry.requirement}</p>}
-    <p><a href={entry.docsUrl} target="_blank" rel="noopener noreferrer">{entry.title} MCP documentation</a></p>
-    {!entry.available
-      // B15: announced but not usable. A card whose Connect always fails is
-      // worse than no card, so the button is off for everyone, admin included.
-      ? <button type="button" disabled aria-disabled="true" title="This connector isn't available in tm8 yet.">Coming soon</button>
-      : approved
-        ? <button type="button" onClick={() => onOpen(approved.serverId)}>Added</button>
-        : open
-          // B22/B25: a member already asked for this entry. An admin APPROVES
-          // that row; creating a second connector would orphan it.
-          ? admin
-            ? <button type="button" disabled={busy} onClick={onAdd}>Approve request</button>
-            : <button type="button" disabled aria-disabled="true" title="An administrator has been asked to add this connector.">Requested</button>
-          : admin
-            ? <button type="button" disabled={busy} onClick={onAdd}>Add to Space</button>
-            : <button type="button" disabled={busy} onClick={onRequest}>Request</button>}
-  </article>;
-}
-
-/** §10.3's Policy card. Both controls are honestly off: neither verb exists on this node yet. */
-function PolicyCard() {
-  return <section className="mcp-card">
-    <h3>Policy</h3>
-    <label className="mcp-toggle"><span>
-      <input type="checkbox" disabled aria-disabled="true" />
-      Allow members&rsquo; personal connections in sessions spawned into this Space from other Spaces
-    </span></label>
-    <p className="mcp-note">Not available yet.</p>
-    <button type="button" disabled aria-disabled="true">Revoke all connections in this Space</button>
-    <p className="mcp-note">Coming with connection hardening.</p>
-  </section>;
-}
-
 export function ConnectorsTable({ catalog, port, admin, busy, run, refresh, loading, error, tab, setTab, sheet, setSheet }: {
   catalog?: McpCatalog; port: McpPort; admin: boolean; busy: boolean;
   run(action: () => Promise<unknown>, success: string): Promise<void>;
@@ -191,8 +117,8 @@ export function ConnectorsTable({ catalog, port, admin, busy, run, refresh, load
 
   return <>
     <nav className="mcp-tabs" aria-label="Connector views">
-      <button type="button" aria-pressed={tab === 'yours'} onClick={() => setTab('yours')}>Yours</button>
-      <button type="button" aria-pressed={tab === 'discover'} onClick={() => setTab('discover')}>Discover</button>
+      <button type="button" aria-pressed={tab === 'yours'} onClick={() => setTab('yours')}>Your apps</button>
+      <button type="button" aria-pressed={tab === 'discover'} onClick={() => setTab('discover')}>Browse apps</button>
       {admin && <button type="button" aria-pressed={tab === 'admin'} onClick={() => setTab('admin')}>Space admin</button>}
       <div className="mcp-tabs__grow" />
       {tab !== 'discover' && <>
@@ -239,24 +165,31 @@ export function ConnectorsTable({ catalog, port, admin, busy, run, refresh, load
     {tab === 'discover' && <>
       {entriesError && <p role="alert" className="mcp-error">Couldn&rsquo;t load the connector catalog. <button type="button" onClick={refresh}>Retry</button></p>}
       {!entries && !entriesError && <p role="status">Loading catalog…</p>}
-      {entries && <div className="mcp-discover-grid">{entries.map(entry => <DiscoverCard key={entry.id} entry={entry} admin={admin} busy={busy}
+      {entries && <AppCatalog entries={entries} servers={servers} admin={admin} busy={busy}
         onOpen={serverId => { setActive(serverId); setTab('yours'); }}
-        onAdd={() => void run(async () => {
+        onAdd={entry => void run(async () => {
           const outcome = await port.addFromCatalog(entry.id);
           setActive(outcome.serverId);
+          setTab('yours');
         }, `${entry.title} added to this Space.`)}
-        onRequest={() => void run(() => port.request({ catalogId: entry.id }), `${entry.title} requested. The administrators have been asked.`)}
-      />)}</div>}
+        onRequest={entry => void run(() => port.request({ catalogId: entry.id }), `${entry.title} requested. The administrators have been asked.`)}
+      />}
     </>}
 
     {(tab === 'yours' || tab === 'admin') && <>
 
-      <table className="mcp-table">
+      {tab === 'yours' && <div className="connect-apps__grid">{visible.map(server => <article className="connect-apps__card" key={server.id}>
+        <button className="connect-apps__card-open" aria-label={`Open ${server.title}`} onClick={() => setActive(server.id)}>
+          <ConnectorLogo logo={serverLogo(server.source)} title={server.title} /><span><strong>{server.title}</strong><small>{accessLabel(server)}</small></span>
+        </button>
+        <p>{server.description}</p>
+        <StatusCell server={server} admin={admin} busy={busy} onConnect={() => openConnect(server)} onApprove={() => void approve(server)} onTest={() => setActive(server.id)} />
+        <button onClick={() => setActive(server.id)}>Manage accounts</button>
+      </article>)}</div>}
+      {tab === 'admin' && <table className="mcp-table">
         <thead><tr>
           <th scope="col">Connector</th><th scope="col">Type</th>
-          {tab === 'yours'
-            ? <><th scope="col">Access</th><th scope="col">Status</th></>
-            : <><th scope="col">Default on</th><th scope="col">Shared connection</th><th scope="col">External clients</th><th scope="col">Used by</th></>}
+          <th scope="col">Default on</th><th scope="col">Shared connection</th><th scope="col">External clients</th><th scope="col">Used by</th>
         </tr></thead>
         <tbody>
           {loading && !catalog && <SkeletonRows />}
@@ -274,18 +207,7 @@ export function ConnectorsTable({ catalog, port, admin, busy, run, refresh, load
                 </button>
               </td>
               <td>{typeLabel(server)}</td>
-              {tab === 'yours' ? <>
-                <td>{accessLabel(server)}</td>
-                <td><StatusCell server={server} admin={admin} busy={busy}
-                  onConnect={() => openConnect(server)} onApprove={() => void approve(server)}
-                  onTest={() => void run(async () => {
-                    const result = await port.test({ serverId: server.id, ...(connections[0] ? { credentialId: connections[0].id } : {}) });
-                    if (!result.ok) throw new McpUiError('This connector still did not answer. Open it to see the details.');
-                  }, 'Connection tested.')} /></td>
-              </> : <>
-                {/* §10.3's inline toggles. Approval left this list with 405:
-                    every connector a member adds is live, so the column only
-                    ever read "yes". */}
+              <>
                 <td><label><span className="mcp-sr">On by default for everyone in this Space: {server.title}</span>
                   <input type="checkbox" checked={server.source?.defaultOn === true} disabled={busy || !server.canManage}
                     onChange={e => void run(() => port.patch(server, { defaultOn: e.target.checked }), 'Space default updated.')} />
@@ -296,11 +218,11 @@ export function ConnectorsTable({ catalog, port, admin, busy, run, refresh, load
                     onChange={e => void run(() => port.patch(server, { allowExternalClients: e.target.checked }), 'External client access updated.')} />
                 </label></td>
                 <td>{connections.filter(a => a.scope !== 'space').length}</td>
-              </>}
+              </>
             </tr>;
           })}
         </tbody>
-      </table>
+      </table>}
 
       {catalog && servers.length === 0 && !loading && <div className="mcp-empty">
         {admin
@@ -318,20 +240,15 @@ export function ConnectorsTable({ catalog, port, admin, busy, run, refresh, load
         <div className="mcp-actions">
           {query && <button type="button" onClick={() => setQuery('')}>Clear search</button>}
           {FILTERING(filter) && <button type="button" onClick={() => setFilter(NO_FILTER)}>Clear filter</button>}
-          {tab === 'yours' && <button type="button" onClick={() => setTab('discover')}>Discover</button>}
+          {tab === 'yours' && <button type="button" onClick={() => setTab('discover')}>Browse apps</button>}
         </div>
       </div>}
 
-      {tab === 'admin' && <PolicyCard />}
       {tab === 'admin' && servers.some(server => server.transport === 'stdio') && <p className="mcp-note">
         Local connectors run on the tm8 host and can hold an API key only.
       </p>}
     </>}
 
-    {tab !== 'discover' && <p className="mcp-note mcp-strict">
-      Connectors you added in the Claude app or a <code>.mcp.json</code> file aren&rsquo;t used by tm8 chats or sessions, whatever the harness.
-      Add them here. <button type="button" onClick={() => setSheet({ kind: 'import' })}>Import from .mcp.json</button>
-    </p>}
 
     {drawer && <ConnectorDrawer server={drawer} port={port} admin={admin} busy={busy} run={run} onClose={() => setActive(null)} />}
   </>;
@@ -348,12 +265,18 @@ export function ConnectorsSection() {
   // "connected as …" line cannot be handed over in React state. The callback
   // page parks the one authored sentence and this reads it once, on the way in.
   const [parked] = useState(() => takeConnectedToast());
-  const { busy, run, message, failure, dismiss } = useConnectorRun(refresh, parked);
+  const [callbackFailure, setCallbackFailure] = useState(() => takeConnectionFailure());
+  const { busy, run, message, failure: actionFailure, dismiss: dismissAction } = useConnectorRun(refresh, parked);
+  const failure = actionFailure ?? callbackFailure;
+  const dismiss = () => { dismissAction(); setCallbackFailure(null); };
   const [tab, setTab] = useState<Tab>('yours');
+  useEffect(() => {
+    if (!loading && catalog?.servers.length === 0) setTab('discover');
+  }, [loading, catalog]);
   const [sheet, setSheet] = useState<Sheet>(null);
 
   if (!port) {
-    return <SectionFrame title="Connectors" bodyTestId="connectors-body">
+    return <SectionFrame title="Connect Apps" bodyTestId="connectors-body">
       <p role="status">Connectors are unavailable on this connection.</p>
     </SectionFrame>;
   }
@@ -361,8 +284,8 @@ export function ConnectorsSection() {
   // widened by any single connector this viewer may approve or manage. Hiding
   // the tab is presentation; the server stays the boundary.
   const admin = connectorAdmin(catalog);
-  return <SectionFrame title="Connectors" bodyTestId="connectors-body" measure={false}
-    action={<details className="mcp-add"><summary className="set-chip">+ Add</summary>
+  return <SectionFrame title="Connect Apps" bodyTestId="connectors-body" measure={false}
+    action={<details className="mcp-add"><summary className="set-chip">Advanced</summary>
       <div>
         <button type="button" onClick={e => { close(e); setSheet(null); setTab('discover'); }}>From catalog…</button>
         <button type="button" onClick={e => { close(e); setTab('yours'); setSheet({ kind: 'custom' }); }}>{admin ? 'Custom connector…' : 'Request a connector…'}</button>
@@ -370,7 +293,7 @@ export function ConnectorsSection() {
       </div>
     </details>}>
     <section className="mcp-settings" aria-label="Connector management" aria-busy={busy}>
-      <p>Connect tools so your chats and sessions can use them.</p>
+      <p>Browse apps, connect accounts, and choose what your teammates can use.</p>
       {failure && <p role="alert" className="mcp-flash mcp-flash--error">{failure} <button type="button" className="mcp-link" onClick={dismiss}>Dismiss</button></p>}
       {message && <p role="status" className="mcp-flash">{message}</p>}
       <ConnectorsTable catalog={catalog} port={port} admin={admin} busy={busy} run={run} refresh={refresh}

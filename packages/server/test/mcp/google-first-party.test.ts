@@ -198,7 +198,7 @@ describe('the handlers: mcp.oauth.begin / callback / revoke on a first-party con
         if (fn === 'mark_mcp_credential_needs_reconnect') return { changed: true };
         if (fn === 'delete_space_credential') return { id: credentialId, revoked: true };
         if (fn === 'mcp_credential_readiness') return { reason: 'ready' };
-        if (fn === 'touch_mcp_credential' || fn === 'record_mcp_server_health') return null;
+        if (fn === 'touch_mcp_credential' || fn === 'record_mcp_server_health' || fn === 'record_mcp_test_audit') return null;
         if (fn === 'read_mcp_credential') {
           const sealed = sealSecret(await keys.keyFor('local:v1'), JSON.stringify(stored), mcpSecretBinding({ spaceId: 'space', credentialId }, 'local:v1'));
           return { credentialId, spaceId: 'space', serverId, definitionVersion: 3, keyId: 'local:v1', ciphertext: sealed.ciphertext.toString('base64'), nonce: sealed.nonce.toString('base64') };
@@ -585,4 +585,13 @@ describe('helpers', () => {
   it('driveLiteral escapes backslash before quote', () => {
     expect(driveLiteral("a\\'b")).toBe("'a\\\\\\'b'");
   });
+});
+
+it('advertises Google reads separately from writes so native harnesses can apply their tool approval policy',async()=>{
+  const listed=await host().request(definition(gmail,{gates:{gmailSend:true}}),'tools/list',{}, {accessToken:'fixture',grantedScopes:[...gmail.scopes]});
+  expect(listed).toMatchObject({tools:expect.arrayContaining([
+    expect.objectContaining({name:'search_messages',annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true}}),
+    expect.objectContaining({name:'create_draft',annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:false,openWorldHint:true}}),
+    expect.objectContaining({name:'send_message',annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:false,openWorldHint:true}}),
+  ])});
 });

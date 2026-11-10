@@ -1131,6 +1131,20 @@
       "group": "extras",
       "label": "Warn fill",
       "surface": true
+    },
+    {
+      "key": "--pn-provider-tile",
+      "kind": "colour",
+      "group": "surface",
+      "label": "Provider tile",
+      "surface": false
+    },
+    {
+      "key": "--pn-provider-tile-line",
+      "kind": "colour",
+      "group": "surface",
+      "label": "Provider tile border",
+      "surface": false
     }
   ]
 }

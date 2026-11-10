@@ -1,7 +1,7 @@
 {
   "id": "builtin:atelier-light",
   "title": "Atelier Light",
-  "builtinRevision": 2,
+  "builtinRevision": 3,
   "darkSibling": "builtin:atelier-dark",
   "tokens": {
     "--pn-active": "#ECE8DF",
@@ -47,6 +47,8 @@
     "--pn-paper": "#F4F2EC",
     "--pn-pr-merged": "#7B5EA7",
     "--pn-pr-merged-soft": "rgba(123, 94, 167, 0.14)",
+    "--pn-provider-tile": "#fff",
+    "--pn-provider-tile-line": "#e5e7eb",
     "--pn-r-lg": "14px",
     "--pn-r-md": "10px",
     "--pn-r-pill": "999px",

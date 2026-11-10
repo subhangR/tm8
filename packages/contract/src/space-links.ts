@@ -351,6 +351,10 @@ export type SpaceLinkRefusalReason =
 export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'credentials.', kinds: 'all', reason: 'credential_management' },
   { prefix: 'node.credentials.', kinds: 'all', reason: 'credential_management' },
+  { prefix: 'mcp.tokens.', kinds: 'all', reason: 'credential_management' },
+  { prefix: 'mcp.sessions.provenance', kinds: 'all', reason: 'session_body', exact: true },
+  { prefix: 'chat.setMcpSelections', kinds: 'all', reason: 'credential_management', exact: true },
+  { prefix: 'chat.getMcpSelections', kinds: 'all', reason: 'credential_management', exact: true },
   { prefix: 'spaceLinks.', kinds: 'command', reason: 'link_management' },
   // L3 (279): `add` itself opens a hop through the caller's OWN link. Through
   // a link the caller is B's member, so allowing it would let an agent in A
@@ -389,6 +393,8 @@ export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'chat.interrupt', kinds: 'all', reason: 'process_start', exact: true },
   // D83 (432): a fork makes a WhatsApp group and starts a new session for it.
   { prefix: 'bridges.groups.fork', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'bridges.resume', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'bridges.work.start', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'forms.responses.submit', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'forms.responses.redeliver', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'containers.create', kinds: 'all', reason: 'process_start', exact: true },

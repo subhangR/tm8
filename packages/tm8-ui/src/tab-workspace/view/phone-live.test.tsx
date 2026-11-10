@@ -262,7 +262,7 @@ describe('what the screen shows', () => {
     await waitFor(() => expect(signalTo['term-1']).toBeTypeOf('function'));
     const emit = (signal: ScreenSignal) => act(() => signalTo['term-1']!(signal));
     emit({ type: 'frame', src: `data:image/jpeg;base64,${JPEG}` });
-    expect(view.getByTestId('phone-live-frame').getAttribute('src')).toContain(JPEG);
+    await waitFor(() => expect(view.getByTestId('phone-live-frame').getAttribute('src')).toContain(JPEG));
     emit(userVar('tm8run', { title: 'Your cases', device: 'iPhone 16 Pro Max', run: 'live-1', planned: ['Search works', 'Cart badge'] }));
     emit(userVar('tm8step', { i: 0, name: 'Search works', state: 'run' }));
     let cases = view.getByTestId('phone-live-cases').querySelectorAll('li');

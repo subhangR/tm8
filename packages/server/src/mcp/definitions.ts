@@ -21,7 +21,7 @@ const SELECT = `select e.id,e.space_id,e.version,m.mcp_security_revision as secu
 export async function canAttachMcp(q: Querier, spaceId: string, targetId?: string): Promise<boolean> {
   if (!targetId) return false;
   const rows = await q.query<{ allowed: boolean }>(`select internal.is_space_member($2::uuid) and exists(select 1 from public.entities where id=$1 and space_id=$2
-    and kind in ('task','team_member','work_session') and deleted_at is null) as allowed`, [targetId,spaceId]);
+    and internal.entity_readable(id) and deleted_at is null) as allowed`, [targetId,spaceId]);
   return rows[0]?.allowed === true;
 }
 function view(row: DefinitionRow, attach: boolean): McpServerView & {securityRevision?:number} {
@@ -67,6 +67,8 @@ interface ResolvedAccount {
   unusable?:{credentialId:string;reason:McpReadinessReason};
 }
 export interface McpResolveOptions {
+  /** Server-derived session/chat subjects; separate from the public 32-target budget. */
+  contextTargetIds?: string[];
   credentialReady?:McpCredentialReadiness;
   /**
    * §6's provenance root, ALWAYS derived by the server — it is a parameter and
@@ -120,22 +122,23 @@ const DEFAULT_ON_DEPTH=1_000_000;
  *    so asking for something unusable by name is still an error.
  */
 export async function resolveMcpSelections(q:Querier,input:McpResolveInput,options?:McpResolveOptions|McpCredentialReadiness):Promise<McpResolveResult> {
-  const {credentialReady,rootMemberId,pinnedOnly,noHumanRoot}=typeof options==='function'
-    ?{credentialReady:options,rootMemberId:undefined,pinnedOnly:undefined,noHumanRoot:undefined}:(options??{});
+  const {credentialReady,rootMemberId,pinnedOnly,noHumanRoot,contextTargetIds}=typeof options==='function'
+    ?{credentialReady:options,rootMemberId:undefined,pinnedOnly:undefined,noHumanRoot:undefined,contextTargetIds:undefined}:(options??{});
   const checked=McpResolveInputSchema.parse(input);
   let selections=checked.mcpSelections;
   const fromDefaults=selections===undefined;
   const skipped:McpSkippedSelection[]=[];
   if (selections===undefined) {
-    const sources=[...new Set([...(checked.targetIds??[]),...(checked.teamMemberId?[checked.teamMemberId]:[])])];
+    if ((contextTargetIds?.length ?? 0)>34) throw new CollabError('invalid_input','MCP context exceeds the subject bound');
+    const sources=[...new Set([...(contextTargetIds??[]),...(checked.targetIds??[]),...(checked.teamMemberId?[checked.teamMemberId]:[])])];
     // Validate every supplied target rather than silently resolving a partial set.
     for (const id of sources) if (!await canAttachMcp(q,checked.spaceId,id)) throw new CollabError('forbidden','MCP defaults target is unavailable');
     const lineage=await q.query<{id:string;parent_id:string|null;depth:number;path:string[]}>(`with recursive lineage as (
       select e.id,e.parent_id,0 as depth,array[e.id] as path from public.entities e
-      where e.id=any($1::uuid[]) and e.space_id=$2 and e.deleted_at is null
+      where e.id=any($1::uuid[]) and e.space_id=$2 and e.deleted_at is null and internal.entity_readable(e.id)
       union all
       select p.id,p.parent_id,l.depth+1,l.path||p.id from lineage l join public.entities p on p.id=l.parent_id
-      where p.space_id=$2 and p.deleted_at is null and l.depth<16 and not p.id=any(l.path)
+      where p.space_id=$2 and p.deleted_at is null and internal.entity_readable(p.id) and l.depth<16 and not p.id=any(l.path)
     ) select id,parent_id,depth,path from lineage limit 1025`,[sources,checked.spaceId]);
     if(lineage.length>1024 || lineage.some(row=>row.parent_id && (row.path.includes(row.parent_id) || row.depth===16))) {
       throw new CollabError('invalid_input','MCP default ancestry exceeds the depth or cycle bound');

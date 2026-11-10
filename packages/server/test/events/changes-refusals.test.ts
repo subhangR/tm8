@@ -37,7 +37,7 @@ describe('events.changes refusals', () => {
       'form_answers_invalid', 'form_not_open', 'form_respondent_not_allowed', 'form_response_limit',
       'form_structure_frozen',
       'invalid_cursor', 'invalid_input',
-      'invariant_violation', 'limit_exceeded', 'not_found', 'not_implemented', 'payload_too_large',
+      'invariant_violation', 'limit_exceeded', 'not_community_admin', 'not_found', 'not_implemented', 'payload_too_large',
       'rate_limited', 'unauthenticated', 'upstream_unavailable', 'version_conflict',
     ]);
   });

@@ -3,6 +3,7 @@ import { CollabError, assignMcpServerKeys, isCollabError, mcpServerKey } from '@
 import { MCP_PROTOCOL_VERSION, MCP_SERVER_INFO } from '@tm8/mcp';
 
 import type { Db, DbClaims, Querier } from '../db/types.js';
+import { externalMcpClaims } from '../facade/context.js';
 import { readJsonBody } from '../http/body.js';
 import { FixedWindowLimiter } from '../http/fixed-window.js';
 import { wsClientKey } from '../http/ws-admission.js';
@@ -272,7 +273,7 @@ export function createMcpEndpointRoute(options: McpEndpointOptions): McpEndpoint
 
   /** The Spaces this token may act in RIGHT NOW: its list ∩ live membership (357). */
   async function admitted(token: ResolvedMcpToken, requestId: string): Promise<AdmittedSpace[]> {
-    const rows = await db.rpc<AdmittedSpace[]>(claimsFor(token, requestId), 'mcp_token_spaces', [token.tokenId]);
+    const rows = await db.rpc<AdmittedSpace[]>(externalMcpClaims(token, requestId), 'mcp_token_spaces', [token.tokenId]);
     return rows.slice(0, MAX_SPACES);
   }
 
@@ -287,7 +288,7 @@ export function createMcpEndpointRoute(options: McpEndpointOptions): McpEndpoint
     const found: Array<Omit<OfferedConnector, 'serverKey'> & { serverKey: string }> = [];
     for (const space of await admitted(token, requestId)) {
       if (found.length >= MAX_CONNECTORS) break;
-      const rows = await db.tx(claimsFor(token, requestId, space.spaceId), q => externalConnectors(q, space.spaceId));
+      const rows = await db.tx(externalMcpClaims(token, requestId, space.spaceId), q => externalConnectors(q, space.spaceId));
       for (const row of rows) {
         if (found.length >= MAX_CONNECTORS) break;
         found.push({ spaceId: space.spaceId, memberId: space.memberId, serverId: row.id, serverKey: row.serverKey });
@@ -312,7 +313,7 @@ export function createMcpEndpointRoute(options: McpEndpointOptions): McpEndpoint
       const began = performance.now();
       let answer: unknown;
       try {
-        answer = await proxy.request(claimsFor(token, requestId, connector.spaceId),
+        answer = await proxy.request(externalMcpClaims(token, requestId, connector.spaceId),
           externalSessionId(token.tokenId, connector.spaceId), connector.serverId, 'tools/list');
       } catch (error) {
         await auditExternal(token, connector, requestId, { method: 'tools/list', tool: null, outcome: 'denied',
@@ -370,7 +371,7 @@ export function createMcpEndpointRoute(options: McpEndpointOptions): McpEndpoint
     const base = { method: 'tools/call' as const, tool: mcpToolName('tools/call', callParams),
       requestBytes: byteSize(supplied) };
     try {
-      const result = await proxy.request(claimsFor(token, requestId, spaceId),
+      const result = await proxy.request(externalMcpClaims(token, requestId, spaceId),
         externalSessionId(token.tokenId, spaceId), connector.serverId, 'tools/call', callParams);
       await auditExternal(token, connector, requestId,
         { ...base, outcome: 'succeeded', responseBytes: byteSize(result), latencyMs: performance.now() - began });
@@ -395,7 +396,7 @@ export function createMcpEndpointRoute(options: McpEndpointOptions): McpEndpoint
       outcome: 'succeeded' | 'failed' | 'denied'; denyReason?: string;
       requestBytes: number; responseBytes?: number; latencyMs?: number }): Promise<void> {
     try {
-      await db.rpc(claimsFor(token, requestId, connector.spaceId), 'record_mcp_token_call_audit',
+      await db.rpc(externalMcpClaims(token, requestId, connector.spaceId), 'record_mcp_token_call_audit',
         [token.tokenId, connector.spaceId, connector.serverId, null, entry.method, entry.tool, entry.outcome,
          connector.memberId, entry.denyReason ?? null,
          entry.latencyMs === undefined ? null : Math.max(0, Math.round(entry.latencyMs)),
@@ -428,18 +429,6 @@ async function externalConnectors(q: Querier, spaceId: string): Promise<Array<{ 
     serverKey: mcpServerKey({ name: row.name!, ...(row.server_key ? { serverKey: row.server_key } : {}) }) }));
 }
 
-/**
- * The claims one external call runs under. `authKind: 'mcp'` is what
- * `require_human_auth_kind()` refuses — so the token reaches no human door — and
- * what 357's own functions demand. `sessionSpaceId` is 227's pin, bound only
- * once a Space has been admitted, so for the rest of the call RLS answers for
- * that Space alone. No `actorId`, and never node admin (§5.5: "Node admin
- * rights never widen it").
- */
-function claimsFor(token: ResolvedMcpToken, requestId: string, spaceId?: string): DbClaims {
-  return { identityId: token.identityId, authKind: 'mcp', nodeAdmin: false, requestId,
-    ...(spaceId ? { sessionSpaceId: spaceId } : {}) };
-}
 
 const EXTERNAL_SESSION_PREFIX = 'mcp-token';
 /**

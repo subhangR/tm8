@@ -2922,6 +2922,7 @@ function applyChatAbout(row: KindConfig): KindConfig {
   const rowActions: ActionRef[] = declared.includes('chat-about') ? [...declared] : [...declared, 'chat-about'];
   return {
     ...row,
+    mcpEquipment: true,
     list: { ...row.list, rowActions },
     panel: { ...row.panel, primaries: withChatBesideRun(row.panel.primaries) },
   };

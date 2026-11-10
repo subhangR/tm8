@@ -206,4 +206,9 @@ describe('EDGE_KINDS — the edge-type registry, endpoint half', () => {
       expect(relationsOf(config.kind).length, config.kind).toBeGreaterThan(0);
     }
   });
+  it('offers MCP defaults on contextual entities without extending skill equipment',()=>{
+    expect(relationsOf('craft').find(r=>r.type==='equips'&&r.direction==='outgoing')?.peers).toEqual(['mcp_server']);
+    expect(relationsOf('c:research').find(r=>r.type==='equips'&&r.direction==='outgoing')?.peers).toEqual(['mcp_server']);
+    expect(relationsOf('skill').find(r=>r.type==='equips'&&r.direction==='incoming')?.peers).toEqual(['task','team_member','work_session']);
+  });
 });

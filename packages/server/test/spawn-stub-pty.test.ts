@@ -21,7 +21,7 @@ class SpawnDb implements Db {
       query: async <R>(sql: string, params: readonly unknown[] = []): Promise<R[]> => {
         // This fixture has a visible teammate and no equipped MCP connectors.
         if (sql.includes('internal.is_space_member($2::uuid)') && sql.includes('as allowed')) {
-          return [{ allowed: params[0] === TEAMMATE && params[1] === SPACE }] as R[];
+          return [{ allowed: (params[0] === TEAMMATE || params[0] === SESSION) && params[1] === SPACE }] as R[];
         }
         if (sql.includes('from public.team_members')) {
           return [{
@@ -215,7 +215,7 @@ describe('server spawn integration with a stub PTY', () => {
       // its own TUI down in ~1.7s, so its DISAPPEARANCE from this command line
       // is a production defect and must fail here.
       command: expect.stringMatching(
-        /^codex -c 'mcp_servers=\{\}' --model 'gpt-5\.6-sol' -c 'check_for_update_on_startup=false' --ask-for-approval never --sandbox workspace-write .*--no-alt-screen -c /,
+        /^codex -c 'mcp_servers=\{\}' -c 'features.apps=false' -c 'features.plugins=false' --model 'gpt-5\.6-sol' -c 'check_for_update_on_startup=false' --ask-for-approval never --sandbox workspace-write .*--no-alt-screen -c /,
       ),
       env: expect.objectContaining({
         TM8_MODEL: 'gpt-5.6-sol',

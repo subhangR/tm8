@@ -105,6 +105,7 @@ const COMPOSE = ['https://www.googleapis.com/auth/gmail.compose'];
 export const GMAIL_TOOLS: readonly GoogleTool[] = [
   tool({
     name: 'search_messages',
+    effect: 'read',
     scopes: READ,
     description: 'Search the mailbox with Gmail search syntax (for example "from:alice is:unread newer_than:7d"). Returns sender, subject, date and snippet for each match.',
     input: z.object({
@@ -125,6 +126,7 @@ export const GMAIL_TOOLS: readonly GoogleTool[] = [
   }),
   tool({
     name: 'get_message',
+    effect: 'read',
     scopes: READ,
     description: 'Read one message: headers, plain-text body and attachment names.',
     input: z.object({ id: MessageId.describe('Message id from search_messages.') }).strict(),
@@ -134,6 +136,7 @@ export const GMAIL_TOOLS: readonly GoogleTool[] = [
   }),
   tool({
     name: 'get_thread',
+    effect: 'read',
     scopes: READ,
     description: 'Read a whole conversation, oldest message first.',
     input: z.object({ id: MessageId.describe('Thread id (threadId from search_messages).') }).strict(),
@@ -144,6 +147,7 @@ export const GMAIL_TOOLS: readonly GoogleTool[] = [
   }),
   tool({
     name: 'list_labels',
+    effect: 'read',
     scopes: READ,
     description: 'List the mailbox labels (system and user labels) with their ids.',
     input: z.object({}).strict(),
@@ -154,6 +158,7 @@ export const GMAIL_TOOLS: readonly GoogleTool[] = [
   }),
   tool({
     name: 'create_draft',
+    effect: 'write',
     scopes: COMPOSE,
     description: 'Create a draft in the mailbox. Nothing is sent; the person reviews and sends it from Gmail.',
     input: Compose,
@@ -166,6 +171,7 @@ export const GMAIL_TOOLS: readonly GoogleTool[] = [
   }),
   tool({
     name: 'send_message',
+    effect: 'write',
     scopes: COMPOSE,
     description: 'Send an email now, as the connected account. Only available when a Space admin has allowed sending for this connector.',
     gate: GMAIL_SEND_GATE,

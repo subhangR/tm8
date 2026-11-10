@@ -4,6 +4,16 @@ import { McpServerDefinitionSchema, McpSelectionsSchema, McpOAuthCallbackInputSc
 import { EntityStateSchema, ServerOnlyCredentialProviderNameSchema, SpaceCredentialProviderNameSchema } from '../src/schemas.js';
 const definition = { name: 'fixture', transport: 'http', url: 'https://example.test/mcp', envKeys: [], headerKeys: [], auth: { type: 'none' }, approved: false };
 describe('MCP metadata boundary', () => {
+  it('preserves standard provider tool metadata when recording connector health', () => {
+    const tool = { name: 'read_status', title: 'Read status', inputSchema: { type: 'object' },
+      outputSchema: { type: 'object', properties: { ready: { type: 'boolean' } } },
+      annotations: { title: 'Status', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      icons: [{ src: 'https://example.com/status.svg', mimeType: 'image/svg+xml', sizes: ['any'] }],
+      execution: { taskSupport: 'forbidden' }, _meta: { 'example.com/tool': 'status' } };
+    const health = { ready: true, reason: 'ready', checkedAt: new Date().toISOString(), tools: [tool] };
+    expect(McpTestResultSchema.parse(health).tools).toEqual([tool]);
+    expect(McpTestResultSchema.safeParse({ ...health, tools: [{ ...tool, annotations: { readOnlyHint: 'yes' } }] }).success).toBe(false);
+  });
   it('admits a public definition and state', () => {
     expect(McpServerDefinitionSchema.safeParse(definition).success).toBe(true);
     expect(EntityStateSchema.safeParse({kind:'mcp_server',definition}).success).toBe(true);
@@ -163,7 +173,8 @@ describe('a connector tool as a real MCP server lists it', () => {
   it('accepts the spec-added fields and strips keys tm8 does not know', () => {
     const parsed = McpToolSchema.parse(context7Tool);
     expect(parsed).toMatchObject({ name: 'resolve-library-id', title: 'Resolve Context7 Library ID', annotations: { readOnlyHint: true } });
-    expect('_meta' in parsed).toBe(false);
+    expect(parsed._meta).toEqual(context7Tool._meta);
+    expect(McpToolSchema.parse({ ...context7Tool, futureField: true })).not.toHaveProperty('futureField');
     expect(McpTestResultSchema.safeParse({ ready: true, reason: 'ready', tools: [context7Tool], checkedAt: new Date().toISOString() }).success).toBe(true);
   });
 });

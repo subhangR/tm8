@@ -189,7 +189,7 @@ describe('the frame nav, as Settings draws it', () => {
     fireEvent.change(filter, { target: { value: 'mcp' } });
     /* Two rows carry 'mcp' since §10.7: the member's own external-client
        tokens (an Account row, so first) and the Space's connectors. */
-    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['MCP tokens', 'Connectors']);
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['MCP tokens', 'Connect Apps']);
     fireEvent.keyDown(filter, { key: 'Enter' });
     expect(onSelect).toHaveBeenCalledWith('space:mcp-tokens');
   });

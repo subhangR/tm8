@@ -156,6 +156,15 @@ describe('independent OAuth binding and lifecycle', () => {
     await p.oauth.callback({ identityId: 'human' }, { state: auth.searchParams.get('state')!, code: 'code' });
     expect(new URLSearchParams(p.calls.find(call => call.path === '/token')!.body).get('client_id')).toBe('registered-client');
   });
+  it('ignores an unused registration secret when the provider explicitly selects public auth (Atlassian)', async () => {
+    const p = await provider();
+    p.state.registration = { client_id: 'atlassian-style', client_secret: 'unused-registration-secret', token_endpoint_auth_method: 'none' };
+    const auth = await p.begin({ clientId: undefined });
+    const result = await p.oauth.callback({ identityId: 'human' }, { state: auth.searchParams.get('state')!, code: 'code' });
+    expect(result.secret.tokenEndpointAuthMethod).toBe('none');
+    expect(result.secret.clientSecret).toBeUndefined();
+    expect(p.calls.find(call => call.path === '/token')!.body).not.toContain('unused-registration-secret');
+  });
   it('reports a provider client allowlist rejection without exposing its body', async () => {
     const p = await provider();
     p.state.registrationStatus = 403;

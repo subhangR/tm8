@@ -22,6 +22,7 @@
  *      bridge still rides the old number; (F2) an outbox insert racing an
  *      accept rides the committed connection, with two real connections.
  */
+import { PROTOCOL_VERSION } from '@tm8/contract';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -179,7 +180,7 @@ beforeAll(async () => {
     }
   };
   await new Promise<void>((resolve, reject) => { ws.onopen = () => resolve(); ws.onerror = () => reject(new Error('socket refused')); });
-  const hello = await runtimePost('hello', { provider: 'whatsapp', version: 1, runtimeId: RUNTIME, capabilities: {} });
+  const hello = await runtimePost('hello', { provider: 'whatsapp', version: PROTOCOL_VERSION, runtimeId: RUNTIME, capabilities: {} });
   expect(hello.status, JSON.stringify(hello.body)).toBe(200);
   for (const c of hello.body.connections as { connectionId: string; allowlist: AllowlistFrame }[]) {
     held[c.connectionId] = c.allowlist.version;
@@ -332,6 +333,10 @@ describe('H4. accept moves the bridge in one write', () => {
     const settled = await runtimePost('sent', { outboxId: inFlight.outboxId, connectionId: connA, externalMessageId: 'WAID-A-1', message: {} });
     expect(settled.status, JSON.stringify(settled.body)).toBe(200);
     expect(settled.body.status).toBe('sent');
+    // Protocol v3 admits one send per connection until its receipt settles.
+    const queuedSettled = await runtimePost('sent', { outboxId: queued.outboxId, connectionId: connB, externalMessageId: 'WAID-B-1', message: {} });
+    expect(queuedSettled.status, JSON.stringify(queuedSettled.body)).toBe(200);
+    expect(queuedSettled.body.status).toBe('sent');
 
     // A loop still targeting the bridge posts via the new number.
     const next = await loopPost(loopId);

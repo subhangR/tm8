@@ -64,6 +64,7 @@ declare -A MODULE_OF=(
   [packages/cli]=cli
   [packages/execution]=execution
   [packages/tm8-ui]=ui
+  [packages/integrations]=small
   [packages/contract]=small
   [packages/jev]=small
   [tools/conformance]=small

@@ -621,6 +621,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
             return clientId && clientSecret ? { clientId, clientSecret } : undefined;
           },
         },
+        figma: { client: () => {
+          const clientId=process.env.TM8_MCP_CLIENT_ID_FIGMA_API;
+          const clientSecret=process.env.TM8_MCP_CLIENT_SECRET_FIGMA_API;
+          return clientId && clientSecret ? {clientId,clientSecret} : undefined;
+        } },
         authorize: async (claims, sessionId, serverId) => {
           if (claims.authKind === 'agent_runtime') {
             if (!claims.authSessionId) throw new CollabError('forbidden', 'MCP runtime unavailable');

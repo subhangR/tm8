@@ -1152,7 +1152,7 @@ export function buildCodexArgs(
 ): string[] {
   const args: string[] = [];
   asMcpServers(launch.mcpServers);
-  args.push('-c', 'mcp_servers={}');
+  args.push('-c', 'mcp_servers={}', '-c', 'features.apps=false', '-c', 'features.plugins=false');
   for (const [name, config] of Object.entries(connectorBridgeConfig(launch.mcpSelections))) {
     args.push('-c', `mcp_servers.${name}.command=${JSON.stringify(config.command)}`);
     args.push('-c', `mcp_servers.${name}.args=${JSON.stringify(config.args)}`);

@@ -22,15 +22,20 @@ describe('the launch catalog', () => {
     }
   });
 
-  it('ships §8.2 and nothing it cannot connect', () => {
-    // linear/github/atlassian are ABSENT on purpose (B15): the plan marks each
-    // provider's dynamic client registration unverified, and a card whose
-    // Connect always fails is worse than no card.
-    expect(MCP_CATALOG.map((entry) => entry.id)).toEqual([
-      'google.gmail', 'google.calendar', 'google.drive', 'notion', 'slack', 'figma',
-    ]);
-    for (const id of ['linear', 'github', 'atlassian']) expect(mcpCatalogEntry(id)).toBeUndefined();
-    expect(mcpCatalogEntry('notion')?.title).toBe('Notion');
+  it('includes the launch providers and an extensible catalog beyond them', () => {
+    for (const id of ['github', 'figma', 'slack', 'notion', 'atlassian', 'linear']) {
+      expect(mcpCatalogEntry(id)?.definition?.catalogId).toBe(id);
+    }
+    expect(mcpCatalogEntry('github')?.setup).toBe('registration');
+    expect(mcpCatalogEntry('figma')?.setup).toBe('approval');
+  });
+
+  it('separates Figma API credentials and identity from the approved remote MCP client', () => {
+    expect(mcpCatalogEntry('figma.api')).toMatchObject({kind:'first_party',logo:'figma',setup:'registration',
+      definition:{catalogId:'figma.api',firstParty:true,url:'https://api.figma.com/v1',approved:false}});
+    expect(mcpCatalogEntry('figma')).toMatchObject({kind:'remote',setup:'approval',
+      definition:{catalogId:'figma',url:'https://mcp.figma.com/mcp',approved:false}});
+    expect(mcpCatalogEntry('figma.api')?.requirement).toContain('TM8_MCP_CLIENT_SECRET_FIGMA_API');
   });
 
   it('serves the three Google cards as first-party, at the host\'s own identity URL', () => {
@@ -90,7 +95,7 @@ describe('the launch catalog', () => {
 
   it('carries a preregistered client secret variable on the ENTRY, never in the definition', () => {
     const slack = MCP_CATALOG.find((entry) => entry.id === 'slack')!;
-    expect(slack.clientSecretEnv).toBe('TM8_MCP_CLIENT_SECRET_SLACK');
+    expect(slack.setup).toBe('registration');
     // Which is what keeps the prefill a VALID definition: the schema refuses a
     // secret variable with no client id, and the admin supplies the id.
     expect(McpServerDefinitionSchema.safeParse(slack.definition).success).toBe(true);
@@ -105,6 +110,22 @@ describe('the launch catalog', () => {
       if (!entry.definition) continue;
       expect(mcpServerKey(entry.definition), entry.id).toMatch(/^[a-z][a-z0-9_]*$/);
     }
+  });
+
+  it('requests provider scopes needed for repository writes and conversation creation', () => {
+    const github = mcpCatalogEntry('github')?.definition?.auth;
+    const slack = mcpCatalogEntry('slack')?.definition?.auth;
+    expect(github?.type).toBe('oauth2');
+    expect(slack?.type).toBe('oauth2');
+    if (github?.type !== 'oauth2' || slack?.type !== 'oauth2') throw new Error('OAuth provider missing');
+    expect(github.scopes).toEqual(expect.arrayContaining(['repo', 'project', 'gist']));
+    expect(slack.scopes).toEqual(expect.arrayContaining(['channels:write', 'groups:write', 'im:write', 'mpim:write']));
+  });
+  it('accepts larger provider scope sets while retaining a finite bound', () => {
+    const definition=mcpCatalogEntry('github')!.definition!;
+    const withScopes=(count:number)=>({...definition,auth:{type:'oauth2',scopes:Array.from({length:count},(_,i)=>`scope:${i}`)}});
+    expect(McpServerDefinitionSchema.safeParse(withScopes(64)).success).toBe(true);
+    expect(McpServerDefinitionSchema.safeParse(withScopes(65)).success).toBe(false);
   });
 });
 

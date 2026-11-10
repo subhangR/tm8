@@ -569,7 +569,7 @@ it('holds the SQL catalog equal to MCP_CATALOG, entry by entry', async () => {
   // key the Discover tab uses, so an extra one would be unreachable and an
   // unexplained hole in the identity rule.
   const ids = MCP_CATALOG.map((entry) => entry.id);
-  for (const stray of ['linear', 'github', 'atlassian', 'gmail', '']) {
+  for (const stray of ['linear.unknown', 'github.unknown', 'atlassian.unknown', 'gmail', '']) {
     expect(ids).not.toContain(stray);
     const rows = await q(MEMBER, 'select * from internal.mcp_catalog($1)', [stray]);
     expect(rows, `internal.mcp_catalog knows ${stray}`).toHaveLength(0);

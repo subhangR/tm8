@@ -60,7 +60,7 @@ export const McpAuthSchema = z.discriminatedUnion('type', [
     prefix: z.enum(['Bearer', 'none']).optional() }).strict(),
   z.object({ type: z.literal('oauth2'), issuer: PublicUrl.optional(), authorizationUrl: PublicUrl.optional(), tokenUrl: PublicUrl.optional(),
     clientId: z.string().min(1).max(512).optional(), clientSecretEnv: ClientSecretEnv.optional(),
-    scopes: z.array(z.string().min(1).max(256)).max(32).optional() }).strict(),
+    scopes: z.array(z.string().min(1).max(256)).max(64).optional() }).strict(),
 ]);
 
 /** Definition metadata only. Literal env/header values are never graph content. */
@@ -292,8 +292,19 @@ export type McpCredentialView = z.infer<typeof McpCredentialViewSchema>;
  * test on an unknown key reported a working connector as broken. The fields tm8
  * reads are named; anything else is stripped on parse.
  */
-export const McpToolSchema = z.object({ name: z.string(), title: z.string().optional(), description: z.string().optional(),
-  inputSchema: z.record(z.unknown()), outputSchema: z.record(z.unknown()).optional(), annotations: z.record(z.unknown()).optional() });
+export const McpToolSchema = z.object({
+  name: z.string(), title: z.string().optional(), description: z.string().optional(),
+  inputSchema: z.record(z.unknown()), outputSchema: z.record(z.unknown()).optional(),
+  icons: z.array(z.object({ src: z.string(), mimeType: z.string().optional(), sizes: z.array(z.string()).optional(),
+    theme: z.enum(['light', 'dark']).optional(),
+  }).passthrough()).optional(),
+  execution: z.object({ taskSupport: z.enum(['forbidden', 'optional', 'required']).optional() }).passthrough().optional(),
+  // Provider hints describe a tool; authorization never derives from them.
+  annotations: z.object({ title: z.string().optional(), readOnlyHint: z.boolean().optional(),
+    destructiveHint: z.boolean().optional(), idempotentHint: z.boolean().optional(), openWorldHint: z.boolean().optional(),
+  }).passthrough().optional(),
+  _meta: z.record(z.unknown()).optional(),
+});
 /**
  * A tool the connector has but this CONNECTION cannot use, because the account
  * did not grant a scope it needs (granular consent; B41). It is never offered

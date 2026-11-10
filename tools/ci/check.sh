@@ -72,6 +72,7 @@ done
 # Defined up here, ahead of every stage, so that --only / --shard are validated
 # before anything runs. Their comments stay with the loops that use them below.
 TSC_PROJECTS=(
+  packages/integrations
   packages/contract
   # prompt is named for the same reason as jev below: it was typechecked only through
   # the server/cli/execution project references. It references nothing, so it sits
@@ -95,6 +96,7 @@ TSC_PROJECTS=(
 )
 UI_PROJECT=packages/tm8-ui
 TEST_PACKAGES=(
+  packages/integrations
   packages/contract
   # packages/jev is the Launch Advisor's Jev client (wire, client, rank, model,
   # cost). Its absence here would not show up as a red build — only as a

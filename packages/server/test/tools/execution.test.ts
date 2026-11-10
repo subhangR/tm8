@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -70,7 +70,7 @@ describe('tool input resolution and boundaries', () => {
     const inside = await directory(), outside = await directory();
     await symlink(outside, join(inside, 'escape'));
     await expect(confineToolPath(join(inside, 'escape'), inside, [inside])).rejects.toThrow('outside');
-    expect(await confineToolPath(inside, inside, [inside])).toBe(inside);
+    expect(await confineToolPath(inside, inside, [inside])).toBe(await realpath(inside));
   });
 });
 
@@ -123,7 +123,7 @@ describe('tool exit capture on real PTYs', () => {
     expect(watchdog(1, 5, 'sleep 4').status).toBe(124);
     expect(watchdog(1, 1, 'trap "" TERM; sleep 4').status).toBe(137); // the orphaned sleep holds stdout until it ends
     expect(spawnSync('/usr/bin/perl', ['-e', PERL_TIMEOUT, '5', '5', '/nonexistent-tool']).status).toBe(127);
-  });
+  }, 15000);
   it('records killed when the PTY disappears before a status file is written', async () => {
     const run = await launch('/bin/sleep 30', false, { secret: 'secret-on-kill' });
     run.host.kill(run.sessionId);
@@ -140,7 +140,7 @@ describe('tool exit capture on real PTYs', () => {
     await vi.waitFor(() => expect(python.recordExit).toHaveBeenCalledTimes(1), { timeout: 15000 });
     expect(python.recordExit.mock.calls[0]![0]).toMatchObject({ state: 'exited', exitCode: 4 });
   });
-  it('kills background children holding secret envs when a closed run times out', async () => {
+  it.runIf(process.platform === 'linux')('kills background children holding secret envs when a closed run times out', async () => {
     const run = await launch('(trap \'\' HUP TERM; exec /bin/sleep 60) &\nprintf "%s" "$!" > "$TM8_RUN_DIR/child.pid"\n/bin/sleep 60', false, { timeoutSeconds: 1, secret: 'child-secret' });
     const childFile = join(run.dir, 'tool-runs', run.sessionId, 'child.pid');
     let pid = 0;

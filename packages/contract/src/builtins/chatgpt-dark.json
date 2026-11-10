@@ -1,7 +1,7 @@
 {
   "id": "builtin:chatgpt-dark",
   "title": "ChatGPT Dark",
-  "builtinRevision": 2,
+  "builtinRevision": 3,
   "darkSibling": "builtin:chatgpt-dark",
   "tokens": {
     "--pn-active": "#272727",
@@ -47,6 +47,8 @@
     "--pn-paper": "#0E0E0E",
     "--pn-pr-merged": "#9C82C9",
     "--pn-pr-merged-soft": "rgba(156, 130, 201, 0.20)",
+    "--pn-provider-tile": "#fff",
+    "--pn-provider-tile-line": "#e5e7eb",
     "--pn-r-lg": "16px",
     "--pn-r-md": "12px",
     "--pn-r-pill": "999px",

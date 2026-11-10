@@ -255,6 +255,7 @@ class CodexSession extends HarnessSessionBase {
     const settings = {
       ...config,
       mcp_servers: mcp,
+      features: {...object(config['features'] ?? {}),apps:false,plugins:false},
       ...(target.reasoningEffort ? { model_reasoning_effort: target.reasoningEffort } : {}),
     };
     const bootstrap = this.input.mode.kind === 'bootstrap' ? this.input.mode.context : null;

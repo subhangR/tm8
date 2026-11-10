@@ -62,6 +62,7 @@ const WRITE = ['https://www.googleapis.com/auth/calendar.events'];
 export const CALENDAR_TOOLS: readonly GoogleTool[] = [
   tool({
     name: 'list_calendars',
+    effect: 'read',
     scopes: READ,
     description: 'List the calendars this account can see, with their ids and access role.',
     input: z.object({}).strict(),
@@ -72,6 +73,7 @@ export const CALENDAR_TOOLS: readonly GoogleTool[] = [
   }),
   tool({
     name: 'list_events',
+    effect: 'read',
     scopes: READ_EVENTS,
     description: 'List events in a time range, expanded into single occurrences and ordered by start time.',
     input: z.object({
@@ -91,6 +93,7 @@ export const CALENDAR_TOOLS: readonly GoogleTool[] = [
   }),
   tool({
     name: 'get_event',
+    effect: 'read',
     scopes: READ_EVENTS,
     description: 'Read one event.',
     input: z.object({ calendarId: CalendarId, eventId: EventId }).strict(),
@@ -100,6 +103,7 @@ export const CALENDAR_TOOLS: readonly GoogleTool[] = [
   }),
   tool({
     name: 'create_event',
+    effect: 'write',
     scopes: WRITE,
     description: 'Create an event. Attendees are added to the event but not emailed an invitation.',
     input: z.object({ calendarId: CalendarId, ...EventFields }).strict(),
@@ -117,6 +121,7 @@ export const CALENDAR_TOOLS: readonly GoogleTool[] = [
   }),
   tool({
     name: 'update_event',
+    effect: 'destructive',
     scopes: WRITE,
     description: 'Change fields of an existing event. Only the fields given are changed; attendees, when given, replace the list.',
     input: z.object({
@@ -139,6 +144,7 @@ export const CALENDAR_TOOLS: readonly GoogleTool[] = [
   }),
   tool({
     name: 'find_free_time',
+    effect: 'read',
     scopes: READ,
     description: 'Find free slots of at least the given length between two times, across one or more calendars.',
     input: z.object({

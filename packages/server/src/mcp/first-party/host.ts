@@ -1,8 +1,10 @@
 import type { McpOAuthSecret } from '../credential-store.js';
+import type { McpUnavailableTool } from '@tm8/contract';
+import type { McpFirstPartyAuthorization, OAuthClient } from '../oauth.js';
 
 /**
  * A first-party connector host (§8.1): an MCP resource server that runs INSIDE
- * the tm8 server process, for a provider that hosts no MCP server of its own.
+ * the tm8 server process, exposing a provider API through native TM8 tools.
  *
  * The proxy calls it in place of `mcpHttp`, after the same access checks and
  * with the same decrypted connection, so no token ever leaves the server and no
@@ -28,6 +30,16 @@ export interface FirstPartyHost {
   refresh(secret: McpOAuthSecret): Promise<McpOAuthSecret>;
   /** Whether a grant covers at least one tool; a refresh that leaves none marks the connection scope_reduced (B41). */
   covers?(definition: FirstPartyDefinition, grantedScopes: readonly string[] | undefined): boolean;
+}
+
+/** Static provider identity plus the shared OAuth/account lifecycle. */
+export interface FirstPartyOAuthHost extends FirstPartyHost {
+  authorization(definition: FirstPartyDefinition): McpFirstPartyAuthorization;
+  oauthClient(): OAuthClient;
+  accountLabel(accessToken: string): Promise<string | undefined>;
+  scopesFor(definition: FirstPartyDefinition, scopes: readonly string[] | undefined): string[];
+  tools(definition: FirstPartyDefinition, scopes: readonly string[] | undefined): readonly { name: string }[];
+  uncovered(definition: FirstPartyDefinition, scopes: readonly string[] | undefined): McpUnavailableTool[];
 }
 
 /**

@@ -50,7 +50,7 @@ const OUT_DIR = fileURLToPath(new URL('../../contract/src/builtins/', import.met
  * cached resolved style knows to drop it (§2.4). It is NOT the document
  * schemaVersion and not a git count — it is "the Atelier you cached is stale".
  */
-export const BUILTIN_REVISION = 2;
+export const BUILTIN_REVISION = 3;
 
 /**
  * THE TERMINAL OPTION KEYS (spec v8 §1.7, §10.3). xterm paints a canvas and

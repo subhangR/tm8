@@ -30,6 +30,35 @@ beforeAll(async()=>{
  });
 });
 afterAll(async()=>{await db?.end();await database?.destroy();if(dir)await rm(dir,{recursive:true,force:true});});
+it('reconnects one OAuth account in place, preserving shares and serializing concurrent consent', async () => {
+ const made=await db.rpc<{entity:{id:string}}>(auth(),'create_mcp_server_entity',[space,JSON.stringify({name:'reconnect_fixture',transport:'http',url:'https://example.test/mcp',envKeys:[],headerKeys:[],auth:{type:'oauth2'},approved:true}),null,randomUUID()]);
+ const serverId=made.entity.id;
+ const secret={kind:'oauth' as const,accessToken:'first-access',refreshToken:'first-refresh',issuer:'https://example.test',tokenEndpoint:'https://example.test/token',resource:'https://example.test/mcp',clientId:'own-client'};
+ const input={spaceId:space,serverId,label:'Original account',secret,accountLabel:'same@example.test',grantedScopes:['read']};
+ const first=await store.create(auth(),input) as {id:string};
+ await common.share(auth(),first.id,peerMember);
+ const binding={spaceId:space,serverId,credentialId:first.id};
+ await store.reportFailure(auth(),binding,'invalid_grant');
+ const updated={...input,secret:{...secret,accessToken:'second-access',refreshToken:'second-refresh'},accountLabel:' SAME@example.test ',grantedScopes:['read','write']};
+ const reconnected=await store.create(auth(),updated) as {id:string};
+ expect(reconnected.id).toBe(first.id);
+ expect((await store.read(auth('mcp-peer'),binding)).secret).toEqual(updated.secret);
+ const rows=await db.rpc<{id:string;grantedScopes:string[];status:string}[]>(auth(),'list_mcp_credentials',[serverId]);
+ expect(rows).toHaveLength(1);expect(rows[0]).toMatchObject({id:first.id,status:'active',grantedScopes:['read','write']});
+ const concurrent=await Promise.all([store.create(auth(),updated),store.create(auth(),updated)]) as {id:string}[];
+ expect(concurrent.map(row=>row.id)).toEqual([first.id,first.id]);
+ const peer=await store.create(auth('mcp-peer'),{...input,label:'Peer account'}) as {id:string};
+ expect(peer.id).not.toBe(first.id);
+ const raw=[first.id,space,serverId,'Attempted takeover',Buffer.alloc(32),Buffer.alloc(12),'token',null,true,1,'member','local:v1','same@example.test',['write']];
+ await expect(db.rpc(auth('mcp-peer'),'reconnect_mcp_credential',raw)).rejects.toBeTruthy();
+ await expect(db.rpc(auth('mcp-owner','agent'),'reconnect_mcp_credential',raw)).rejects.toBeTruthy();
+ await expect(store.create(auth(),{...updated,expectedRevision:0})).rejects.toBeTruthy();
+ expect((await store.read(auth(),binding)).secret).toEqual(updated.secret);
+ await expect(store.create(auth('mcp-owner','agent'),updated)).rejects.toThrow('human');
+ await common.revoke(auth(),first.id);
+ const replacement=await store.create(auth(),updated) as {id:string};
+ expect(replacement.id).not.toBe(first.id);
+});
 it('seals private by default; shares explicitly; rejects wrong binding; revocation preserves definition',async()=>{
  const created=await store.create(auth(),{spaceId:space,serverId:server,label:'Fixture account',secret:{kind:'api_key',value:'sealed-secret-canary'}}) as {id:string;visibility:string};
  expect(created.visibility).toBe('private');expect(JSON.stringify(created)).not.toContain('sealed-secret-canary');

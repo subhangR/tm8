@@ -75,6 +75,18 @@ async function sendInto(port: ChatHomePort) {
 }
 
 describe('Chat Home', () => {
+  it('offers connector selection on a Codex chat like other supported harnesses', async () => {
+    const { port } = createChatHomeFixturePort();
+    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+    fireEvent.click(await view.findByRole('button', { name: /new chat/i }));
+    fireEvent.click(view.getByLabelText('Chat model'));
+    fireEvent.click(view.getByTestId('tch-model-gpt-5.6-sol'));
+    fireEvent.click(view.getByRole('button', { name: 'Add to this turn' }));
+    // This fixture has no MCP port: Codex must reach the same selection
+    // component and its real availability state, rather than a harness ban.
+    expect(await view.findByTestId('tch-connectors-unavailable')).toBeTruthy();
+    expect(view.queryByText('Connectors aren’t available for Codex chats yet.')).toBeNull();
+  });
   /**
    * THE PANEL IS THE NAVIGATION (revision 14). The surface is two panes and
    * the left one is the only conversation selector — a working-set tab strip

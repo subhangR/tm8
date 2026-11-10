@@ -106,7 +106,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
      launch. Like `projects` and `kinds` it is externally owned, so an
      unsupplied section renders the shell's honest not-mounted state rather
      than a blank pane. */
-  { id: 'connectors', label: 'Connectors', heading: 'Connectors', externallyOwned: true },
+  { id: 'connectors', label: 'Connect Apps', heading: 'Connect Apps', externallyOwned: true },
   { id: 'credentials', label: 'Agent logins', heading: 'Agent credentials', externallyOwned: true },
   /* §10.7 / D9 — the tokens an EXTERNAL MCP client (Claude Desktop, Cursor)
      presents on this node's `/mcp` endpoint to act as the viewer. Directly

@@ -187,6 +187,7 @@ describe('Codex pinned-v2 conformance', () => {
       modelProvider: 'groq',
       config: {
         model_reasoning_effort: 'medium',
+        features:{apps:false,plugins:false},
         model_providers: { groq: { supports_websockets: false } },
         mcp_servers: { tm8: { command: 'inert-command', args: ['arg'] } },
       },
