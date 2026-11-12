@@ -93,6 +93,14 @@ type SaveState =
 interface CanvasApi {
   refresh(): void;
   updateScene(scene: { elements?: readonly unknown[]; appState?: Record<string, unknown> }): void;
+  scrollToContent(
+    target?: readonly unknown[],
+    options?: {
+      fitToViewport?: boolean;
+      viewportZoomFactor?: number;
+      animate?: boolean;
+    },
+  ): void;
   addFiles?(files: unknown[]): void;
 }
 
@@ -130,6 +138,9 @@ export function DrawingBlock({
   const [images, setImages] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<CanvasApi | null>(null);
+  const initialElementsRef = useRef(scene.elements);
+  initialElementsRef.current = scene.elements;
+  const fitDoneRef = useRef(false);
   /*
    * STABLE, like `onChange`. Excalidraw is memoised on a shallow compare of
    * every prop but `initialData`, and it calls `onChange` from every update. A
@@ -138,6 +149,53 @@ export function DrawingBlock({
    * as "Maximum update depth exceeded" on the first stroke.
    */
   const onApi = useCallback((api: CanvasApi) => { apiRef.current = api; }, []);
+
+  /*
+   * `initialData.scrollToContent` only centres the scene at Excalidraw's
+   * default 100% zoom. On a large drawing that is still a crop, and can be
+   * empty when the centred content falls outside a narrow Workspace pane.
+   *
+   * The API callback runs from Excalidraw's constructor — too early to call
+   * back into it, and React may discard that pre-commit instance. Observe the
+   * stage instead. Once the real `.excalidraw` root is committed, two frames
+   * let its first layout settle, then request the Shift+1 operation explicitly:
+   * fit the scene to the viewport.
+   */
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return undefined;
+    fitDoneRef.current = false;
+    let frame = 0;
+    let observer: MutationObserver | null = null;
+    const fit = () => {
+      if (fitDoneRef.current || frame || !stage.querySelector('.excalidraw')) return;
+      const api = apiRef.current;
+      if (!api) return;
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          if (!stage.isConnected) return;
+          const elements = initialElementsRef.current;
+          if (elements.length > 0) {
+            api.scrollToContent(elements, {
+              fitToViewport: true,
+              viewportZoomFactor: 0.9,
+              animate: false,
+            });
+          }
+          fitDoneRef.current = true;
+          observer?.disconnect();
+        });
+      });
+    };
+    observer = new MutationObserver(fit);
+    observer.observe(stage, { childList: true, subtree: true });
+    fit();
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      observer?.disconnect();
+    };
+  }, [detail.id]);
 
   /*
    * Re-point at a DIFFERENT entity. Not at every `detail` change: a save
@@ -325,7 +383,6 @@ export function DrawingBlock({
             initialData={{
               elements: scene.elements as never,
               appState: { ...scene.appState, collaborators: new Map() } as never,
-              scrollToContent: true,
             }}
             theme={theme}
             viewModeEnabled={!editable}
