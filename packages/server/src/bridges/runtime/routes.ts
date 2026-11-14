@@ -32,6 +32,12 @@ import type { BridgeCommandHook } from './command-hook.js';
 import type { BridgeRuntimeHub } from './hub.js';
 
 export const BRIDGE_RUNTIME_PATH_PREFIX = '/v2/bridge-runtime/';
+/**
+ * The longest a message with media waits for its files and voice-note
+ * transcripts before it is delivered without them (442 §3). A late file is
+ * still attached to the message and its copies when it arrives.
+ */
+const MEDIA_SETTLE_MS = 180_000;
 
 const ROUTES: readonly RuntimeRoute[] = [
   'hello', 'state', 'auth', 'conversations', 'conversation-state', 'inbound', 'sent', 'heartbeat', 'media', 'group', 'outbound-progress',
@@ -59,8 +65,12 @@ export interface BridgeRuntimeRouteOptions {
    * running, before the message is delivered to it. Absent: delivered as is.
    */
   readonly keepSession?: (bridgeId: string, messageId: string) => Promise<unknown>;
-  /** Fetches inbound media into file entities after commit (413 §4). */
-  readonly media?: { kick(): Promise<number> };
+  /**
+   * Fetches inbound media into file entities after commit (413 §4). With
+   * `settle` (442 §3) a message with media is delivered, and its chat woken,
+   * once its files are attached and its voice notes transcribed (bounded).
+   */
+  readonly media?: { kick(): Promise<number>; settle?(messageId: string, timeoutMs: number): Promise<void> };
   /** Starts a queued chat turn (the orchestrator's wake). */
   readonly wakeChat?: (chatId: string, requesterIdentityId: string) => void;
   /** A media frame carries base64 bytes; everything else is small. */
@@ -237,18 +247,30 @@ async function inbound(
     const messageId = result.messageId;
     void hook.run(messageId).catch((err) => o.log?.(`[bridges] command ${messageId} failed: ${(err as Error).message}`));
   }
-  if (result.status === 'stored' && result.wakeChat) o.wakeChat?.(result.wakeChat.chatId, result.wakeChat.identityId);
-  if (result.status === 'stored' && Array.isArray(frame.media) && frame.media.length > 0) void o.media?.kick();
+  // 442 §3: a message with media reaches its readers once its files are
+  // attached and its voice notes transcribed, so the photo and the words are
+  // in what they read. Bounded by MEDIA_SETTLE_MS; the HTTP answer never waits.
+  const withMedia = result.status === 'stored' && Array.isArray(frame.media) && frame.media.length > 0;
+  let settled: Promise<void> = Promise.resolve();
+  if (withMedia && o.media?.settle && result.messageId) settled = o.media.settle(result.messageId, MEDIA_SETTLE_MS);
+  else if (withMedia) void o.media?.kick();
+  if (result.status === 'stored' && result.wakeChat) {
+    const wake = result.wakeChat;
+    if (withMedia) void settled.then(() => o.wakeChat?.(wake.chatId, wake.identityId));
+    else o.wakeChat?.(wake.chatId, wake.identityId);
+  }
   if (result.status === 'stored' && !result.command && result.messageId && o.deliver) {
     const messageId = result.messageId;
     const deliver = o.deliver;
     // R11: a session that stopped is resumed (or replaced) first, so the copy
-    // lands on a session that runs.
+    // lands on a session that runs. The media settle meanwhile.
     const keep = result.targetSession && !result.targetSession.live && result.bridgeId && o.keepSession
       ? o.keepSession(result.bridgeId, messageId)
       : Promise.resolve();
-    void keep
-      .catch((err) => o.log?.(`[bridges] keeping the session of ${result.bridgeId} failed: ${(err as Error).message}`))
+    void Promise.all([
+      keep.catch((err) => o.log?.(`[bridges] keeping the session of ${result.bridgeId} failed: ${(err as Error).message}`)),
+      settled,
+    ])
       .then(() => deliver(messageId))
       .catch((err) => o.log?.(`[bridges] delivery of ${messageId} failed: ${(err as Error).message}`));
   }

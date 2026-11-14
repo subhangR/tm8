@@ -95,6 +95,7 @@ const MANIFEST = 'packages/execution/src/spawn/manifest.ts';
 const SPAWN = 'packages/execution/src/spawn/SpawnService.ts';
 const EXEC_HANDLERS = 'packages/server/src/facade/execution-handlers.ts';
 const MAIN = 'packages/server/src/main.ts';
+const TRANSCRIBE = 'packages/server/src/bridges/runtime/transcribe.ts';
 const NODE_KEYS = 'packages/server/src/facade/services/w2/space-credential-catalog.ts';
 const DOCTOR = 'packages/cli/src/commands/doctor.ts';
 
@@ -205,6 +206,7 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_BRIDGE_RUNTIME_COMMAND', group: 'Bridges', summary: 'JSON argv of the connector runtime to start and supervise; unset, the deployment runs it.', default: null, definedIn: MAIN },
   { name: 'TM8_BRIDGE_RUNTIME_LABEL', group: 'Bridges', summary: 'Label of the runtime\'s session; one live token per label.', default: 'whatsapp-runtime', definedIn: MAIN },
   { name: 'TM8_BRIDGE_RUNTIME_CWD', group: 'Bridges', summary: 'Working directory the supervised runtime command starts in.', default: null, definedIn: MAIN },
+  { name: 'TM8_TRANSCRIBE_BIN', group: 'Bridges', summary: 'Program that turns a bridged voice note into text on this host (442), run as `<program> -` with the audio on stdin; unset, tm8-transcribe on PATH or in ~/.local/bin; set but empty, voice notes keep their file only.', default: 'tm8-transcribe', definedIn: TRANSCRIBE },
 
   // ── Keys ─────────────────────────────────────────────────────────────
   { name: 'TYPESAFE_API_KEY', group: 'Keys', summary: 'Node key for Jev (TypeSafe), used when a member has none.', default: null, definedIn: MAIN, secret: true },
