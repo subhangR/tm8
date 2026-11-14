@@ -12,9 +12,11 @@
  * exiting 0. Exit 3 means the audio is longer than it will transcribe. Any
  * other exit, a timeout or output that is not that object is a failure, which
  * the caller records; the voice note keeps its file either way. On the tm8
- * host the program wraps faster-whisper with local Whisper weights, refuses
- * notes over 5 minutes, and takes up to about 1.5x a note's length on a busy
- * host, hence the 10-minute default timeout.
+ * host the program wraps faster-whisper with local Whisper weights and refuses
+ * notes over 5 minutes. Every stretch of up to 8 seconds of speech costs one
+ * full Whisper window, so on a busy host a 30-second note takes 2 to 3
+ * minutes; the program stops itself after 8 minutes and returns the words it
+ * has, inside the 10-minute default timeout.
  */
 import { spawn } from 'node:child_process';
 import { accessSync, constants } from 'node:fs';
