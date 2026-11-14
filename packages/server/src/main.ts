@@ -126,6 +126,7 @@ import { bridgeGroupPort, createBridgeCommands, createBridgeKeeper } from './bri
 import { createBridgeRuntimeRoute } from './bridges/runtime/routes.js';
 import { BridgeRuntimeSupervisor } from './bridges/runtime/supervisor.js';
 import { BridgeMediaFetcher } from './bridges/runtime/media.js';
+import { createLocalTranscriber, findTranscriber } from './bridges/runtime/transcribe.js';
 import { createBridgeSessionDelivery } from './bridges/runtime/deliver.js';
 import type { BridgeCommandHook } from './bridges/runtime/command-hook.js';
 import { bridgeWatchdogJob } from './scheduler/jobs/bridge-watchdog.js';
@@ -954,8 +955,17 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       }
     : baseUpgrades;
 
+  // 442 §3: voice notes are transcribed by a program on this host (no API);
+  // without one a voice note keeps its file only.
+  const transcriber = db && bridgeHub && blobStore ? findTranscriber() : null;
+  if (db && bridgeHub && blobStore) {
+    console.warn(transcriber ? `[bridges] voice notes are transcribed by ${transcriber}` : '[bridges] no voice-note transcriber (tm8-transcribe): voice notes keep their file only');
+  }
   const bridgeMedia = db && bridgeHub && blobStore
-    ? new BridgeMediaFetcher({ db, hub: bridgeHub, blobStore, maxBytes: fileMaxSizeBytes, log: (line) => console.warn(line) })
+    ? new BridgeMediaFetcher({
+        db, hub: bridgeHub, blobStore, maxBytes: fileMaxSizeBytes, log: (line) => console.warn(line),
+        ...(transcriber ? { transcribe: createLocalTranscriber(transcriber) } : {}),
+      })
     : undefined;
   // 413 §5: session targets and directed workers, through the same delivery
   // loop every message uses. Absent with no execution runtime: stored only.

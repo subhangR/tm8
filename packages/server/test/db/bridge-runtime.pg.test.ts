@@ -657,3 +657,172 @@ describe('the watchdog (D19, §7.3 item 6, ac6)', () => {
     expect(open[0]!.n).toBe(1);
   });
 });
+
+describe('442: a session target answers, sees and hears what it is routed (task 01a1da4c)', () => {
+  const OPS = '120363003@g.us';
+  const PRIYA = { externalId: LINKED_JID, altId: null, name: 'Priya', fromMe: false };
+  let ops = '';
+  const sha = (s: string) => createHash('sha256').update(s).digest('hex');
+  const copyOn = async (messageId: string, anchor: string) => (await owner<{ entity_id: string }>(
+    `select entity_id from public.messages where anchor_id = $2
+        and message_batch_id = (select message_batch_id from public.messages where entity_id = $1)`, [messageId, anchor]))[0]?.entity_id;
+  const attachmentsOf = async (id: string) => (await owner<{ a: { fileEntityId: string }[] }>(
+    'select attachments as a from public.messages where entity_id = $1', [id]))[0]!.a.map(x => x.fileEntityId);
+  const bodyOf = async (id: string) => (await owner<{ body: string }>('select body from public.messages where entity_id = $1', [id]))[0]!.body;
+  const media = (kind: string, mime: string, handle: string) => ({ kind, mime, fileName: null, caption: null, size: 3, handle });
+  /** A session's reply to its copy, as message_recorder records one (the session -> origin edge). */
+  const sessionReply = (copy: string, body: string, from = session) => scratch.transaction(async c => {
+    await c.query('set local role tm8_graph_owner');
+    await c.query(`select set_config('tm8.work_session_id', $1, true)`, [from]);
+    const id = randomUUID();
+    await c.query(`insert into public.entities(id, space_id, kind, created_by, parent_id, visibility) values ($1,$2,'message',$3,$4,'space')`,
+      [id, spaceId, teammate, copy]);
+    await c.query(`insert into public.messages(entity_id, anchor_id, root_message_id, author_id, body) values ($1,$2,$3,$4,$5)`,
+      [id, from, copy, teammate, body]);
+    await c.query(`select internal.w1_set_writer('message_recorder')`);
+    await c.query(`insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1,$2,$3,'authored_from',$4)`,
+      [spaceId, id, from, teammate]);
+    await c.query(`select internal.w1_set_writer(null)`);
+    return id;
+  });
+
+  beforeAll(async () => {
+    ops = (await owner<{ entity_id: string }>('select entity_id from public.bridges where connection_id = $1 and external_conversation_id = $2',
+      [otherConnection, OPS]))[0]!.entity_id;
+  });
+
+  it('§2/§3: a photo is attached to the log message and the session copy, and pending counts it until then', async () => {
+    const r = await inbound(frame({ connectionId: otherConnection, conversationId: OPS, body: '@tm8 what is in this photo?', kind: 'media',
+      sender: PRIYA, media: [media('image', 'image/jpeg', 'H-442-IMG')] }));
+    expect(r).toMatchObject({ status: 'stored', routed: true });
+    const copy = await copyOn(r.messageId!, session);
+    expect(copy).toBeDefined();
+    expect(await worker<number>('internal.bridge_media_pending', [r.messageId])).toBe(1);
+    await owner(`update public.bridge_media set status = 'fetching', attempts = 1 where message_id = $1`, [r.messageId]);
+    expect(await worker<number>('internal.bridge_media_pending', [r.messageId])).toBe(1);
+    const file = await worker<string>('internal.bridge_media_attach', [r.messageId, 0, `spaces/${spaceId}/442-img`, 3, sha('img'), 'image/jpeg']);
+    expect(await worker<number>('internal.bridge_media_pending', [r.messageId])).toBe(0);
+    expect(await attachmentsOf(r.messageId!)).toEqual([file]);
+    expect(await attachmentsOf(copy!)).toEqual([file]);
+    // The route the session is delivered carries the file (bridge_route_json reads the copy).
+    const routes = await worker<Record<string, unknown>[]>('internal.bridge_inbound_deliveries', [r.messageId]);
+    expect(routes).toEqual([expect.objectContaining({ targetMessageId: copy, targetWorkSessionId: session })]);
+    expect(JSON.stringify(routes)).toContain(file);
+    // A second attach of the same item changes nothing (413: idempotent per item).
+    expect(await worker<string>('internal.bridge_media_attach', [r.messageId, 0, `spaces/${spaceId}/442-img-2`, 3, sha('img'), 'image/jpeg'])).toBe(file);
+    expect(await attachmentsOf(copy!)).toEqual([file]);
+  });
+
+  it('§3: an item backing off after a failure is not waited for; one never tried is', async () => {
+    const r = await inbound(frame({ connectionId: otherConnection, conversationId: OPS, body: '@tm8 two files', kind: 'media', sender: PRIYA,
+      media: [media('image', 'image/png', 'H-442-A'), media('document', 'application/pdf', 'H-442-B')] }));
+    expect(await worker<number>('internal.bridge_media_pending', [r.messageId])).toBe(2);
+    await owner(`update public.bridge_media set status = 'fetching', attempts = 1 where message_id = $1 and idx = 0`, [r.messageId]);
+    await worker('internal.bridge_media_fail', [r.messageId, 0, 'timeout', true]);
+    expect(await worker<number>('internal.bridge_media_pending', [r.messageId])).toBe(1);
+    await owner(`update public.bridge_media set status = 'fetching', attempts = 1 where message_id = $1 and idx = 1`, [r.messageId]);
+    await worker('internal.bridge_media_fail', [r.messageId, 1, 'too_large', false]);
+    expect(await worker<number>('internal.bridge_media_pending', [r.messageId])).toBe(0);
+    const notWorker = await refusal(db.rpc({ identityId: ownerIdentity, authKind: 'browser', requestId: randomUUID() },
+      'internal.bridge_media_pending', [r.messageId]));
+    expect(notWorker.details?.['reason']).toBe('bridges_worker_only');
+  });
+
+  it('§1: the session target answers what it is routed, so eight replies in a row all leave directed', async () => {
+    const r = await inbound(frame({ connectionId: otherConnection, conversationId: OPS, body: '@tm8 status of the job?', sender: PRIYA }));
+    const copy = (await copyOn(r.messageId!, session))!;
+    expect(await worker('internal.bridge_inbound_deliveries', [r.messageId])).toHaveLength(1);
+    const [answer] = await owner<{ answerer_id: string; status: string }>(
+      'select answerer_id::text, status from public.bridge_message_answerers where message_id = $1', [r.messageId]);
+    expect(answer).toEqual({ answerer_id: session, status: 'open' });
+    const replies: string[] = [];
+    for (let i = 1; i <= 8; i++) replies.push(await sessionReply(copy, `part ${i} of the answer`));
+    for (const reply of replies) {
+      const [d] = await owner<{ d: boolean }>('select public.bridge_post_is_directed($1) as d', [reply]);
+      expect(d!.d).toBe(true);
+    }
+    const out = await owner<{ directed: boolean; status: string }>(
+      `select directed, status from public.bridge_outbox where message_id = any($1::uuid[]) and kind = 'send'`, [replies]);
+    expect(out).toHaveLength(8);
+    for (const row of out) expect(row).toMatchObject({ directed: true });
+    expect(out.filter(row => row.status === 'failed_permanent')).toEqual([]);
+    const [settled] = await owner<{ status: string }>('select status from public.bridge_message_answerers where message_id = $1', [r.messageId]);
+    expect(settled!.status).toBe('settled');
+  });
+
+  it('§1: a directed worker keeps the answer; the target does not take it', async () => {
+    // Stand-in for the audience: one directed worker, as 413 §5 names it.
+    const worker2 = randomUUID();
+    await owner(`insert into public.entities(id, space_id, kind, created_by, visibility) values ($1,$2,'work_session',$3,'space')`,
+      [worker2, spaceId, ownerMember]);
+    await owner(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at) values ($1,'Directed worker','running','none',now())`, [worker2]);
+    const r = await inbound(frame({ connectionId: otherConnection, conversationId: OPS, body: '@tm8 who restarts the box?', sender: PRIYA }));
+    await db.tx({ identityId: ownerIdentity, authKind: 'browser', requestId: randomUUID() }, q => q.rpc('set_bridge_answerer', [r.messageId, worker2]));
+    await owner(`insert into public.bridge_inbound_deliveries(message_id, session_id, reason) values ($1,$2,'directed')`, [r.messageId, worker2]);
+    expect(await worker('internal.bridge_inbound_deliveries', [r.messageId])).toHaveLength(1);
+    const [answer] = await owner<{ answerer_id: string }>('select answerer_id::text from public.bridge_message_answerers where message_id = $1', [r.messageId]);
+    expect(answer!.answerer_id).toBe(worker2);
+  });
+
+  it('§1/§2 (R11): a replaced target gets a copy with the files already fetched, and the open answer passes to it', async () => {
+    const r = await inbound(frame({ connectionId: otherConnection, conversationId: OPS, body: '@tm8 see the screenshot', kind: 'media',
+      sender: PRIYA, media: [media('image', 'image/png', 'H-442-R11')] }));
+    const file = await worker<string>('internal.bridge_media_attach', [r.messageId, 0, `spaces/${spaceId}/442-r11`, 3, sha('r11'), 'image/png']);
+    expect(await worker('internal.bridge_inbound_deliveries', [r.messageId])).toHaveLength(1);
+    const replacement = randomUUID();
+    await owner(`insert into public.entities(id, space_id, kind, created_by, visibility) values ($1,$2,'work_session',$3,'space')`,
+      [replacement, spaceId, ownerMember]);
+    await owner(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at) values ($1,'Deploy fixer (2)','running','none',now())`, [replacement]);
+    await owner('update public.bridges set target_id = $2 where entity_id = $1', [ops, replacement]);
+    try {
+      const routes = await worker<Record<string, unknown>[]>('internal.bridge_inbound_deliveries', [r.messageId]);
+      const copy = (await copyOn(r.messageId!, replacement))!;
+      expect(routes).toEqual([expect.objectContaining({ targetMessageId: copy, targetWorkSessionId: replacement })]);
+      expect(await attachmentsOf(copy)).toEqual([file]);
+      const [answer] = await owner<{ answerer_id: string; status: string }>(
+        'select answerer_id::text, status from public.bridge_message_answerers where message_id = $1', [r.messageId]);
+      expect(answer).toEqual({ answerer_id: replacement, status: 'open' });
+    } finally {
+      await owner('update public.bridges set target_id = $2 where entity_id = $1', [ops, session]);
+    }
+  });
+
+  it('§3: a voice note transcript is appended once to the log message and the session copy; a failure changes no message', async () => {
+    const policy = (await owner<{ p: Record<string, unknown> }>('select policy as p from public.bridges where entity_id = $1', [ops]))[0]!.p;
+    await owner(`update public.bridges set policy = policy || '{"trigger":"every"}' where entity_id = $1`, [ops]);
+    try {
+      const r = await inbound(frame({ connectionId: otherConnection, conversationId: OPS, body: '', kind: 'media', sender: PRIYA,
+        media: [media('audio', 'audio/ogg; codecs=opus', 'H-442-PTT')] }));
+      expect(r).toMatchObject({ status: 'stored', routed: true });
+      const copy = (await copyOn(r.messageId!, session))!;
+      expect(await bodyOf(copy)).toBe('[audio]');
+      await worker('internal.bridge_media_attach', [r.messageId, 0, `spaces/${spaceId}/442-ptt`, 3, sha('ptt'), 'audio/ogg']);
+      expect(await worker<boolean>('internal.bridge_media_transcript',
+        [r.messageId, 0, '  dengue   fever\n medicine  ', 'te', null])).toBe(true);
+      for (const id of [r.messageId!, copy]) expect(await bodyOf(id)).toBe('[audio]\n[voice note transcript (te): dengue fever medicine]');
+      expect(await worker<boolean>('internal.bridge_media_transcript', [r.messageId, 0, 'again', 'te', null])).toBe(false);
+      expect(await bodyOf(copy)).toBe('[audio]\n[voice note transcript (te): dengue fever medicine]');
+      const [row] = await owner<{ transcript: string; transcript_language: string; transcript_error: string | null }>(
+        'select transcript, transcript_language, transcript_error from public.bridge_media where message_id = $1', [r.messageId]);
+      expect(row).toEqual({ transcript: 'dengue fever medicine', transcript_language: 'te', transcript_error: null });
+
+      const failed = await inbound(frame({ connectionId: otherConnection, conversationId: OPS, body: '', kind: 'media', sender: PRIYA,
+        media: [media('audio', 'audio/ogg', 'H-442-PTT2')] }));
+      expect(await worker<boolean>('internal.bridge_media_transcript', [failed.messageId, 0, null, null, 'too_long'])).toBe(false);
+      expect(await bodyOf(failed.messageId!)).toBe('[audio]');
+      const [err] = await owner<{ transcript_error: string }>('select transcript_error from public.bridge_media where message_id = $1', [failed.messageId]);
+      expect(err!.transcript_error).toBe('too_long');
+
+      // The line is cut so the body stays within 10,000 characters (001 §7).
+      const long = await inbound(frame({ connectionId: otherConnection, conversationId: OPS, body: 'x'.repeat(9000), kind: 'media', sender: PRIYA,
+        media: [media('audio', 'audio/ogg', 'H-442-PTT3')] }));
+      expect(await worker<boolean>('internal.bridge_media_transcript', [long.messageId, 0, 'word '.repeat(1000), 'en', null])).toBe(true);
+      const cut = await bodyOf(long.messageId!);
+      expect(cut.length).toBe(10_000);
+      expect(cut.endsWith(']')).toBe(true);
+      expect(cut.slice(9000)).toMatch(/^\n\[voice note transcript \(en\): word word/);
+    } finally {
+      await owner('update public.bridges set policy = $2 where entity_id = $1', [ops, JSON.stringify(policy)]);
+    }
+  });
+});
