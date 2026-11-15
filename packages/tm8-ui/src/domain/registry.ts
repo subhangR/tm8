@@ -1861,7 +1861,10 @@ const ROWS: readonly KindConfig[] = [
     list: baseList({
       quickCreate: true,
       inlineEdit: { title: true },
-      tile: { badges: [{ source: 'messages' }] },
+      /* A drawing row has two different doors: open the canvas, or disclose
+         Collections/Archive. Without a named first door, the disclosure's
+         chevron was the only visible open-looking control. */
+      tile: { badges: [{ source: 'messages' }], openLabel: 'Open' },
     }),
     panel: {
       archetype: 'generic',

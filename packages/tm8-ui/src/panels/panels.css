@@ -3820,6 +3820,30 @@
   border-radius: 2px;
 }
 
+/* Some rows have two doors: the entity itself and the details disclosure.
+   Their registry opts into this named navigation verb so the chevron is not
+   the only visible, open-looking control. It stays smaller and quieter than a
+   row action because it changes selection; it does not mutate the entity. */
+.cv2-root .lp__open {
+  appearance: none;
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-card);
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+}
+.cv2-root .lp__open:is(:hover, :focus-visible) {
+  border-color: var(--pn-brand);
+  color: var(--pn-ink);
+  outline: none;
+}
+
 .cv2-root .lp__badges { flex: none; display: inline-flex; align-items: center; gap: 5px; }
 .cv2-root .lp__word {
   font-family: var(--pn-mono);
@@ -6309,6 +6333,10 @@
 .cv2-root[data-shell='mobile'] .lp__tile:not([data-details='open']) .lp__row1 > .lp__rowaction--ind {
   background: none;
   border-color: transparent;
+}
+.cv2-root[data-shell='mobile'] .lp__open {
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
 }
 
 /* --- the counts line ----------------------------------------------------- */

@@ -5715,6 +5715,21 @@ export function Tile({
             {glow.srSuffix ? <span className="sr-only">{glow.srSuffix}</span> : null}
           </button>
 
+          {config.list.tile.openLabel ? (
+            <button
+              type="button"
+              className="lp__open"
+              title={`${config.list.tile.openLabel} ${row.title}`}
+              aria-label={`${config.list.tile.openLabel} ${row.title}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                selectRow(props, row);
+              }}
+            >
+              {config.list.tile.openLabel}
+            </button>
+          ) : null}
+
           {parentCrumb}
           {/* THE ONE SIGNAL. For task and PR that is the assignee avatar, which
               is why it is drawn from the `avatar` slot the badge sources already

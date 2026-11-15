@@ -31,7 +31,12 @@ const mounted: {
   theme?: unknown;
   apiProp?: unknown;
 } = {};
-const api = { refresh: vi.fn(), updateScene: vi.fn(), addFiles: vi.fn() };
+const api = {
+  refresh: vi.fn(),
+  updateScene: vi.fn(),
+  scrollToContent: vi.fn(),
+  addFiles: vi.fn(),
+};
 
 vi.mock('@excalidraw/excalidraw', () => ({
   Excalidraw: (props: Record<string, unknown>) => {
@@ -84,6 +89,16 @@ describe('DrawingBlock', () => {
     await mountBlock(<DrawingBlock detail={detailOf()} commands={{ patchEntity: vi.fn() }} />);
     expect((mounted.initial as { elements: unknown[] }).elements).toHaveLength(1);
     expect(screen.getByTestId('drawing-status').textContent).toBe('Saved');
+  });
+
+  it('fits the whole scene after the canvas has mounted and measured', async () => {
+    await mountBlock(<DrawingBlock detail={detailOf()} commands={{ patchEntity: vi.fn() }} />);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(api.scrollToContent).toHaveBeenCalledTimes(1);
+    expect(api.scrollToContent).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ id: 'a' })]),
+      { fitToViewport: true, viewportZoomFactor: 0.9, animate: false },
+    );
   });
 
   it('is READ-ONLY with no patch command, and says so', async () => {

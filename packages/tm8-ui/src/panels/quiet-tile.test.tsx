@@ -7,6 +7,7 @@ import {
   FIXTURE_SPACE_ID,
   chatLaunchPlan,
   docLayoutSpec,
+  drawingLoginFlow,
   memoryTokens,
   prTransplant,
   profileHouseStyle,
@@ -56,6 +57,25 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('the quiet row: status mark · title · ▸ N · one signal · time', () => {
+  it('gives a drawing a named canvas door, separate from its details disclosure', () => {
+    const onSelect = vi.fn();
+    const { container } = render(
+      <EntityListPanel
+        kind="drawing"
+        rowsFor={rowsFor([drawingLoginFlow])}
+        ctx={ctx}
+        onSelect={onSelect}
+      />,
+    );
+    const row = tile(container);
+    const open = row.querySelector<HTMLButtonElement>('.lp__open')!;
+    expect(open.textContent).toBe('Open');
+    expect(open.getAttribute('aria-label')).toBe('Open Login flow sketch');
+    fireEvent.click(open);
+    expect(onSelect).toHaveBeenCalledWith(drawingLoginFlow.id);
+    expect(row.querySelector('[data-testid="row-details-toggle"]')).not.toBe(open);
+  });
+
   it('draws the kind mark, the title and a time, and the status word only for a screen reader', () => {
     const { container } = render(
       <EntityListPanel kind="doc" rowsFor={rowsFor([docLayoutSpec])} ctx={ctx} />,

@@ -800,6 +800,12 @@ export interface ListConfig {
   tile: {
     badges: readonly TileBadgeSpec[];
     /**
+     * A visible navigation verb for kinds whose row body can be mistaken for
+     * its details disclosure. The renderer only opens the row; the registry
+     * decides which kinds need the extra affordance and what it says.
+     */
+    openLabel?: string;
+    /**
      * Registry-selected card anatomy. `control-card` is the Maestro-shaped
      * work surface: a strong command row with an expandable facts/config
      * region. The component still knows presentation data, never entity kinds.
