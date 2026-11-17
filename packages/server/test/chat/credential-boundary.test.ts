@@ -26,9 +26,15 @@ async function rig(platform: NodeJS.Platform = 'linux') {
   const state: { grant?: SpaceCredentialGrant; member?: AgentCredentialHome; revoked: boolean; denied: boolean } = {
     revoked: false, denied: false,
   };
-  const read = vi.fn(async () => state.revoked ? { ok: false as const, reason: 'revoked' as const }
-    : state.grant ? { ok: true as const, grant: state.grant }
-      : { ok: false as const, reason: 'no_default' as const });
+  // Dispatch on PROVIDER. Chat resolves GitHub as well as the model now, and
+  // a github read cannot answer with the anthropic grant, nor inherit the
+  // anthropic credential's revoked state — the real port cannot do either.
+  const read = vi.fn(async (_auth: unknown, _spaceId: string, provider: string) => {
+    if (provider === 'github') return { ok: false as const, reason: 'no_default' as const };
+    return state.revoked ? { ok: false as const, reason: 'revoked' as const }
+      : state.grant ? { ok: true as const, grant: state.grant }
+        : { ok: false as const, reason: 'no_default' as const };
+  });
   const space = {
     readPolicies: async () => state.denied ? { space: { anthropic: [] }, node: {} } : { space: {}, node: {} },
     myDefaultId: async () => null, read,
@@ -36,6 +42,9 @@ async function rig(platform: NodeJS.Platform = 'linux') {
   const member = vi.fn(async () => state.member ?? null);
   const port = createChatCredentialPreparation({
     db: {} as Db, dataDir, platform, spaceCredentials: space, memberCredentials: { resolve: member },
+    // This member has connected no GitHub credential; `db` here is a stub
+    // with no `rpc`, so the real store must not be reached for one.
+    gitHubCredentials: { resolve: async () => null },
     parentEnv: { ANTHROPIC_API_KEY: 'node-anthropic', OPENAI_API_KEY: 'node-openai',
       ANTHROPIC_AUTH_TOKEN: 'wrong-vendor-token', TM8_DATABASE_URL: 'sentinel-db-secret' },
   });
@@ -136,7 +145,9 @@ describe('generation-owned chat credentials', () => {
       label: 'key', displayLogin: null, secret: KEY };
     const prepared = await port.prepare(input, owner);
     await prepared.revalidate();
-    expect(read.mock.calls.at(-1)?.[3]).toBe(CRED);
+    // The last read overall is now the GitHub rung, so pick the provider the
+    // assertion is actually about: revalidation re-reads the PINNED anthropic id.
+    expect(read.mock.calls.filter(call => call[2] === 'anthropic').at(-1)?.[3]).toBe(CRED);
     state.revoked = true;
     await expect(prepared.materialize()).rejects.toThrow('authorization is no longer available');
     await prepared.release();
@@ -164,7 +175,13 @@ describe('generation-owned chat credentials', () => {
     state.grant = { kind: 'secret', provider: 'anthropic', credentialId: CRED, shape: 'api_key',
       label: 'key', displayLogin: null, secret: KEY };
     read.mockImplementationOnce(async () => ({ ok: true, grant: state.grant! }));
-    read.mockImplementation(async () => { throw new Error(KEY); });
+    // Only the ANTHROPIC re-read throws — that is the boot race under test.
+    // A github read that threw would refuse the launch earlier, for a reason
+    // this test is not about.
+    read.mockImplementation(async (_auth: unknown, _spaceId: string, provider: string) => {
+      if (provider === 'github') return { ok: false as const, reason: 'no_default' as const };
+      throw new Error(KEY);
+    });
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       await expect(port.prepare(input, owner)).rejects.toThrow('cannot be prepared in an isolated runtime');

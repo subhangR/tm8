@@ -1500,7 +1500,21 @@ const GIT_CREDENTIAL_HELPER =
   '!f() { test "$1" = get && printf '
   + '"username=%s\\npassword=%s\\n" "${TM8_GIT_LOGIN:-x-access-token}" "$GH_TOKEN"; }; f';
 
-function isolateGitHubCredential(
+/**
+ * Shape the GitHub half of a child environment: the token under both names,
+ * a process-local HTTPS helper, and the commit identity of the token's own
+ * account — or, with no credential in member posture, an explicit blanking
+ * that fails authentication rather than falling through to the node's gh.
+ *
+ * EXPORTED BECAUSE CHAT NEEDS THE SAME SHAPE, NOT A SECOND COPY OF IT. A chat
+ * runtime composes its environment through `composeChatEnv` and never calls
+ * `composeEnv`, so until this change it had no GitHub keys at all; the
+ * alternative
+ * to exporting this was a parallel definition in the chat lane, which is how
+ * the two lanes would drift. One definition, two callers, and the isolation
+ * half comes along with the injection half rather than being re-derived.
+ */
+export function isolateGitHubCredential(
   env: Record<string, string>,
   credential: GitHubCredential | undefined,
   strictMemberIsolation: boolean,
