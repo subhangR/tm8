@@ -592,6 +592,12 @@ begin
       'participant', coalesce(author #>> '{participant,displayName}', root_o.sender_display),
       'memberId', case when author ->> 'kind' = 'member' then author ->> 'actorId' end)),
     'command', '/thread'), false, null, 0);
+  -- 427's 📨 on the message that started the thread. At the inbound commit it
+  -- had no session to be directed at (427 counts it as not addressed); now
+  -- the session holds its root, so tm8 acts on it. 👀 follows when the root's
+  -- delivery settles, ✅ when the reply is sent. A rebind (resume) is 'behind'
+  -- and changes nothing.
+  perform internal.bridge_progress_try(th.root_message_id, 'delivered');
   return true;
 end
 $$;

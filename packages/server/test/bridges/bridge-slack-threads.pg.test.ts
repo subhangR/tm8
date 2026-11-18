@@ -190,8 +190,15 @@ describe('444: Slack thread mode', () => {
     expect(stored).toMatchObject({ status: 'stored', routed: false, thread: { rootExternalId: root, started: true },
       targetSession: { sessionId: target, live: false } });
     expect(await threadRow(root)).toMatchObject({ session_id: null, root_message_id: stored.messageId });
+    const reacts = async () => (await owner<{ reaction: string; emoji: string }>(
+      `select reaction, payload ->> 'emoji' as emoji from public.bridge_outbox where message_id = $1 and kind = 'react' order by created_at`,
+      [stored.messageId]));
+    // No session yet, so nothing at the inbound commit.
+    expect(await reacts()).toEqual([]);
 
     expect(await keeper().ensure(bridge, stored.messageId)).toBe('started');
+    // 📨 once its session holds it (427 progress), before any reply.
+    expect(await reacts()).toEqual([{ reaction: 'tm8:delivered', emoji: '📨' }]);
     const spawn = spawns.at(-1)!;
     expect(spawn).toMatchObject({
       teamMemberId: teammate, taskId: null, parentSessionId: target,
@@ -210,6 +217,10 @@ describe('444: Slack thread mode', () => {
     expect(sent[0]!.content).toMatch(/directed="true"/);
     const answerer = await owner<{ answerer_id: string }>('select answerer_id::text from public.bridge_message_answerers where message_id = $1', [stored.messageId]);
     expect(answerer.map((a) => a.answerer_id)).toEqual([threadSession]);
+
+    // A rebind (as on a resume) adds no second 📨.
+    await db.rpc(bridgesWorkerClaims(), 'bridge_thread_bind', [bridge, root, threadSession]);
+    expect(await reacts()).toHaveLength(1);
 
     // The same root again (app_mention and message events): no second thread, no second session.
     expect(await inbound({ ext: root, body: `<@${BOT}> the login page 500s`, mentions: [BOT] })).toMatchObject({ status: 'duplicate' });
