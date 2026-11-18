@@ -5,8 +5,9 @@ import type { BridgesPort } from './api';
 import { bridgeFailureOf } from './format';
 import {
   SLACK_SETUP_GUIDE_PATH, SLACK_SETUP_GUIDE_URL, SLACK_TOKEN_HELP,
-  missingScopeLines, slackAccountLine, slackRefusalWords, slackTokenProblem,
+  slackAccountLine, slackRefusalWords, slackTokenProblem,
 } from './slack';
+import { SlackScopeNote } from './SlackScopeNote';
 
 /**
  * CONNECT A SLACK WORKSPACE (Slack bridge design §1.1 step 4).
@@ -52,6 +53,15 @@ export function SlackTokensDialog({
   const [label, setLabel] = useState(relink?.label ?? '');
   const [offerHere, setOfferHere] = useState(true);
   const [pending, setPending] = useState<BridgeConnectionView | null>(null);
+  /**
+   * The connection once the runtime said `linked` (and it was offered to the
+   * space, if asked). Held here rather than handed to `onLinked` at once:
+   * both hosts close this dialog in `onLinked`, so doing that in the same tick
+   * meant "Connected to …" and the missing-scope warning only ever rendered
+   * in this component's own tests, never in the app (#1509 review 4). The
+   * person now sees the result and dismisses it with Done.
+   */
+  const [settled, setSettled] = useState<BridgeConnectionView | null>(null);
   /* The connection as the runtime last reported it: what linked/logged_out is read from. */
   const [watched, setWatched] = useState<BridgeConnectionView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -78,15 +88,18 @@ export function SlackTokensDialog({
             const offered = offerHere && !row.offers.some((o) => o.spaceId === spaceId)
               ? (await port.connections.offer(row.id, spaceId)).connection
               : row;
-            onLinked(offered);
+            setSettled(offered);
           } catch (err) {
+            /* Connected but not offered: still show the account, since the
+               tokens DID work, and say what did not. */
+            setSettled(row);
             setError(`Connected, but offering it to this space was refused: ${bridgeFailureOf(err)}`);
           }
         })();
       }, () => {});
     }, 1200);
     return () => { live = false; clearInterval(tick); };
-  }, [pending, port, offerHere, spaceId, onLinked]);
+  }, [pending, port, offerHere, spaceId]);
 
   const problem = slackTokenProblem(botToken, appToken);
   /* Only after a submit: an untouched form must not open covered in red. */
@@ -139,8 +152,7 @@ export function SlackTokensDialog({
   };
 
   const status = watched?.status ?? null;
-  const account = watched?.account ?? null;
-  const missing = missingScopeLines(account);
+  const account = settled?.account ?? watched?.account ?? null;
   const refusal = status === 'logged_out' ? slackRefusalWords(watched?.detail) : null;
   const title = relink ? `New tokens for ${relink.label}` : 'Connect a Slack workspace';
 
@@ -149,6 +161,35 @@ export function SlackTokensDialog({
       <div ref={dialog} className="brg-dialog brg-linkdlg" role="dialog" aria-modal="true" aria-label={title} data-testid="bridge-slack-tokens">
         <h2 className="brg-dialog__title">{title}</h2>
 
+        {/* CONNECTED. The tokens worked, so the form is finished with: what is
+            left to say is which workspace this is and anything the install is
+            missing, and the person dismisses it themselves. Both hosts close
+            this dialog in `onLinked`, so handing them the connection here
+            would take the result off the screen in the same tick. */}
+        {settled ? (
+          <div className="brg-slack__state" data-testid="slack-connect-state" data-status="linked">
+            {settled.account ? (
+              <p className="brg-hint" role="status" data-testid="slack-connected">✓ {slackAccountLine(settled.account)}</p>
+            ) : (
+              <p className="brg-hint" role="status" data-testid="slack-connected">✓ Connected.</p>
+            )}
+            <SlackScopeNote connection={settled} testId="slack-missing-scopes" />
+            {settled.offers.some((o) => o.spaceId === spaceId) ? (
+              <p className="set-note">It is offered to this space: you can bridge its channels here.</p>
+            ) : (
+              <p className="set-note">
+                It is connected but not offered to this space yet — offer it from Accounts &amp; secrets to bridge its
+                channels here.
+              </p>
+            )}
+            {error ? <p className="brg-error" role="alert">{error}</p> : null}
+            <div className="brg-dialog__actions">
+              <button type="button" className="pn-btn pn-btn--primary" data-testid="slack-done" onClick={() => onLinked(settled)}>
+                Done
+              </button>
+            </div>
+          </div>
+        ) : (<>
         <ol className="brg-dialog__list">
           <li>
             At api.slack.com/apps, choose <em>Create New App → From a manifest</em> and paste tm8's manifest
@@ -232,11 +273,11 @@ export function SlackTokensDialog({
           {tried && problem ? <p className="brg-error" role="alert" data-testid="slack-token-problem">{problem}</p> : null}
           {error ? <p className="brg-error" role="alert">{error}</p> : null}
 
+          {/* While the runtime has not answered yet, or has refused. `linked`
+              is handled above, where the form is gone. */}
           {status !== null && !error ? (
             <div className="brg-slack__state" data-testid="slack-connect-state" data-status={status}>
-              {status === 'linked' && account ? (
-                <p className="brg-hint" role="status" data-testid="slack-connected">✓ {slackAccountLine(account)}</p>
-              ) : status === 'logged_out' ? (
+              {status === 'logged_out' ? (
                 <p className="brg-error" role="alert" data-testid="slack-refused">{refusal}</p>
               ) : status === 'offline' ? (
                 <p className="brg-hint" role="status">
@@ -246,15 +287,6 @@ export function SlackTokensDialog({
               ) : (
                 <p className="brg-hint" role="status">◌ Checking the tokens with Slack…</p>
               )}
-              {missing.length > 0 ? (
-                <div className="brg-warn" role="status" data-testid="slack-missing-scopes">
-                  <p>
-                    Connected, but this Slack app is missing {missing.length} scope{missing.length === 1 ? '' : 's'} the
-                    bridge uses. Add them in the app's OAuth &amp; Permissions, reinstall it, then paste the new bot token:
-                  </p>
-                  <ul>{missing.map((line) => <li key={line}>{line}</li>)}</ul>
-                </div>
-              ) : null}
             </div>
           ) : null}
 
@@ -267,6 +299,7 @@ export function SlackTokensDialog({
             </button>
           </div>
         </form>
+        </>)}
       </div>
     </div>
   );

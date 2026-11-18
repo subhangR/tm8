@@ -229,7 +229,7 @@ export function slackRefusalWords(detail: string | null | undefined): string {
  * Permalinks are built ONLY from a value this accepts; anything else draws no
  * link rather than a broken one like `…/archives/C1/pcmd:12345abc`.
  */
-export function isSlackTs(ts: string | null | undefined): boolean {
+export function isSlackTs(ts: string | null | undefined): ts is string {
   return typeof ts === 'string' && /^\d+\.\d+$/.test(ts);
 }
 
@@ -258,7 +258,7 @@ export function slackMessageUrl(
   /* A root that is not a real ts (a `cmd:<trigger_id>`) is dropped, not
      encoded into the query: the reply still opens, in the channel. */
   return isSlackTs(threadRootTs)
-    ? `${at}?thread_ts=${encodeURIComponent(threadRootTs!)}&cid=${encodeURIComponent(channelId)}`
+    ? `${at}?thread_ts=${encodeURIComponent(threadRootTs)}&cid=${encodeURIComponent(channelId)}`
     : at;
 }
 

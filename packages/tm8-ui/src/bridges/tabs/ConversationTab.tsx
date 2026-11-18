@@ -107,7 +107,7 @@ export function rootTsOf(items: readonly BridgeLogEntry[], entry: BridgeLogEntry
   if (!rootId || rootId === entry.id) return null;
   const ts = items.find((m) => m.id === rootId)?.origin?.externalMessageId;
   /* A thread rooted on a slash command has no linkable root (#1509 review 3). */
-  return isSlackTs(ts) ? ts! : null;
+  return isSlackTs(ts) ? ts : null;
 }
 
 function Bubble({

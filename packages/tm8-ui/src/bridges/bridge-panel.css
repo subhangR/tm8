@@ -212,6 +212,10 @@
 }
 
 .brg-set__conn .brg-set__menu { position: relative; }
+/* A note under a wizard row (a Slack workspace's missing scopes): its own
+   line, since .brg-wiz__row is a wrapping flex. */
+.brg-wiz__rownote { flex-basis: 100%; margin: 2px 0 0; }
+
 /* The anchor for the + Add an account menu in the group head. Only a
    positioning context: it must NOT take .brg-set__menu's width: 1%, which
    clipped the button's label. */

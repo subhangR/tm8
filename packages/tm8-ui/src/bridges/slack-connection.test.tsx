@@ -20,6 +20,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BridgeConnectionView } from '@tm8/contract';
 import { AccountsBlock } from './AccountsBlock';
+import { AddBridgeWizard } from './AddBridgeWizard';
 import { SlackTokensDialog } from './SlackTokensDialog';
 import { testPort } from './test-port';
 
@@ -291,10 +292,14 @@ describe('what the runtime answers', () => {
 
     expect(screen.getByTestId('slack-connected').textContent)
       .toBe('✓ Connected to Acme · Acme Corp (acme.enterprise.slack.com) as @tm8');
-    /* …and the space got the offer: `linked` is what the dialog hands back.
-       Asserted directly rather than through waitFor, which cannot settle while
-       its own timers are faked. */
-    expect(linked.map((c) => c.id)).toHaveLength(1);
+    /* The result STAYS on screen: the hosts close this dialog in onLinked, so
+       handing the connection over here would take the line off the screen in
+       the same tick (#1509 review 4). Done is what hands it over. */
+    expect(linked).toHaveLength(0);
+    expect(screen.getByTestId('slack-done')).toBeTruthy();
+    // …and the space got the offer before Done, so Done is only a dismissal.
+    await act(async () => { fireEvent.click(screen.getByTestId('slack-done')); });
+    expect(linked).toHaveLength(1);
     expect(linked[0]!.offers.some((o) => o.spaceId === SPACE)).toBe(true);
   });
 
@@ -309,8 +314,11 @@ describe('what the runtime answers', () => {
 
     const warn = screen.getByTestId('slack-missing-scopes');
     expect(warn.textContent).toMatch(/missing 11 scopes/i);
-    expect(within(warn).getByText(/chat:write\.customize/)).toBeTruthy();
-    expect(within(warn).getByText(/users:read\.email/)).toBeTruthy();
+    expect(warn.textContent).toMatch(/chat:write\.customize/);
+    expect(warn.textContent).toMatch(/users:read\.email/);
+    // the warning sits WITH the connected line, both waiting on Done
+    expect(screen.getByTestId('slack-connected')).toBeTruthy();
+    expect(screen.getByTestId('slack-done')).toBeTruthy();
   });
 
   it('turns Slack’s error code into words, and offers another paste', async () => {
@@ -337,6 +345,62 @@ describe('what the runtime answers', () => {
     paste(BOT, APP);
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Connect' })); });
     expect(await screen.findByText(/No Slack runtime is running/)).toBeTruthy();
+  });
+});
+
+/*
+ * #1509 review 4: both hosts close the dialog in `onLinked`, so the connected
+ * line and the scope warning only ever rendered in this file's standalone
+ * dialog tests. These drive the HOSTS, which is where it was broken.
+ */
+describe('the connected state survives its host', () => {
+  /* The dialog opens on REAL timers — findBy* waits cannot settle against
+     faked ones — and only the runtime's settle is driven by a fake clock. */
+  async function openFromAccounts(bot: string) {
+    const t = slackPort();
+    render(<AccountsBlock port={t.port} spaceId={SPACE} bridges={t.views} onChanged={() => {}} />);
+    await screen.findByTestId('bridges-connections');
+    fireEvent.click(screen.getByTestId('bridges-add-account'));
+    fireEvent.click(within(screen.getByRole('menu', { name: 'Add an account' })).getByRole('menuitem', { name: /Slack workspace/ }));
+    await screen.findByTestId('bridge-slack-tokens');
+    paste(bot, APP);
+    vi.useFakeTimers();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Connect' })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    return t;
+  }
+
+  it('Accounts & secrets: the dialog stays open on success, showing the workspace', async () => {
+    await openFromAccounts(BOT);
+
+    // the dialog is STILL THERE, with the result on it
+    expect(screen.getByTestId('bridge-slack-tokens')).toBeTruthy();
+    expect(screen.getByTestId('slack-connected').textContent).toMatch(/Connected to Acme/);
+    // …and Done is what closes it
+    await act(async () => { fireEvent.click(screen.getByTestId('slack-done')); });
+    expect(screen.queryByTestId('bridge-slack-tokens')).toBeNull();
+  });
+
+  it('Accounts & secrets: a thin install’s missing scopes are visible before Done', async () => {
+    await openFromAccounts('xoxb-0-0-noscope');
+    expect(screen.getByTestId('slack-missing-scopes').textContent).toMatch(/chat:write\.customize/);
+  });
+
+  it('the add-bridge wizard shows a workspace’s missing scopes on its row', async () => {
+    /* The wizard path showed them NOWHERE: it went straight to step 2. */
+    const t = slackPort(['bridges.connections.list', 'bridges.conversations.list', 'bridges.create']);
+    const thin = (await t.client.connections.list()).map((c) => (c.provider === 'slack'
+      ? { ...c, account: { ...c.account!, scopes: ['channels:read', 'chat:write'] } }
+      : c));
+    t.port.connections.list = vi.fn(async () => thin);
+    render(<AddBridgeWizard port={t.port} spaceId={SPACE} onClose={() => {}} onCreated={() => {}} />);
+
+    const slack = thin.find((c) => c.provider === 'slack')!;
+    const note = await screen.findByTestId(`wizard-scopes-${slack.id}`);
+    expect(note.textContent).toMatch(/chat:write\.customize/);
+    // nothing on the WhatsApp rows
+    const wa = thin.find((c) => c.provider === 'whatsapp')!;
+    expect(screen.queryByTestId(`wizard-scopes-${wa.id}`)).toBeNull();
   });
 });
 

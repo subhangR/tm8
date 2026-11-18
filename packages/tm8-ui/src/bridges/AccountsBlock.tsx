@@ -9,7 +9,8 @@ import { ConsequenceDialog } from './ConsequenceDialog';
 import { CONNECTION_TONE, CONNECTION_WORD, bridgeFailureOf } from './format';
 import { LinkNumberDialog } from './LinkNumberDialog';
 import { SlackTokensDialog } from './SlackTokensDialog';
-import { connectsByTokens, missingScopeLines, slackAccountLine, slackRefusalWords } from './slack';
+import { connectsByTokens, slackAccountLine, slackRefusalWords } from './slack';
+import { SlackScopeNote } from './SlackScopeNote';
 
 /**
  * Settings → Bridges › ACCOUNTS & SECRETS (§4.2, v2 §1.6).
@@ -331,7 +332,6 @@ function SlackConnectionWords({
   onRotate(): void;
 }) {
   if (connection.provider !== 'slack') return null;
-  const missing = missingScopeLines(connection.account);
   if (connection.status === 'logged_out') {
     return (
       <div className="brg-set__connnote">
@@ -348,12 +348,7 @@ function SlackConnectionWords({
       <p className="set-note" data-testid={`connection-account-${connection.id}`}>
         {slackAccountLine(connection.account)}
       </p>
-      {missing.length > 0 ? (
-        <p className="brg-warn" role="status" data-testid={`connection-scopes-${connection.id}`}>
-          Missing {missing.length} scope{missing.length === 1 ? '' : 's'} the bridge uses: {missing.join('; ')}. Add them
-          in the Slack app's OAuth &amp; Permissions, reinstall it, then paste the new bot token.
-        </p>
-      ) : null}
+      <SlackScopeNote connection={connection} testId={`connection-scopes-${connection.id}`} />
     </div>
   );
 }

@@ -16,6 +16,7 @@ import {
   DEFAULT_SLACK_THREAD_MODE, THREAD_MODE_OPTIONS, capabilitiesOf, connectsByTokens, conversationLabel,
   hasNativeThreads, isPrivateChannel, slackPickerEmptyHint,
 } from './slack';
+import { SlackScopeNote } from './SlackScopeNote';
 
 /**
  * THE ADD-BRIDGE WIZARD (BRIDGE-ENTITY-DESIGN §4.3; BRIDGES-V2-DESIGN §1.1,
@@ -341,6 +342,12 @@ export function AddBridgeWizard({
                           Offer to this space
                         </button>
                       )}
+                      {/* A workspace installed with too few scopes is a
+                          standing condition, not just news at connect time:
+                          the wizard showed it nowhere (#1509 review 4).
+                          `.brg-wiz__row` wraps, so a full-width child makes
+                          its own line under the row. */}
+                      <SlackScopeNote connection={c} className="brg-warn brg-wiz__rownote" testId={`wizard-scopes-${c.id}`} />
                     </li>
                   );
                 })}
