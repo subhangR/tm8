@@ -129,15 +129,18 @@ describe('sealing and the allowlist', () => {
     assert.equal(a.dropped.outboundRefused, 2)
   })
 
-  test('the bot token is only ever sent to Slack hosts or the configured base', () => {
+  test('the bot token is only ever sent to files.slack.com, or the configured base\'s origin (review #5)', () => {
     const real = new SlackApi()
-    assert.ok(real.trusts('https://files.slack.com/files-pri/T1-F1/x.png'))
-    assert.ok(real.trusts('https://acme.enterprise.slack.com/files-pri/x'))
-    assert.ok(!real.trusts('https://evil.example/slack.com/x'))
-    assert.ok(!real.trusts('http://files.slack.com/x'))
-    assert.ok(!real.trusts('https://slack.com.evil.example/x'))
+    assert.ok(real.trustsFileHost('https://files.slack.com/files-pri/T1-F1/x.png'))
+    assert.ok(real.trustsFileHost('https://files.slack.com:443/files-pri/T1-F1/x.png'))
+    for (const bad of [
+      'https://acme.enterprise.slack.com/files-pri/x', 'https://slack.com/files-pri/x', 'https://evil.slack.com/x', 'https://a.slack-edge.com/x',
+      'https://evil.example/files.slack.com/x', 'http://files.slack.com/x', 'https://files.slack.com.evil.example/x', 'https://files.slack.com:8443/x',
+      'https://u:p@files.slack.com/x', 'not a url',
+    ]) assert.ok(!real.trustsFileHost(bad), bad)
     const fake = new SlackApi('http://127.0.0.1:9999/api/')
-    assert.ok(fake.trusts('http://127.0.0.1:9999/files-pri/x'))
-    assert.ok(!fake.trusts('http://127.0.0.1:9998/files-pri/x'))
+    assert.ok(fake.trustsFileHost('http://127.0.0.1:9999/files-pri/x'))
+    assert.ok(!fake.trustsFileHost('http://127.0.0.1:9998/files-pri/x'))
+    assert.ok(!fake.trustsFileHost('https://files.slack.com.evil/x'))
   })
 })

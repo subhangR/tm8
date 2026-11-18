@@ -63,6 +63,8 @@ export class FakeSlack {
   private uploads = new Map<string, { name: string; length: number; bytes?: Buffer }>()
   /** Send `hello` on connect (turn off to test a socket that never says hello). */
   sayHello = true
+  /** When set, a file download answers 302 to this URL (absolute, or a path on the fake) instead of the bytes. */
+  fileRedirect: string | null = null
   /** Delay before the shares of an uploaded file appear (0: in the completeUploadExternal answer). */
   shareDelayMs = 0
 
@@ -254,6 +256,12 @@ export class FakeSlack {
       this.fileRequests.push({ path: url.pathname, authorization: req.headers.authorization ?? null })
       const id = url.pathname.split('/')[2]!.split('-').pop()!
       const f = this.files.get(id)
+      if (this.fileRedirect && !url.searchParams.has('redirected')) {
+        const to = new URL(this.fileRedirect, this.origin)
+        to.searchParams.set('redirected', '1')
+        res.writeHead(302, { location: to.href }).end()
+        return
+      }
       if (req.headers.authorization !== `Bearer ${this.botToken}`) {
         res.writeHead(200, { 'content-type': 'text/html' }).end('<html>sign in</html>')
         return

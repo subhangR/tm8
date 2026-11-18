@@ -94,20 +94,25 @@ export class SlackApi {
   }
 
   /**
-   * May the bot token be sent to this URL? Only Slack's own hosts (files are served from files.slack.com), or the
-   * configured API base's host when it was pointed elsewhere (the fake Slack in tests).
+   * May the bot token be sent to this file URL? Exactly the hosts Slack serves `url_private` from: files.slack.com
+   * (workspaces and Enterprise Grid alike), over https, on the default port. Or the configured API base's own origin,
+   * when it was pointed elsewhere (the fake Slack in tests). No wildcard: a token never goes to another *.slack.com
+   * name, let alone anything else.
    */
-  trusts(url: string): boolean {
+  trustsFileHost(url: string): boolean {
     let u: URL
     try {
       u = new URL(url)
     } catch {
       return false
     }
-    if (u.host === this.base.host && u.protocol === this.base.protocol) return true
-    return u.protocol === 'https:' && (u.hostname === 'slack.com' || u.hostname.endsWith('.slack.com') || u.hostname.endsWith('.slack-edge.com'))
+    if (u.origin === this.base.origin && this.base.hostname !== 'slack.com') return true
+    return u.protocol === 'https:' && FILE_HOSTS.has(u.hostname) && (u.port === '' || u.port === '443') && !u.username && !u.password
   }
 }
+
+/** Where Slack serves files (`url_private`, `url_private_download`). */
+export const FILE_HOSTS: ReadonlySet<string> = new Set(['files.slack.com'])
 
 function retryAfter(h: Headers): number {
   const n = Number(h.get('retry-after'))

@@ -690,7 +690,7 @@ export class SlackConnection {
     }
     if (typeof file.size === 'number' && file.size > f.maxBytes) throw new TooLargeError(file.size, f.maxBytes)
     const url = String(file.url_private_download ?? file.url_private ?? '')
-    if (!this.o.api.trusts(url)) throw new Error('file url is not a Slack url')
+    if (!this.o.api.trustsFileHost(url)) throw new Error('file url is not a Slack url')
     // Slack may redirect a file to another of its hosts; the token follows only to a host it trusts.
     let res: HttpResponse | null = null
     let at = url
@@ -704,7 +704,7 @@ export class SlackConnection {
       if (res.status < 300 || res.status >= 400 || !next) break
       res.body.resume()
       at = new URL(next, at).href
-      if (!this.o.api.trusts(at)) throw new Error('file url redirected away from Slack')
+      if (!this.o.api.trustsFileHost(at)) throw new Error('file url redirected away from Slack')
     }
     if (!res || res.status < 200 || res.status >= 300) {
       res?.body.resume()

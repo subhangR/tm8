@@ -244,6 +244,28 @@ describe('files', () => {
   })
 })
 
+describe('file download redirects (review #5)', () => {
+  test('a redirect within the trusted origin is followed with the token; one elsewhere is refused before any request', async () => {
+    const f = r.slack.file({ name: 'a.txt', mimetype: 'text/plain', bytes: Buffer.from('ok'), channels: ['C1'] })
+    r.slack.fileRedirect = `/files-pri/T0FAKE-${f.id}/a.txt`
+    r.tm8.push({ type: 'media.fetch', requestId: 'rd1', connectionId: CONN, conversationId: 'C1', handle: f.id, maxBytes: 100 })
+    assert.equal(Buffer.from((await r.tm8.waitFor('media', (x) => x.requestId === 'rd1')).data, 'base64').toString(), 'ok')
+    // Elsewhere: a listener that records whether anything (a token) reached it.
+    const http = await import('node:http')
+    let reached = 0
+    const evil = http.createServer((_q, s) => { reached++; s.end('stolen') })
+    await new Promise<void>((res) => evil.listen(0, '127.0.0.1', res))
+    try {
+      r.slack.fileRedirect = `http://127.0.0.1:${(evil.address() as { port: number }).port}/grab`
+      r.tm8.push({ type: 'media.fetch', requestId: 'rd2', connectionId: CONN, conversationId: 'C1', handle: f.id, maxBytes: 100 })
+      assert.match((await r.tm8.waitFor('media', (x) => x.requestId === 'rd2')).error, /redirected away from Slack/)
+      assert.equal(reached, 0)
+    } finally {
+      evil.close()
+    }
+  })
+})
+
 describe('channels and the rest', () => {
   test('conversation.list answers the bot\'s channels, public and private, across pages, sorted', async () => {
     r.slack.channel({ id: 'C5', name: 'alpha', members: 3 })
