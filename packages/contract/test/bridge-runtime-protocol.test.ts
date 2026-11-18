@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { PROTOCOL_VERSION, WHATSAPP_CAPABILITIES } from '../src/index.js';
+import { PROTOCOL_VERSION, SLACK_CAPABILITIES, WHATSAPP_CAPABILITIES } from '../src/index.js';
 
 const canonical = fileURLToPath(new URL('../src/bridge-runtime-protocol.ts', import.meta.url));
 const mirror = fileURLToPath(new URL('../../../integrations/whatsapp-bridge/src/runtime/protocol.ts', import.meta.url));
@@ -18,7 +18,8 @@ describe('bridge runtime protocol (D35)', () => {
   });
 
   it('is exported from @tm8/contract', () => {
-    expect(PROTOCOL_VERSION).toBe(3);
+    expect(PROTOCOL_VERSION).toBe(4);
+    expect(SLACK_CAPABILITIES.threads).toBe('native');
     expect(WHATSAPP_CAPABILITIES.reactions).toBe(true);
   });
 });
