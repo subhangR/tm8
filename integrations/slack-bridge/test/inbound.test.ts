@@ -71,7 +71,8 @@ describe('messages', () => {
       connectionId: CONN,
       conversationId: 'C1',
       externalMessageId: ts,
-      sender: { externalId: 'U1', altId: null, name: 'Priya', fromMe: false, email: 'priya@acme.io', avatarUrl: 'https://avatars.slack-edge.com/priya_192.png', bot: false },
+      sender: { externalId: 'U1', altId: null, name: 'Priya', fromMe: false, email: 'priya@acme.io', avatarUrl: 'https://avatars.slack-edge.com/priya_192.png', bot: false,
+        team: { teamId: 'T0FAKE', enterpriseId: 'E0FAKE', guest: false, external: false } },
       body: '@tm8 can @Rahul check #eng and the docs (https://x.io/a?b=1&c=2)? 1 < 2 && @here',
       kind: 'text',
       media: [],
@@ -135,7 +136,7 @@ describe('messages', () => {
     await deliver({ type: 'message', subtype: 'bot_message', channel: 'C1', bot_id: 'B0OTHER', username: 'CI', text: 'build green', ts: r.slack.ts() })
     const fs = await got(1)
     assert.equal(fs.length, 1)
-    assert.deepEqual(fs[0].sender, { externalId: null, altId: null, name: 'CI', fromMe: false, email: null, avatarUrl: null, bot: true })
+    assert.deepEqual(fs[0].sender, { externalId: null, altId: null, name: 'CI', fromMe: false, email: null, avatarUrl: null, bot: true, team: null })
   })
 
   test('channel plumbing subtypes (joins, topic changes) are not messages', async () => {

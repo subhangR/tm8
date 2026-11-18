@@ -17,7 +17,18 @@ import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { WebSocketServer, type WebSocket } from 'ws'
 
-export type FakeUser = { id: string; name: string; realName?: string; email?: string | null; avatar?: string | null; bot?: boolean }
+/**
+ * `team`/`enterprise`: where the user belongs (default: the install's workspace and org). `guest`: 'multi' is
+ * is_restricted, 'single' is is_ultra_restricted. `stranger`: a Slack Connect user from another organisation.
+ */
+export type FakeUser = {
+  id: string; name: string; realName?: string; email?: string | null; avatar?: string | null; bot?: boolean
+  team?: string; enterprise?: string | null; guest?: 'multi' | 'single'; stranger?: boolean
+  /** More Grid workspaces the user belongs to (enterprise_user.teams, beside `team`). */
+  teams?: string[]
+  /** Shorthand for a Slack Connect user: stranger, from team T0EXTERNAL in no enterprise (unless set). */
+  external?: boolean
+}
 /** `teams`: the workspaces the channel is in (Grid: a shared channel is in several); default the main workspace. */
 export type FakeChannel = { id: string; name: string; private?: boolean; member?: boolean; archived?: boolean; members?: number; teams?: string[] }
 export type FakeFile = { id: string; name: string; mimetype: string; bytes: Buffer; channels: string[]; title?: string }
@@ -317,7 +328,13 @@ export class FakeSlack {
       case 'users.info': {
         const u = this.users.get(params.user ?? '')
         if (!u) return json(200, { ok: false, error: 'user_not_found' })
-        return ok({ user: { id: u.id, name: u.name.toLowerCase(), real_name: u.realName ?? u.name, is_bot: !!u.bot, profile: { display_name: u.name, real_name: u.realName ?? u.name, email: u.email ?? undefined, image_72: u.avatar ?? undefined, image_192: u.avatar ?? undefined } } })
+        const enterprise = u.enterprise !== undefined ? u.enterprise : u.external ? null : this.team.enterpriseId
+        const team = u.team ?? (u.external ? 'T0EXTERNAL' : this.team.id)
+        return ok({ user: { id: u.id, name: u.name.toLowerCase(), real_name: u.realName ?? u.name, is_bot: !!u.bot,
+          team_id: team, is_restricted: u.guest === 'multi' || u.guest === 'single', is_ultra_restricted: u.guest === 'single',
+          ...(u.stranger || u.external ? { is_stranger: true } : {}),
+          ...(enterprise ? { enterprise_user: { id: u.id, enterprise_id: enterprise, enterprise_name: 'Org', is_admin: false, is_owner: false, teams: [...new Set([team, ...(u.teams ?? [])])] } } : {}),
+          profile: { display_name: u.name, real_name: u.realName ?? u.name, email: u.email ?? undefined, image_72: u.avatar ?? undefined, image_192: u.avatar ?? undefined } } })
       }
       case 'auth.teams.list': {
         // One per page, to exercise the cursor.

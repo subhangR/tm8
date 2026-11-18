@@ -48,7 +48,23 @@ const SAYS = new Set([undefined, 'bot_message', 'file_share', 'thread_broadcast'
 /** Events that carry a message, reaction or command: dropped off-list ones count as `messages`, the rest as `stanzas`. */
 const MESSAGE_EVENTS = new Set(['message', 'app_mention', 'reaction_added', 'reaction_removed'])
 
-type UserInfo = { name: string | null; email: string | null; avatarUrl: string | null; bot: boolean }
+/** Where a Slack user belongs, as users.info tells it: the server auto-links by email only for a full member of this install. */
+export type SenderTeam = { teamId: string | null; enterpriseId: string | null; guest: boolean; external: boolean }
+
+type UserInfo = {
+  name: string | null
+  email: string | null
+  avatarUrl: string | null
+  bot: boolean
+  teamId: string | null
+  /** Every workspace the user belongs to: team_id, plus enterprise_user.teams on Enterprise Grid. */
+  teams: string[]
+  enterpriseId: string | null
+  /** A multi-channel (is_restricted) or single-channel (is_ultra_restricted) guest. */
+  guest: boolean
+  /** Slack says so (is_stranger: a Slack Connect user from another organisation). */
+  stranger: boolean
+}
 
 export type ConnectionOptions = {
   /** This connection's own directory; the sealed tokens live in it. */
@@ -365,7 +381,7 @@ export class SlackConnection {
       connectionId: this.connectionId,
       conversationId: channel,
       externalMessageId: String(ts),
-      sender: { externalId: USER_ID.test(prev.user ?? '') ? prev.user : null, altId: null, name: null, fromMe: this.isOwn(prev) },
+      sender: { externalId: USER_ID.test(prev.user ?? '') ? prev.user : null, altId: null, name: null, fromMe: this.isOwn(prev), bot: this.isOwn(prev) || !!prev.bot_id, team: null },
       body: '',
       kind: 'other',
       media: [],
@@ -457,7 +473,7 @@ export class SlackConnection {
   private async sender(m: any): Promise<SenderRef> {
     if (!USER_ID.test(m.user ?? '')) {
       // An app posting without a bot user (incoming webhooks, legacy bots): no person to name or link.
-      return { externalId: null, altId: null, name: m.username ?? m.bot_profile?.name ?? null, fromMe: false, email: null, avatarUrl: null, bot: true }
+      return { externalId: null, altId: null, name: m.username ?? m.bot_profile?.name ?? null, fromMe: false, email: null, avatarUrl: null, bot: true, team: null }
     }
     const u = await this.user(m.user)
     return {
@@ -467,8 +483,35 @@ export class SlackConnection {
       fromMe: false,
       email: u?.email ?? null,
       avatarUrl: u?.avatarUrl ?? null,
-      bot: !!m.bot_id || m.subtype === 'bot_message' || !!u?.bot,
+      // Any app or bot, this runtime's own bot user above all, is never a person (never linked to a member).
+      bot: this.isOwn(m) || !!m.bot_id || m.subtype === 'bot_message' || !!u?.bot,
+      // Unknown (users.info failed): null, and the server fails closed (no auto-link).
+      team: u ? this.teamOf(u) : null,
     }
+  }
+
+  /**
+   * The sender's place relative to this install, which the server matches exactly: it auto-links by email only when
+   * teamId is the install's workspace (or, on an org-wide Grid install, enterpriseId is its org), guest is false and
+   * external is false.
+   * - teamId: the user's team_id; on a workspace install, the install's own workspace when the user belongs to it
+   *   (a Grid user's home team_id may be another workspace of the org, while enterprise_user.teams lists them all).
+   * - external: Slack's is_stranger (Slack Connect), or not in the install: another org on an org-wide install,
+   *   the install's workspace not among the user's workspaces on a workspace install. Unknown counts as external.
+   */
+  private teamOf(u: UserInfo): SenderTeam {
+    const a = this.account
+    let teamId = u.teamId
+    let external = u.stranger || !a
+    if (a && !external) {
+      if (a.isEnterpriseInstall) external = !u.enterpriseId || u.enterpriseId !== a.enterpriseId
+      else {
+        const member = u.teams.includes(a.teamId) && (!a.enterpriseId || !u.enterpriseId || u.enterpriseId === a.enterpriseId)
+        if (member) teamId = a.teamId
+        external = !member
+      }
+    }
+    return { teamId, enterpriseId: u.enterpriseId, guest: u.guest, external }
   }
 
   /** users.info, cached for the TTL (misses too); a rate-limited or failed look is not cached. */
@@ -487,6 +530,11 @@ export class SlackConnection {
           email: p.email || null,
           avatarUrl: p.image_192 || p.image_72 || null,
           bot: !!u.is_bot,
+          teamId: str(u.team_id) ?? str(p.team),
+          teams: [...new Set([str(u.team_id) ?? str(p.team), ...(Array.isArray(u.enterprise_user?.teams) ? u.enterprise_user.teams.map(str) : [])].filter((t): t is string => !!t))],
+          enterpriseId: str(u.enterprise_user?.enterprise_id) ?? str(u.enterprise_id),
+          guest: !!u.is_restricted || !!u.is_ultra_restricted,
+          stranger: !!u.is_stranger,
         }
       },
       (e: unknown) => {
@@ -822,6 +870,7 @@ export class SlackConnection {
   }
 }
 
+const str = (v: unknown): string | null => (typeof v === 'string' && v ? v : null)
 const defaultBackoff = (n: number) => Math.min(60_000, 1000 * 2 ** Math.min(n, 6))
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
