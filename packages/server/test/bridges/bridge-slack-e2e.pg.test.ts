@@ -115,6 +115,14 @@ async function event(e: Record<string, unknown>): Promise<void> {
   await slack.waitForAck(slack.event(e), 5000);
 }
 
+/** A bearer for the thread session, as the PTY host would mint for its agent. */
+async function sessionToken(sessionId: string, teamMember: string): Promise<string> {
+  const secret = generateSecret();
+  const agent = await db.tx(human(), (q) => q.rpc<{ id: string }>('issue_agent_auth_session', [
+    sessionId, teamMember, hashToken(secret), new Date(Date.now() + 3_600_000).toISOString(), 'slack-e2e session']));
+  return formatToken(agent.id, secret);
+}
+
 const posted = (pred: (m: PostedMessage) => boolean, what: string) => until(what, () => slack.messages.find(pred));
 const inboundCopies = (ts: string) => owner<{ message_id: string; body: string; edited: boolean; redacted: boolean; deleted: boolean }>(
   `select o.message_id::text, m.body, m.edited_at is not null as edited, m.redacted_at is not null as redacted, e.deleted_at is not null as deleted
@@ -358,11 +366,7 @@ describe('Slack end to end: real server + real slack-bridge runtime + fake Slack
   });
 
   it('4. the thread session replies: chat.postMessage into the thread (thread_ts = root ts) with the session as username and no prefix', async () => {
-    const secret = generateSecret();
-    const agent = await db.tx(human(), (q) => q.rpc<{ id: string }>('issue_agent_auth_session', [
-      threadSession, teammate, hashToken(secret), new Date(Date.now() + 3_600_000).toISOString(), 'slack-e2e thread session']));
-    const sessionToken = formatToken(agent.id, secret);
-    const answer = await call('/v2/messages', sessionToken, { replyToMessageId: rootMessage, body: 'On it: the CSP header blocks the font CDN.', clientMutationId: randomUUID() });
+    const answer = await call('/v2/messages', await sessionToken(threadSession, teammate), { replyToMessageId: rootMessage, body: 'On it: the CSP header blocks the font CDN.', clientMutationId: randomUUID() });
     expect(answer.status, answer.raw).toBe(200);
     const m = await posted((x) => x.text.includes('the CSP header blocks the font CDN'), 'the answer in Slack');
     expect(m.channel).toBe(CHANNEL);
@@ -399,12 +403,10 @@ describe('Slack end to end: real server + real slack-bridge runtime + fake Slack
     await until('📨 on the thread reply', () => slack.reactions.find((x) => x.ts === reply && x.name === 'incoming_envelope'));
 
     // The session answers the reply; Slack's first answer is a 429 with Retry-After: 1.
-    const secret = generateSecret();
-    const agent = await db.tx(human(), (q) => q.rpc<{ id: string }>('issue_agent_auth_session', [
-      threadSession, teammate, hashToken(secret), new Date(Date.now() + 3_600_000).toISOString(), 'slack-e2e thread session 2']));
+    const token = await sessionToken(threadSession, teammate);
     slack.rateLimit('chat.postMessage', 1, 1);
     const logCopy = copies.find((c) => c.message_id)!.message_id;
-    const sent = await call('/v2/messages', formatToken(agent.id, secret), { replyToMessageId: logCopy, body: 'Added a Safari regression test.', clientMutationId: randomUUID() });
+    const sent = await call('/v2/messages', token, { replyToMessageId: logCopy, body: 'Added a Safari regression test.', clientMutationId: randomUUID() });
     expect(sent.status, sent.raw).toBe(200);
     const m = await posted((x) => x.text.includes('Added a Safari regression test'), 'the answer after the 429');
     expect(m.thread_ts).toBe(root);
@@ -450,10 +452,7 @@ describe('Slack end to end: real server + real slack-bridge runtime + fake Slack
     await owner(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'file',$3)`, [fileId, spaceId, teammate]);
     await owner(`insert into public.files(entity_id, name, mime_type, size_bytes, storage_path, checksum_sha256) values ($1,$2,'application/pdf',$3,$4,$5)`,
       [fileId, 'report.pdf', report.length, storagePath, sha256]);
-    const secret = generateSecret();
-    const agent = await db.tx(human(), (q) => q.rpc<{ id: string }>('issue_agent_auth_session', [
-      threadSession, teammate, hashToken(secret), new Date(Date.now() + 3_600_000).toISOString(), 'slack-e2e thread session files']));
-    const sent = await call('/v2/messages', formatToken(agent.id, secret),
+    const sent = await call('/v2/messages', await sessionToken(threadSession, teammate),
       { replyToMessageId: attached.message_id, body: 'The regression report', attachmentIds: [fileId], clientMutationId: randomUUID() });
     expect(sent.status, sent.raw).toBe(200);
     const done = await until('files.completeUploadExternal', () => slack.callsOf('files.completeUploadExternal').at(-1));
@@ -520,6 +519,31 @@ describe('Slack end to end: real server + real slack-bridge runtime + fake Slack
     expect(mine.status, mine.raw).toBe(200);
     const pm = await posted((x) => x.text.includes('Safari 17 too'), 'the member reply in Slack');
     expect(pm).toMatchObject({ channel: CHANNEL, thread_ts: root, username: 'Priya', icon_url: AVATAR, text: 'Thanks, I will check Safari 17 too.' });
+  });
+
+  it('a second connection with the same app tokens never takes over; the first stays linked and keeps delivering', async () => {
+    const opens = slack.opens;
+    const again = await call('/v2/me/bridge-connections', browserToken, { clientMutationId: randomUUID(), provider: 'slack',
+      credential: { kind: 'slack_tokens', botToken: slack.botToken, appToken: slack.appToken } });
+    expect(again.raw).not.toContain(slack.botToken);
+    expect(again.raw).not.toContain(slack.appToken);
+    const list = async () => (await call('/v2/me/bridge-connections?provider=slack', browserToken)).body.data.items as { id: string; status: string; detail: string | null }[];
+    if (again.status === 200) {
+      // Accepted at begin: the runtime refuses it (one connection per Slack app), and that state is the last one kept.
+      const id = again.body.data.connection.id as string;
+      const dup = await until('the duplicate to settle', async () => (await list()).find((c) => c.id === id && c.status !== 'connecting'));
+      expect(dup).toMatchObject({ status: 'logged_out', detail: 'app_already_connected' });
+    } else {
+      // Refused at begin (the same app is already connected).
+      expect(again.status, again.raw).toBeGreaterThanOrEqual(400);
+      expect(again.status).toBeLessThan(500);
+    }
+    expect((await list()).find((c) => c.id === connectionId)).toMatchObject({ status: 'linked' });
+    expect(slack.opens).toBe(opens);
+    const post = await call('/v2/messages', await sessionToken(threadSession, teammate),
+      { replyToMessageId: rootMessage, body: 'Still here after the second connect.', clientMutationId: randomUUID() });
+    expect(post.status, post.raw).toBe(200);
+    expect(await posted((x) => x.text === 'Still here after the second connect.', 'a post after the second connect')).toMatchObject({ thread_ts: root });
   });
 
   it('no token is in any table, log line or runtime log', async () => {
