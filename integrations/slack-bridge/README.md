@@ -129,6 +129,7 @@ fakes. Nothing inside the process is stubbed:
 | `proxy.test.ts` | proxy configuration and NO_PROXY; every Slack path tunnelling through a CONNECT proxy (`test/connect-proxy.ts`), with auth and refusal |
 | `units.test.ts` | mrkdwn, splitting, Slack text, emoji, failure mapping, sealing, the allowlist |
 
-CI runs the suites in `.github/workflows/slack-bridge.yml` (until installed, `ci/slack-bridge.workflow.yml`) whenever this directory or the canonical protocol module
-changes. `packages/contract/test/bridge-runtime-protocol.test.ts` checks that the protocol mirror matches the
-canonical module.
+**CI: the owner moves `ci/slack-bridge.workflow.yml` to `.github/workflows/slack-bridge.yml`** (it needs a GitHub token
+with the `workflow` scope, which the build lanes lack). It runs typecheck, the mirror check and the suites whenever
+this directory or the canonical protocol module changes. `packages/contract/test/bridge-runtime-protocol.test.ts`
+(in CI's test-small job) already checks that the protocol mirror matches the canonical module.
