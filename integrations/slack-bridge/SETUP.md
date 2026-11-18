@@ -83,7 +83,7 @@ What the manifest asks for, and why:
 | `chat:write.customize` | Post each reply under the tm8 session's own name and icon |
 | `reactions:read`, `reactions:write` | See reactions; show 📨 👀 ✅ progress on the message tm8 is answering |
 | `files:read`, `files:write` | Pass files from Slack to tm8, and upload files tm8 makes |
-| `users:read`, `users:read.email` | Show who wrote a message; link a Slack user to the tm8 member with the same verified email |
+| `users:read`, `users:read.email` | Show who wrote a message; link a Slack user to the tm8 member whose tm8 account email is the same |
 | `commands` | The `/tm8` slash command |
 
 Events: `message.channels`, `message.groups` (messages, edits and deletes in public and private channels),
@@ -272,14 +272,16 @@ tm8 links a Slack user to a tm8 member **automatically, by email**, only when **
 - the Slack user is a **full member** of the workspace (or Enterprise Grid org) the Slack app is installed in.
   Never a Slack **guest** (single- or multi-channel), never an external person in a **Slack Connect** shared
   channel, never a user from another workspace or org;
-- their Slack profile email equals the **verified** email of a tm8 member who is **currently a member of the space
+- their Slack profile email equals the **email on the tm8 account** of a tm8 member (the one the account was
+  created with, not a profile email they can edit) who is **currently a member of the space
   this bridge belongs to**;
 - exactly **one** tm8 member matches. Two or more matches link nobody.
 
 An automatic link is *asserted* trust. It names the person in tm8, but it is never enough for admin-level
 commands. Everyone else, including anyone who needs those commands, links themselves once:
 
-1. In tm8, open the space's **Settings → Linked identities** and click **Link Slack**. tm8 shows a code like
+1. In tm8, open **Settings → Account → Linked identities** and click **Link Slack**. (A linked identity is yours
+   across tm8, not per space.) tm8 shows a code like
    `TM8-ABC123`, valid for a short time.
 2. In a bridged Slack channel, send **`/tm8 link TM8-ABC123`**.
 
@@ -382,7 +384,7 @@ Tell your compliance team:
   until tm8's own retention removes them.
 - **Network:** outbound only, HTTPS and WSS to Slack. No public URL, webhook or inbound firewall rule.
 - **People:** a full member of your own Slack workspace/org whose Slack email matches exactly one current member of
-  the bridged tm8 space (verified email) is linked to that member automatically, with limited (*asserted*) trust.
+  the bridged tm8 space (by the email on their tm8 account) is linked to that member automatically, with limited (*asserted*) trust.
   Slack guests, Slack Connect externals and other workspaces are never auto-linked. Everyone else is a guest until
   they run `/tm8 link` ([Who tm8 recognises](#who-tm8-recognises)). Slack emails are used for that match only and
   are not stored.
@@ -403,7 +405,7 @@ Tell your compliance team:
 | *This Slack app has been uninstalled or disabled in the workspace…* (`account_inactive`), or `token_revoked` | The app was uninstalled, disabled or its tokens revoked | Install it again (A3; on Grid an Org Admin may have to approve it, A2), then **Paste new tokens** |
 | *tm8 holds no tokens for this connection yet…* (`no_credential`) | The sealed state was lost, moved or never written | **Paste new tokens**; see [Where the tokens live](#where-the-tokens-live-and-keeping-them) |
 | `token_expired`, or the bridge stops about 12 hours after connecting | Token rotation was turned on for the app | Rotation cannot be turned off again: create a new app from the manifest (Part A) and connect its tokens |
-| `app_already_connected` | This Slack app's tokens are already used by another tm8 connection. Socket Mode spreads an app's events over all of its sockets, so tm8 runs one connection per app | Use one connection per Slack app: remove the other connection, or create a second Slack app from the manifest for the second one |
+| *This Slack app is already connected through another tm8 connection on this node, and Slack would split its events between the two…* (`app_already_connected`) | This Slack app's tokens are already used by another tm8 connection. Socket Mode spreads an app's events over all of its sockets, so tm8 runs one connection per app | Disconnect the other connection (its menu → **Remove *name*…**), or make a separate Slack app from the manifest for this one |
 | Replies arrive from **tm8** prefixed `*Name:*` instead of under the session's own name and icon | The install lacks `chat:write.customize` | Add the scope (App Manifest → paste this manifest → Save), **Reinstall**, **Paste new tokens** |
 | *Slack refused the tokens: <code>…* (any other code) | Usually the app is not installed in this workspace | Check the app at api.slack.com/apps is installed (A3), then paste both tokens again |
 | Connected, but the channel is not in the picker | The bot is not in the channel | `/invite @tm8` in the channel, reopen the picker |
@@ -450,9 +452,12 @@ The server can mint the runtime's login without starting it, for when you run th
 your own process manager:
 
 - On the tm8 server set **`TM8_SLACK_RUNTIME_TOKEN_FILE=<TM8_DATA_DIR>/bridges/slack-runtime-secrets/runtime.token`**
-  (any path works; keep the file alone in its directory) and leave `TM8_SLACK_RUNTIME` unset. The server writes a
+  (keep the file alone in its directory) and leave `TM8_SLACK_RUNTIME` unset. The server writes a
   fresh login to that file (mode 0600) at every start and every few days, replacing the file each time.
 - Run the runtime with `TM8_SERVER_URL`, `TM8_BRIDGE_RUNTIME_TOKEN_FILE` (that file) and `TM8_SLACK_STATE_DIR`.
+- **Start tm8 first**, so the server creates the token's directory (as its own user, 0700) and writes the file.
+  If `docker run` comes first, Docker creates the missing directory as **root**, and the server's write into it
+  then fails with `EACCES`. (Fix: stop the container, delete that empty directory, start tm8, then the container.)
 
 By hand, from this folder:
 
@@ -480,6 +485,9 @@ On **Docker Desktop** (macOS, Windows), leave out `--network host` and use
 `-e TM8_SERVER_URL=http://host.docker.internal:4610` instead; Docker Desktop forwards that name to your machine's
 loopback. (On Linux, `host.docker.internal` points at the Docker bridge, where a loopback-only server does not
 listen.)
+
+The image reads `/app/secrets/runtime.token`. If your token file has another name, add
+`-e TM8_BRIDGE_RUNTIME_TOKEN_FILE=/app/secrets/<its name>`.
 
 Mount the token's **directory**, not the file: the server replaces the file at each new login, and a container
 with only the old file mounted keeps reading a revoked login. The `--user` must be the user that owns that
