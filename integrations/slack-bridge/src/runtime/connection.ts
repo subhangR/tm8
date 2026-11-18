@@ -96,7 +96,7 @@ export class SlackConnection {
     void this.o.emit('state', {
       connectionId: this.connectionId,
       status,
-      detail,
+      detail: detail === null ? null : detail.slice(0, 500),
       ...(linked ? { self: { id: this.account!.botUserId, lid: null }, account: this.account! } : {}),
     }).catch(() => {})
   }
@@ -187,7 +187,8 @@ export class SlackConnection {
     const { body, headers } = await this.o.api.call('auth.test', botToken)
     if (!body.bot_id && !String(body.user_id ?? '').length) throw new SlackApiError('not_allowed_token_type', 'auth.test')
     return {
-      teamId: String(body.team_id ?? ''),
+      // An org-wide Enterprise Grid install may answer without a team (or with the org): fall back to the org id.
+      teamId: String(body.team_id || body.enterprise_id || ''),
       teamName: String(body.team ?? ''),
       url: String(body.url ?? ''),
       enterpriseId: body.enterprise_id ? String(body.enterprise_id) : null,

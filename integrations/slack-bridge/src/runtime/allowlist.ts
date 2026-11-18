@@ -8,7 +8,7 @@ export type OutboundKind = 'text' | 'media' | 'reaction' | 'media.fetch'
 const POSTS: ReadonlySet<OutboundKind> = new Set(['text', 'media', 'reaction'])
 
 /** A Slack channel id: public `C…`, private `G…` (older private channels). DMs (`D…`) are never connectable. */
-export const CHANNEL_ID = /^[CG][A-Z0-9]{2,}$/
+export const CHANNEL_ID = /^[CG][A-Z0-9]+$/
 
 export class OutboundRefused extends Error {
   constructor(public reason: 'not_connected' | CannotSendReason, conversationId: string, kind: OutboundKind) {

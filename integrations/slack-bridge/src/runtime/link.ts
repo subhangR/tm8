@@ -49,7 +49,8 @@ export class HttpWsLink implements ServerLink {
         // 4xx is the server refusing this frame (not ours to retry), except 429.
         const status = e instanceof HttpError ? e.status : 0
         const retryable = status === 0 || status === 429 || status >= 500
-        if (!retryable || attempt >= delays.length) {
+        // A stopped link (shutting down) does not keep retrying into a server that is gone.
+        if (!retryable || attempt >= delays.length || this.closed) {
           this.o.log(`[link] ${route} not delivered: ${(e as Error).message}`)
           throw e
         }
