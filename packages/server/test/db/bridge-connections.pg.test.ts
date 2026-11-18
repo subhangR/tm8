@@ -314,7 +314,12 @@ describe('bridges.connections.begin and list (§3.4)', () => {
   it('begin relinks only the caller\'s own connection, and only for a provider with a runtime', async () => {
     const e = await refusal(as(plainIdentity, q => q.rpc('begin_bridge_connection', ['whatsapp', null, connection, randomUUID()])));
     expect(reasonOf(e)).toBe('not_connection_owner');
-    expect((await refusal(as(plainIdentity, q => q.rpc('begin_bridge_connection', ['slack', null, null, randomUUID()])))).code)
+    // 443: whatsapp and slack have runtimes; telegram does not yet. (A Slack begin
+    // without tokens is refused by the contract schema in the handler: SQL never sees tokens.)
+    expect((await refusal(as(plainIdentity, q => q.rpc('begin_bridge_connection', ['telegram', null, null, randomUUID()])))).code)
+      .toBe('invalid_input');
+    // A WhatsApp connection is never relinked as Slack.
+    expect((await refusal(as(ownerIdentity, q => q.rpc('begin_bridge_connection', ['slack', null, connection, randomUUID()])))).code)
       .toBe('invalid_input');
     const c = await as(ownerIdentity, q => q.rpc<{ id: string; status: string }>('begin_bridge_connection', ['whatsapp', null, connection, randomUUID()]));
     expect(c).toMatchObject({ id: connection, status: 'connecting' });

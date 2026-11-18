@@ -223,7 +223,7 @@ revoke all on function internal.bridge_slack_account(jsonb) from public;
 -- anything shaped like a token.
 create or replace function public.bridge_runtime_state(p_frame jsonb) returns jsonb
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
-declare conn public.bridge_connections; st text := p_frame ->> 'status'; self_ids text[]; acct jsonb;
+declare conn public.bridge_connections; st text := p_frame ->> 'status'; v_self text[]; acct jsonb;
         v_detail text := left(nullif(btrim(coalesce(p_frame ->> 'detail', '')), ''), 200);
 begin
   perform internal.bridge_runtime_session();
@@ -236,13 +236,13 @@ begin
   if v_detail ~* '(xox[a-z]-|xapp-|[A-Za-z0-9_-]{32,})' then v_detail := '[redacted]'; end if;
   if conn.provider = 'slack' then
     acct := internal.bridge_slack_account(p_frame -> 'account');
-    self_ids := case when acct is not null then array[acct ->> 'botUserId'] else '{}' end;
+    v_self := case when acct is not null then array[acct ->> 'botUserId'] else '{}' end;
   else
-    select array_remove(array[p_frame #>> '{self,id}', p_frame #>> '{self,lid}'], null) into self_ids;
+    select array_remove(array[p_frame #>> '{self,id}', p_frame #>> '{self,lid}'], null) into v_self;
   end if;
   update public.bridge_connections
      set status = st, last_seen_at = now(),
-         self_ids = case when cardinality(self_ids) > 0 then self_ids else bridge_connections.self_ids end,
+         self_ids = case when cardinality(v_self) > 0 then v_self else bridge_connections.self_ids end,
          provider_account = coalesce(acct, bridge_connections.provider_account),
          state_detail = v_detail,
          external_account_id = case
@@ -578,7 +578,7 @@ begin
   perform internal.require_bridges_worker();
   for r in
     select ob.*, c.runtime_id, c.status as conn_status, c.provider as conn_provider, b.paused_at, b.ended_at, b.muted_until,
-           b.policy ->> 'direction' as direction, b.external_conversation_id as conv
+           b.policy ->> 'direction' as direction, b.policy ->> 'voice' as policy_voice, b.external_conversation_id as conv
       from public.bridge_outbox ob
       join public.bridge_connections c on c.id = ob.connection_id
       join public.bridges b on b.entity_id = ob.bridge_id
@@ -627,8 +627,6 @@ begin
           'replyTo', case when coalesce(r.payload #>> '{replyTo,externalMessageId}', '') not like 'cmd:%'
                           then r.payload -> 'replyTo' end,
           'threadTs', case when r.thread_ts not like 'cmd:%' then r.thread_ts end,
-          'voice', case when internal.bridge_provider_voices(r.conn_provider)
-                        then internal.bridge_outbox_voice(r.bridge_id, r.poster, r.teammate_id, r.session_id, r.message_id) end,
           -- SERVER-ONLY metadata. The hub emits only a file entity reference;
           -- the authenticated HTTP door resolves the storage path when read.
           'files', (select jsonb_agg(jsonb_build_object('fileEntityId', f.entity_id, 'spaceId', e.space_id,
@@ -637,6 +635,11 @@ begin
                       from jsonb_array_elements(r.payload -> 'files') with ordinality a(item, ord)
                       join public.files f on f.entity_id = (a.item ->> 'fileEntityId')::uuid
                       join public.entities e on e.id = f.entity_id and e.deleted_at is null)))
+          -- After the strip: SendVoice keeps `iconUrl: null` (the app's icon).
+          || case when internal.bridge_provider_voices(r.conn_provider) and r.policy_voice is distinct from 'plain'
+               then jsonb_build_object('voice',
+                      internal.bridge_outbox_voice(r.bridge_id, r.poster, r.teammate_id, r.session_id, r.message_id))
+               else '{}'::jsonb end
         else jsonb_build_object('type', 'react', 'outboxId', r.id, 'connectionId', r.connection_id,
           'conversationId', r.conv, 'target', r.payload -> 'target', 'emoji', r.payload ->> 'emoji') end));
   end loop;

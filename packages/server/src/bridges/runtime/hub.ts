@@ -25,7 +25,9 @@ import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 
 import { CollabError } from '@tm8/contract';
-import type { AllowlistFrame, ConversationsFrame, GroupFrame, MediaFrame, ServerFrame } from '@tm8/contract';
+import type {
+  AllowlistFrame, ConnectCredential, ConversationsFrame, GroupFrame, MediaFrame, RuntimeCapabilities, RuntimeProvider, ServerFrame,
+} from '@tm8/contract';
 
 import type { Db, DbClaims } from '../../db/types.js';
 import { createWsServer, type WsServer } from '../../events/ws-server.js';
@@ -34,9 +36,15 @@ import type { RequestIdentity } from '../../http/types.js';
 import { bridgesWorkerClaims } from '../outbox.js';
 
 export interface BridgeRuntimeConnectInput {
-  readonly provider: 'whatsapp';
+  readonly provider: RuntimeProvider;
   readonly connectionId: string;
   readonly authFlow?: { kind: 'qr' } | { kind: 'pairing'; phone: string };
+  /**
+   * v4 token providers (Slack): the pasted tokens. Put on this one `connect`
+   * frame and nowhere else: never stored, never logged, never echoed (the
+   * runtime seals them under the connection's stateKey, D38).
+   */
+  readonly credential?: ConnectCredential;
 }
 
 /** `LISTEN` on one channel; resolves to an unsubscribe. Absent = poll only. */
@@ -76,6 +84,8 @@ interface RuntimeLink {
   readonly sink: EventSink;
   provider: string | null;
   protocolVersion?: number;
+  /** The capability sheet the runtime sent in `hello` (§5); null until then. */
+  capabilities: Partial<Record<keyof RuntimeCapabilities, unknown>> | null;
 }
 
 interface Pending {
@@ -127,7 +137,7 @@ export class BridgeRuntimeHub {
         const runtimeId = this.upgrading.get(sink.identity);
         if (!runtimeId) return sink.close(1008, 'unidentified runtime');
         this.runtimes.get(runtimeId)?.sink.close(1000, 'replaced by a newer socket');
-        this.runtimes.set(runtimeId, { runtimeId, sink, provider: null });
+        this.runtimes.set(runtimeId, { runtimeId, sink, provider: null, capabilities: null });
         // Nothing a runtime sends on this socket is read: its frames are POSTs.
         sink.onClose(() => {
           if (this.runtimes.get(runtimeId)?.sink === sink) this.runtimes.delete(runtimeId);
@@ -169,12 +179,40 @@ export class BridgeRuntimeHub {
     return [...this.runtimes.keys()];
   }
 
-  /** Called by the `hello` door: which provider this runtime speaks for. */
-  noteHello(runtimeId: string, provider: string, protocolVersion = 1): void {
+  /** Called by the `hello` door: which provider this runtime speaks for, and what it can do. */
+  noteHello(runtimeId: string, provider: string, protocolVersion = 1, capabilities: unknown = null): void {
     const link = this.runtimes.get(runtimeId);
-    if (link) { link.provider = provider; link.protocolVersion = protocolVersion; }
-    if (protocolVersion < 3) this.o.log?.('[bridges] outbound delivery requires WhatsApp runtime protocol v3; upgrade the runtime');
+    if (link) {
+      link.provider = provider;
+      link.protocolVersion = protocolVersion;
+      link.capabilities = typeof capabilities === 'object' && capabilities !== null && !Array.isArray(capabilities)
+        ? capabilities as RuntimeLink['capabilities'] : null;
+    }
+    if (protocolVersion < 3) this.o.log?.(`[bridges] outbound delivery requires ${provider} runtime protocol v3; upgrade the runtime`);
     this.kick();
+  }
+
+  /** The provider a connected runtime said it speaks for in `hello`; null before hello or when not connected. */
+  providerOf(runtimeId: string): string | null {
+    return this.runtimes.get(runtimeId)?.provider ?? null;
+  }
+
+  /**
+   * The runtime for a provider. Never one that said hello for ANOTHER provider:
+   * a Slack connection must never reach the WhatsApp runtime. A lone runtime
+   * that has not said hello yet is still taken (a fresh socket, hello in flight).
+   */
+  private runtimeFor(provider: string): RuntimeLink | undefined {
+    const links = [...this.runtimes.values()];
+    const same = links.find((r) => r.provider === provider);
+    if (same) return same;
+    const unknown = links.filter((r) => r.provider === null);
+    return links.length === 1 && unknown.length === 1 ? unknown[0] : undefined;
+  }
+
+  /** A capability the runtime's sheet turns off. Absent sheet or key: on (v1-v3 WhatsApp runtimes sent none). */
+  private off(link: RuntimeLink | undefined, key: keyof RuntimeCapabilities): boolean {
+    return link?.capabilities?.[key] === false;
   }
 
   async stateKey(connectionId: string): Promise<string> {
@@ -188,8 +226,7 @@ export class BridgeRuntimeHub {
    * never binds the worker's backgroundJob claim.
    */
   async connect(input: BridgeRuntimeConnectInput, claims: DbClaims): Promise<{ runtimeId: string } | null> {
-    const link = [...this.runtimes.values()].find((r) => r.provider === input.provider)
-      ?? (this.runtimes.size === 1 ? [...this.runtimes.values()][0] : undefined);
+    const link = this.runtimeFor(input.provider);
     if (!link) return null;
     const bound = await this.o.db.rpc<{ allowlist: AllowlistFrame }>(claims, 'internal.bridge_runtime_connect',
       [input.connectionId, link.runtimeId]);
@@ -198,6 +235,7 @@ export class BridgeRuntimeHub {
       connectionId: input.connectionId,
       stateKey: await this.stateKey(input.connectionId),
       ...(input.authFlow ? { authFlow: input.authFlow } : {}),
+      ...(input.credential ? { credential: input.credential } : {}),
       allowlist: bound.allowlist,
     });
     return { runtimeId: link.runtimeId };
@@ -243,6 +281,10 @@ export class BridgeRuntimeHub {
   /** 426: make a group on the number (the bridge's /split). WhatsApp can take a while to answer. */
   async createGroup(runtimeId: string, input: { requestId: string; connectionId: string; subject: string; participants: string[]; sourceConversationId?: string },
     timeoutMs = 30_000): Promise<GroupFrame> {
+    if (this.runtimes.get(runtimeId)?.provider === 'slack') {
+      return { requestId: input.requestId, connectionId: input.connectionId,
+        error: 'Slack bridges cannot create channels; invite the tm8 app to an existing channel instead' };
+    }
     if (input.sourceConversationId && (this.runtimes.get(runtimeId)?.protocolVersion ?? 1) < 2) {
       return { requestId: input.requestId, connectionId: input.connectionId,
         error: 'Cannot split until the WhatsApp runtime is upgraded to support community groups', code: 'community_create_failed' };
@@ -260,6 +302,10 @@ export class BridgeRuntimeHub {
   /** 426: add people to a connected group (the bridge's /invite). */
   async addToGroup(runtimeId: string, input: { requestId: string; connectionId: string; conversationId: string; participants: string[] },
     timeoutMs = 30_000): Promise<GroupFrame> {
+    if (this.runtimes.get(runtimeId)?.provider === 'slack') {
+      return { requestId: input.requestId, connectionId: input.connectionId,
+        error: 'Slack bridges cannot add people to a channel; invite them in Slack' };
+    }
     return this.request(runtimeId, input.requestId, { type: 'group.add', ...input }, timeoutMs) as Promise<GroupFrame>;
   }
 
@@ -334,13 +380,31 @@ export class BridgeRuntimeHub {
       ]);
     if (sends?.length) this.again = true;
     for (const { runtimeId, frame: raw } of sends ?? []) {
-      const frame = raw.type === 'send' ? this.withMedia(raw as SendFrame & { files?: OutboundFile[] | null }) : raw;
+      const frame = this.forRuntime(runtimeId,
+        raw.type === 'send' ? this.withMedia(raw as SendFrame & { files?: OutboundFile[] | null }) : raw);
+      if (!frame) continue;
       try {
         this.send(runtimeId, frame);
       } catch {
         // Left `dispatching`; the watchdog returns it to retry after two minutes.
       }
     }
+  }
+
+  /**
+   * Fit a frame to the runtime's capability sheet (§5): no `typing` or `read`
+   * where the sheet says false (Slack bots have neither), `threadTs` only on
+   * native threads, `voice` only where perUserVoice. Null: nothing to send.
+   */
+  private forRuntime(runtimeId: string, frame: ServerFrame): ServerFrame | null {
+    const link = this.runtimes.get(runtimeId);
+    if (frame.type === 'typing' && this.off(link, 'typing')) return null;
+    if (frame.type === 'read' && this.off(link, 'readReceipts')) return null;
+    if (frame.type !== 'send') return frame;
+    const out = { ...frame };
+    if (out.threadTs !== undefined && link?.capabilities?.threads !== 'native') delete out.threadTs;
+    if (out.voice !== undefined && link?.capabilities?.perUserVoice !== true) delete out.voice;
+    return out;
   }
 
   /** Only metadata crosses the socket; bytes are fetched by the authenticated
