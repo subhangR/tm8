@@ -143,6 +143,25 @@ describe('the bridge_runtime session (§2.5, ac8)', () => {
   });
 });
 
+describe('connection.state (398\'s door; 443 fixes it)', () => {
+  // REGRESSION: through 442 every state frame raised 42702 ("self_ids" is
+  // ambiguous: a plpgsql local shadowed the column), with or without `self`.
+  // The runtime swallows state errors and heartbeat also writes status, so
+  // nothing showed; self_ids and external_account_id were never recorded.
+  it('records the number\'s own ids on linked, and a frame without self keeps them', async () => {
+    const id = randomUUID();
+    await owner(`insert into public.bridge_connections(id, provider, owner_account_id, label, status) values ($1,'whatsapp',$2,'state','connecting')`,
+      [id, ownerAccount]);
+    expect(await door('bridge_runtime_state', JSON.stringify({ connectionId: id, status: 'linked', detail: null,
+      self: { id: '919800000042@s.whatsapp.net', lid: '4242@lid' } }))).toEqual({ connectionId: id, status: 'linked' });
+    expect(await door('bridge_runtime_state', JSON.stringify({ connectionId: id, status: 'offline', detail: null })))
+      .toEqual({ connectionId: id, status: 'offline' });
+    const [row] = await owner<{ status: string; self_ids: string[]; external_account_id: string }>(
+      'select status, self_ids, external_account_id from public.bridge_connections where id = $1', [id]);
+    expect(row).toEqual({ status: 'offline', self_ids: ['919800000042@s.whatsapp.net', '4242@lid'], external_account_id: '919800000042@s.whatsapp.net' });
+  });
+});
+
 describe('shared functions keep their existing arms (398 replaces validate_message)', () => {
   const insertMessage = (author: string, anchor = infra) => scratch.transaction(async c => {
     await c.query('set local role tm8_graph_owner');

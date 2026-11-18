@@ -26,6 +26,14 @@
 --       command (`cmd:` id, it has no message to react to) is never sent.
 --   §7  427's progress reactions for every provider whose runtime reacts.
 --
+-- FIX FOR MAIN (WhatsApp, live): through 442 public.bridge_runtime_state
+-- raised 42702 ("self_ids" is ambiguous: its plpgsql local shadowed the
+-- column) on EVERY state frame, with or without `self`. The runtime swallowed
+-- the 503 and heartbeat also writes status, so nothing showed, but a live
+-- runtime never recorded self_ids or external_account_id (429's own number,
+-- @-mentions of the number). §2's restatement names the local v_self.
+-- Regression: test/db/bridge-runtime.pg.test.ts 'connection.state'.
+--
 -- RESTATED HERE (444 must start from these bodies if it touches them):
 --   internal.is_server_only_credential_provider (421)
 --   public.begin_bridge_connection (421)
