@@ -518,13 +518,33 @@ describe('a Slack channel end to end (lane A ac3)', () => {
     expect(ob!.wait).toBeGreaterThan(25);
     expect(ob!.wait).toBeLessThanOrEqual(31);
 
+    // Retry-After holds the CONNECTION (review finding 5): a later message waits behind it, in order.
+    const [conn] = await database.query<{ wait: number }>(
+      `select extract(epoch from outbound_not_before - now())::float as wait from public.bridge_connections where id = $1`, [slackConnection]);
+    expect(conn!.wait).toBeGreaterThan(25);
     slackFrames.length = 0;
+    const later = await call('/v2/messages', browserToken, { anchorIds: [slackBridge], body: 'and one more thing', clientMutationId: randomUUID() });
+    expect(later.status, later.raw).toBe(200);
+    await new Promise((r) => setTimeout(r, 2500));
+    expect(slackFrames.filter(isSend)).toEqual([]);
+    const [queued] = await database.query<{ status: string; attempts: number }>(
+      `select ob.status, ob.attempts from public.bridge_outbox ob join public.messages m on m.entity_id = ob.message_id
+        where ob.connection_id = $1 and m.body = 'and one more thing'`, [slackConnection]);
+    expect(queued).toEqual({ status: 'pending', attempts: 0 });
+
+    // The limit lapses: the rate-limited message goes first, then the later one.
+    await database.query(`update public.bridge_connections set outbound_not_before = now() where id = $1`, [slackConnection]);
     await database.query(`update public.bridge_outbox set next_attempt_at = now() where id = $1`, [send.outboxId]);
     const retry = await until(() => slackFrames.find(isSend));
     expect(retry.outboxId).toBe(send.outboxId);
     const sent = await call('/v2/bridge-runtime/sent', runtimeToken,
       { outboxId: retry.outboxId, connectionId: slackConnection, externalMessageId: '1790000001.000300', message: null });
     expect(sent.body).toMatchObject({ status: 'sent' });
+    const next = await until(() => slackFrames.find((f): f is Extract<ServerFrame, { type: 'send' }> => isSend(f) && f.outboxId !== send.outboxId));
+    expect(next.text).toBe('and one more thing');
+    expect((await call('/v2/bridge-runtime/sent', runtimeToken,
+      { outboxId: next.outboxId, connectionId: slackConnection, externalMessageId: '1790000001.000301', message: null })).body)
+      .toMatchObject({ status: 'sent' });
     const origins = await database.query<{ external_message_id: string }>(
       `select external_message_id from public.message_origins where message_id = $1 and direction = 'out'`, [answer]);
     expect(origins).toEqual([{ external_message_id: '1790000001.000300' }]);

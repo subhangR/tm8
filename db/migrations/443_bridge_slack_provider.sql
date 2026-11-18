@@ -527,6 +527,13 @@ grant execute on function public.bridge_runtime_inbound_change(jsonb) to tm8_app
 -- §6. Outbound: threads, voice, Retry-After.
 -- -----------------------------------------------------------------------------
 
+-- Retry-After holds the whole connection's queue, not one row (review #1505
+-- finding 5): later rows wait too, so a channel keeps its order and no row
+-- spends attempts on a limit the provider already announced.
+alter table public.bridge_connections add column outbound_not_before timestamptz;
+comment on column public.bridge_connections.outbound_not_before is
+  '443: the provider asked this connection to send nothing before this time (Slack 429 Retry-After); bridge_outbox_take honours it.';
+
 alter table public.bridge_outbox add column thread_ts text
   check (thread_ts is null or char_length(thread_ts) between 1 and 256);
 comment on column public.bridge_outbox.thread_ts is
@@ -614,6 +621,8 @@ begin
       join public.bridges b on b.entity_id = ob.bridge_id
      where (ob.status = 'pending' or (ob.status = 'failed_retryable' and coalesce(ob.next_attempt_at, now()) <= now()))
        and c.runtime_id = any(p_runtime_ids) and c.status = 'linked'
+       -- 443: the connection's Retry-After holds its whole queue.
+       and (c.outbound_not_before is null or c.outbound_not_before <= now())
        and not exists (select 1 from public.bridge_outbox active
                        where active.connection_id = ob.connection_id and active.status = 'dispatching')
      order by ob.created_at
@@ -630,6 +639,13 @@ begin
     end if;
     if exists (select 1 from public.bridge_outbox active
                 where active.connection_id = r.connection_id and active.status = 'dispatching') then
+      continue;
+    end if;
+    -- 443: keep order. A row waiting out its retry (it was first) holds the later ones of its connection.
+    if exists (select 1 from public.bridge_outbox earlier
+                where earlier.connection_id = r.connection_id and earlier.status = 'failed_retryable'
+                  and earlier.next_attempt_at > now() and earlier.created_at < r.created_at
+                  and earlier.last_error like 'retry_after:%') then
       continue;
     end if;
     reason := case
@@ -726,8 +742,15 @@ begin
            settled_at = case when retryable then null else now() end,
            next_attempt_at = case when retryable then now() + make_interval(secs => greatest(
              case when retry_after is not null then 1 else 5 * power(2, ob.attempts) end, coalesce(retry_after, 0))) end,
-           last_error = left(coalesce(p_frame #>> '{failed,reason}', 'failed'), 300)
+           last_error = left(case when retry_after is not null then 'retry_after: ' else '' end
+                             || coalesce(p_frame #>> '{failed,reason}', 'failed'), 300)
      where id = ob.id;
+    -- The provider's limit is the connection's: nothing more goes out on it until then.
+    if retry_after is not null then
+      update public.bridge_connections
+         set outbound_not_before = greatest(coalesce(outbound_not_before, now()), now() + make_interval(secs => retry_after))
+       where id = ob.connection_id;
+    end if;
   end if;
   select * into ob from public.bridge_outbox where id = ob.id;
   return jsonb_strip_nulls(jsonb_build_object('outboxId', ob.id, 'status', ob.status, 'nextAttemptAt', ob.next_attempt_at));
