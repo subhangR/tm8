@@ -527,7 +527,8 @@ describe('a Slack channel end to end (lane A ac3)', () => {
     expect(rows).toEqual([{ body: '[deleted]', redacted: true, deleted: false }]);
     const [left] = await database.query<{ n: number }>(
       `select ((select count(*) from public.messages where body like '%regression test%')
-             + (select count(*) from public.workspace_events where payload::text like '%regression test%'))::int as n`);
+             + (select count(*) from public.workspace_events where payload::text like '%regression test%')
+             + (select count(*) from public.bridge_outbox where payload::text like '%regression test%'))::int as n`);
     expect(left!.n).toBe(0);
     // The tombstone is in the bridge's log, in its thread.
     const log = await call(`/v2/bridges/${slackBridge}/log?latest=true&limit=50`, browserToken, undefined, 'GET');
@@ -697,6 +698,21 @@ describe('a Slack channel end to end (lane A ac3)', () => {
     const status = await ask('T0STATUS', 'status');
     expect(status).not.toContain('link your number first');
     expect(status).not.toContain('space admin');
+  });
+
+  it('a Slack outbox row holds no quoted text: reactions and answers carry the ts only (coordinator ruling)', async () => {
+    const rows = await database.query<{ kind: string; payload: Record<string, any> }>(
+      `select kind, payload from public.bridge_outbox where connection_id = $1`, [slackConnection]);
+    expect(rows.filter((r) => r.kind === 'react').length).toBeGreaterThan(0);
+    const quoting = rows.filter((r) => r.payload.target || r.payload.replyTo);
+    expect(quoting.length).toBeGreaterThan(1);
+    for (const r of quoting) {
+      const quote = r.payload.target ?? r.payload.replyTo;
+      expect(quote.externalMessageId).toEqual(expect.any(String));
+      expect(quote).not.toHaveProperty('text');
+      expect(quote).not.toHaveProperty('message');
+    }
+    // WhatsApp keeps its quotes: bridge-runtime-server.pg asserts its replyTo.text.
   });
 
   it('a renamed channel renames the bridge\'s conversation', async () => {

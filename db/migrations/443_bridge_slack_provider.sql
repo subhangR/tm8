@@ -564,6 +564,14 @@ begin
     update public.session_message_deliveries
        set status = 'cancelled', failure_reason = 'message_deleted', settled_at = now()
      where message_id = any(ids) and status = 'pending';
+    -- The outbox's quotes of it (a reaction's target, an answer's replyTo) lose
+    -- its words too (rows from before 443's no-quote trigger, or another provider).
+    update public.bridge_outbox
+       set payload = payload #- '{target,text}' #- '{target,message}' #- '{replyTo,text}' #- '{replyTo,message}'
+     where bridge_id = b.entity_id
+       and (payload #>> '{target,externalMessageId}' = ext or payload #>> '{replyTo,externalMessageId}' = ext)
+       and (payload #> '{target,text}' is not null or payload #> '{target,message}' is not null
+            or payload #> '{replyTo,text}' is not null or payload #> '{replyTo,message}' is not null);
     -- A chat turn queued on a routed copy is withdrawn (a running one finishes).
     delete from public.chat_turns where user_message_id = any(ids) and state = 'queued';
     update public.message_origins set sender_display = null, media = null where message_id = log_id;
@@ -601,6 +609,24 @@ alter table public.bridge_outbox add column thread_ts text
 comment on column public.bridge_outbox.thread_ts is
   '443 (Slack, native threads): the root message id of the provider thread this send goes into (send.threadTs). '
   'Filled by 444''s thread mode; null posts to the conversation.';
+
+-- A Slack outbox row holds no quoted text (coordinator ruling, lane C): the
+-- Slack runtime threads and reacts by ts alone (send.threadTs, the target's
+-- externalMessageId), so a quote's `text` and server-only `message` are never
+-- kept for it: nothing a later provider delete would have to chase. WhatsApp
+-- keeps both: it needs them to render a quote.
+create or replace function internal.bridge_outbox_strip_quotes() returns trigger
+language plpgsql set search_path = public, internal, pg_temp as $$
+begin
+  if exists (select 1 from public.bridge_connections c where c.id = new.connection_id and c.provider = 'slack') then
+    new.payload := new.payload #- '{target,text}' #- '{target,message}' #- '{replyTo,text}' #- '{replyTo,message}';
+  end if;
+  return new;
+end
+$$;
+revoke all on function internal.bridge_outbox_strip_quotes() from public;
+create trigger bridge_outbox_slack_no_quotes before insert or update of payload, connection_id on public.bridge_outbox
+  for each row execute function internal.bridge_outbox_strip_quotes();
 
 -- 413's signature, but a perUserVoice provider's text carries no prefix: the
 -- name rides send.voice (§2.2 "Voice"). A worker's handle is still assigned on
