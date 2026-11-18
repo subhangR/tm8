@@ -5,6 +5,7 @@ import { clockTime } from '../../kit/time';
 import type { BridgesPort } from '../api';
 import { bridgeFailureOf } from '../format';
 import { SlackMessageLink, useSlackWorkspace } from '../SlackLink';
+import { isSlackTs } from '../slack';
 
 const PAGE = 50;
 
@@ -104,7 +105,9 @@ export function ConversationTab({ view, port }: { view: BridgeView; port: Pick<B
 export function rootTsOf(items: readonly BridgeLogEntry[], entry: BridgeLogEntry): string | null {
   const rootId = entry.rootMessageId;
   if (!rootId || rootId === entry.id) return null;
-  return items.find((m) => m.id === rootId)?.origin?.externalMessageId ?? null;
+  const ts = items.find((m) => m.id === rootId)?.origin?.externalMessageId;
+  /* A thread rooted on a slash command has no linkable root (#1509 review 3). */
+  return isSlackTs(ts) ? ts! : null;
 }
 
 function Bubble({

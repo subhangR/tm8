@@ -219,6 +219,20 @@ export function slackRefusalWords(detail: string | null | undefined): string {
 // View in Slack (deep links)
 // ---------------------------------------------------------------------------
 
+/**
+ * Is this a real Slack message timestamp, `<seconds>.<microseconds>`?
+ *
+ * Not everything in `origin.externalMessageId` is one. Lane C logs a `/tm8`
+ * slash command with `externalMessageId = cmd:<trigger_id>` (#1507), and
+ * #1506 excludes `cmd:%` from threads and reactions for the same reason —
+ * a trigger id names no message, so there is nothing in Slack to link to.
+ * Permalinks are built ONLY from a value this accepts; anything else draws no
+ * link rather than a broken one like `…/archives/C1/pcmd:12345abc`.
+ */
+export function isSlackTs(ts: string | null | undefined): boolean {
+  return typeof ts === 'string' && /^\d+\.\d+$/.test(ts);
+}
+
 /** `https://acme.slack.com/` — exactly one trailing slash, so `archives/…` joins cleanly. */
 function base(url: string): string {
   return url.endsWith('/') ? url : `${url}/`;
@@ -241,7 +255,11 @@ export function slackMessageUrl(
   threadRootTs?: string | null,
 ): string {
   const at = `${slackChannelUrl(workspaceUrl, channelId)}/p${ts.replace('.', '')}`;
-  return threadRootTs ? `${at}?thread_ts=${encodeURIComponent(threadRootTs)}&cid=${encodeURIComponent(channelId)}` : at;
+  /* A root that is not a real ts (a `cmd:<trigger_id>`) is dropped, not
+     encoded into the query: the reply still opens, in the channel. */
+  return isSlackTs(threadRootTs)
+    ? `${at}?thread_ts=${encodeURIComponent(threadRootTs!)}&cid=${encodeURIComponent(channelId)}`
+    : at;
 }
 
 /**

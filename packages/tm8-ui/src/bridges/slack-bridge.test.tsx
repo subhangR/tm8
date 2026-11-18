@@ -330,11 +330,48 @@ describe('View in Slack (§1.3)', () => {
     expect(links[1]!.href).toContain('/p1763462500000200?thread_ts=1763462400.123456&cid=');
   });
 
+  it('draws no link for a slash command, whose id names no message', async () => {
+    const t = testPort({ served: LINK_OPS });
+    const slack = t.views.find((v) => v.provider === 'slack')!;
+    const log = {
+      bridgeId: slack.id, logAnchorId: slack.id, more: false, olderCursor: null, lastMessageId: 'm2',
+      items: [
+        /* A /tm8 command, as lane C logs it (#1507): cmd:<trigger_id>. */
+        {
+          id: 'm1', createdAt: '2026-11-18T09:00:00.000Z', authorId: 'u1', authorKind: 'member', authorName: 'Priya',
+          body: '/tm8 status', parentMessageId: null, rootMessageId: null, handle: null, delivery: null,
+          trust: 'linked' as const,
+          origin: { direction: 'in' as const, externalMessageId: 'cmd:12345abc', participant: 'Priya' },
+        },
+        /* …and the answer in its thread: its root is the command, so no thread_ts. */
+        {
+          id: 'm2', createdAt: '2026-11-18T09:00:30.000Z', authorId: 's1', authorKind: 'work_session',
+          authorName: 'brave-otter', body: 'All green.', parentMessageId: 'm1', rootMessageId: 'm1',
+          handle: 'brave-otter', delivery: null, trust: null,
+          origin: { direction: 'out' as const, externalMessageId: '1763462500.000200', participant: null },
+        },
+      ],
+    };
+    const port = { ...t.port, log: vi.fn(async () => log) };
+    render(<ConversationTab view={slack as BridgeDetailView} port={port} />);
+    await screen.findByTestId('bridge-conversation');
+
+    const links = screen.queryAllByTestId('slack-message-link') as HTMLAnchorElement[];
+    // only the real message is linked, and not into a cmd: thread
+    expect(links).toHaveLength(1);
+    expect(links[0]!.href).toContain('/p1763462500000200');
+    expect(links[0]!.href).not.toContain('thread_ts');
+    expect(links[0]!.href).not.toContain('cmd');
+  });
+
   it('resolves a reply’s thread root only when the root is on the page', () => {
     const root = { id: 'm1', rootMessageId: null, origin: { externalMessageId: '1.1' } } as never;
     const reply = { id: 'm2', rootMessageId: 'm1', origin: { externalMessageId: '2.2' } } as never;
     const orphan = { id: 'm9', rootMessageId: 'gone', origin: { externalMessageId: '9.9' } } as never;
     expect(rootTsOf([root, reply], reply)).toBe('1.1');
+    const cmdRoot = { id: 'c1', rootMessageId: null, origin: { externalMessageId: 'cmd:9' } } as never;
+    const inCmd = { id: 'c2', rootMessageId: 'c1', origin: { externalMessageId: '3.3' } } as never;
+    expect(rootTsOf([cmdRoot, inCmd], inCmd)).toBeNull();
     expect(rootTsOf([root, reply], root)).toBeNull();
     expect(rootTsOf([root, reply, orphan], orphan)).toBeNull();
   });

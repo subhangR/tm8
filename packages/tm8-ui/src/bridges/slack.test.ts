@@ -16,7 +16,7 @@ import type { SlackAccount } from '@tm8/contract';
 import {
   DEFAULT_SLACK_THREAD_MODE, SLACK_APP_TOKEN_RE, SLACK_BOT_TOKEN_RE, SLACK_MANIFEST_BOT_SCOPES,
   THREAD_MODE_OPTIONS, capabilitiesOf, connectsByTokens, conversationLabel, hasNativeThreads, isPrivateChannel,
-  missingScopeLines, missingSlackScopes, slackAccountLine, slackChannelLabel, slackChannelUrl,
+  isSlackTs, missingScopeLines, missingSlackScopes, slackAccountLine, slackChannelLabel, slackChannelUrl,
   slackExternalAccountId, slackHost, slackMessageUrl, slackPickerEmptyHint, slackRefusalWords, slackTokenProblem,
   slackWorkspaceUrl,
 } from './slack';
@@ -222,6 +222,29 @@ describe('View in Slack', () => {
   });
   it('leaves the thread query off a top-level message', () => {
     expect(slackMessageUrl(URL_WITH, 'C1', '1.2', null)).not.toContain('thread_ts');
+  });
+
+  /*
+   * #1509 review 3: not every externalMessageId is a ts. Lane C logs a /tm8
+   * command as `cmd:<trigger_id>` (#1507), which names no message, so it must
+   * never become a permalink.
+   */
+  it('only a <seconds>.<microseconds> value is a linkable ts', () => {
+    expect(isSlackTs('1763462400.123456')).toBe(true);
+    expect(isSlackTs('1.2')).toBe(true);
+    expect(isSlackTs('cmd:12345abc')).toBe(false);
+    expect(isSlackTs('cmd:999')).toBe(false);
+    expect(isSlackTs('1763462400')).toBe(false);
+    expect(isSlackTs('')).toBe(false);
+    expect(isSlackTs(null)).toBe(false);
+    expect(isSlackTs(undefined)).toBe(false);
+  });
+
+  it('drops a thread root that is a command id, instead of encoding it', () => {
+    const url = slackMessageUrl(URL_WITH, 'C1', '1763462500.000200', 'cmd:999');
+    expect(url).toBe('https://acme.slack.com/archives/C1/p1763462500000200');
+    expect(url).not.toContain('thread_ts');
+    expect(url).not.toContain('cmd');
   });
   it('has no workspace URL for a non-Slack connection, or a Slack one that has not reported', () => {
     expect(slackWorkspaceUrl(null)).toBeNull();

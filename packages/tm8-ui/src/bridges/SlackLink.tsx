@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { BridgeConnectionView, BridgeView } from '@tm8/contract';
 import type { BridgesPort } from './api';
-import { slackChannelUrl, slackMessageUrl } from './slack';
+import { isSlackTs, slackChannelUrl, slackMessageUrl } from './slack';
 
 /**
  * VIEW IN SLACK — the way back out (Slack design §1.3: "every Slack message
@@ -86,7 +86,10 @@ export function SlackMessageLink({
   /** The thread root's `ts`, when this message is a reply in a thread. */
   threadRootTs?: string | null;
 }) {
-  if (!workspaceUrl || !ts) return null;
+  /* Only a real `<seconds>.<microseconds>` names a message in Slack. A
+     slash command's `cmd:<trigger_id>` does not, so it gets no link at all
+     rather than a 404 permalink (#1509 review 3). */
+  if (!workspaceUrl || !isSlackTs(ts)) return null;
   return (
     <a
       className="brg-link brg-slacklink"
