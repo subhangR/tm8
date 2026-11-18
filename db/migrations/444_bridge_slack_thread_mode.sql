@@ -394,7 +394,11 @@ begin
       return jsonb_strip_nulls(jsonb_build_object('status', 'stored', 'messageId', log_id, 'bridgeId', b.entity_id,
         'command', false, 'routed', false, 'author', author,
         'thread', jsonb_build_object('rootExternalId', th.root_external_id, 'sessionId', th.session_id),
-        'targetSession', case when allowed and (th.session_id is null or not internal.bridge_session_live(th.session_id))
+        -- A resume (or a replacement) is a launch like a start: only for an
+        -- allowed sender on a bridge that triggers ('none' is log only) and
+        -- that tm8 may post to ('in'; 'out' returned above).
+        'targetSession', case when allowed and b.policy ->> 'trigger' <> 'none' and b.policy ->> 'direction' = 'both'
+                                   and (th.session_id is null or not internal.bridge_session_live(th.session_id))
                               then jsonb_build_object('sessionId', coalesce(th.session_id, b.target_id), 'live', false) end));
     end if;
   -- A start is a trigger like any other: never on a log-only bridge

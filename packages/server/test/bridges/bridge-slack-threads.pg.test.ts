@@ -336,6 +336,16 @@ describe('444: Slack thread mode', () => {
     expect((await row(answer.messageId))!.thread_ts).toBeNull();
   });
 
+  it('a thread reply resumes nothing on a bridge that does not trigger or cannot post', async () => {
+    await setStatus(threadSession, 'exited');
+    await setPolicy({ trigger: 'none' });
+    expect((await inbound({ body: 'log only now', root })).targetSession).toBeUndefined();
+    await setPolicy({ trigger: 'mention', direction: 'in' });
+    expect((await inbound({ body: 'tm8 may not post now', root })).targetSession).toBeUndefined();
+    await setPolicy({ direction: 'both' });
+    await setStatus(threadSession, 'running');
+  });
+
   it('a reply to a stopped thread session resumes it before delivery', async () => {
     await setStatus(threadSession, 'exited');
     const reply = await inbound({ body: "it's back on iOS", root });
