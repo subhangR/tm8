@@ -71,6 +71,25 @@ describe('the defaults for a Slack bridge', () => {
     expect(defaultPolicy('chat', 'group', 'whatsapp').threadMode).toBeUndefined();
     expect(defaultPolicy('chat', 'group').threadMode).toBeUndefined();
   });
+
+  /*
+   * The coordinator's ruling, enforced server-side by lane F (#1506): a Slack
+   * channel bridged to a tm8 CHANNEL is a mirror, so thread mode is off. The
+   * UI hid the control for a mirror but still sent 'mention', which lane F
+   * refuses with 22023 / thread_mode_channel_target — so the mirror would
+   * have failed to create at all.
+   */
+  it('send thread mode OFF for a channel mirror, never the forced mention', () => {
+    expect(defaultPolicy('channel', 'channel', 'slack').threadMode).toBe('off');
+    expect(defaultPolicy('channel', 'group', 'slack').threadMode).toBe('off');
+  });
+
+  it('send no thread mode at all on a provider without native threads', () => {
+    // lane F refuses ANY threadMode on a non-Slack bridge
+    for (const target of ['chat', 'work_session', 'channel'] as const) {
+      expect(defaultPolicy(target, 'group', 'whatsapp')).not.toHaveProperty('threadMode');
+    }
+  });
   it('treat a Slack channel like a group: answer on mention, linked people only', () => {
     expect(defaultPolicy('chat', 'channel', 'slack')).toMatchObject({
       trigger: 'mention', whoMayTrigger: 'linked', outbound: 'replies', direction: 'both',
@@ -197,6 +216,22 @@ describe('thread mode in the wizard', () => {
     await screen.findByTestId('wizard-step-target');
     fireEvent.click(screen.getByRole('radio', { name: /Channel/ }));
     expect(screen.queryByTestId('bridge-thread-mode')).toBeNull();
+  });
+
+  it('creates a channel mirror with thread mode OFF, which is what the server allows', async () => {
+    const t = await toChannels();
+    fireEvent.click(within(t.step2).getByRole('option', { name: /#eng-support/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next: where it lands' }));
+    await screen.findByTestId('wizard-step-target');
+    fireEvent.click(screen.getByRole('radio', { name: /Channel/ }));
+    await waitFor(() => expect(within(screen.getByLabelText('Target')).getAllByRole('option').length).toBe(2));
+    fireEvent.change(screen.getByLabelText('Target'), { target: { value: channelDesign.id } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Create bridge' })); });
+
+    await waitFor(() => expect(t.port.create).toHaveBeenCalled());
+    expect(t.port.create.mock.calls[0]![1]).toMatchObject({
+      policy: expect.objectContaining({ threadMode: 'off' }),
+    });
   });
 });
 

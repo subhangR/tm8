@@ -57,17 +57,31 @@ function stoppedSession(t: EntitySummary): boolean {
 }
 
 /**
- * §2.2's default policy, by target kind and conversation kind, plus the Slack
- * default `threadMode: 'mention'` (design default 1) on a provider with native
- * threads. A Slack channel behaves as a group does here: many people, so tm8
- * answers on @mention and only linked people may start agents.
+ * §2.2's default policy, by target kind and conversation kind, plus Slack's
+ * `threadMode` on a provider with native threads. A Slack channel behaves as a
+ * group does here: many people, so tm8 answers on @mention and only linked
+ * people may start agents.
+ *
+ * THREAD MODE BY TARGET (coordinator's ruling; lane F enforces it in #1506):
+ *   · `work_session` — `mention`. A thread's session is a child of the target
+ *      session, which is the shape the design describes.
+ *   · `chat` — `mention` too, on lane F's top-level-session behaviour.
+ *   · `channel` — `off`, ALWAYS. A Slack channel bridged to a tm8 channel is a
+ *      mirror; there is no session for a thread to belong to. The UI hides the
+ *      control for a mirror, but hiding it is not enough: it used to keep
+ *      sending `mention`, which lane F now refuses (22023,
+ *      `thread_mode_channel_target`), so a mirror would have failed to create.
+ *   · a provider without native threads — absent, which lane F also refuses to
+ *      be given at all.
  */
 export function defaultPolicy(
   target: BridgeTargetKind,
   conversation: BridgeConversationKind,
   provider: BridgeProvider | string = 'whatsapp',
 ): Omit<BridgePolicy, 'style'> {
-  const threads = hasNativeThreads(provider) ? { threadMode: DEFAULT_SLACK_THREAD_MODE } : {};
+  const threads = hasNativeThreads(provider)
+    ? { threadMode: target === 'channel' ? ('off' as const) : DEFAULT_SLACK_THREAD_MODE }
+    : {};
   if (target === 'channel') {
     return { trigger: 'none', direction: 'both', outbound: 'all', whoMayTrigger: 'linked', voice: 'named', ...threads };
   }
