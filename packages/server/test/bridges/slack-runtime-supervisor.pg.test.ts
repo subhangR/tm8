@@ -4,7 +4,9 @@
  * token file (0600) under the data dir, and start `node --import tsx
  * src/runtime-main.ts` in the runtime's directory with TM8_SERVER_URL, the token
  * file and TM8_SLACK_STATE_DIR; that runtime's hello is answered. The WhatsApp
- * runtime's token (its own label) stays live beside it.
+ * runtime's token (its own label) stays live beside it. Shutdown kills the
+ * runtime before anything awaits (stopBridgeRuntimes), and close() takes its
+ * exit backstop listener away again.
  *
  * The runtime here is a stub in a temp dir standing in for integrations/slack-bridge
  * (TM8_SLACK_RUNTIME_CWD), with an empty `tsx` package: node 22 strips the types
@@ -28,6 +30,7 @@ let dataDir = '';
 let stubDir = '';
 let outFile = '';
 const saved: Record<string, string | undefined> = {};
+let exitListenersBefore = 0;
 const ENV = ['TM8_SLACK_RUNTIME', 'TM8_SLACK_RUNTIME_CWD', 'TM8_SLACK_RUNTIME_TOKEN_FILE', 'TM8_SLACK_RUNTIME_COMMAND',
   'TM8_SLACK_STATE_DIR', 'TM8_BRIDGE_RUNTIME_TOKEN_FILE', 'TM8_BRIDGE_RUNTIME_COMMAND', 'SLACK_STUB_OUT'];
 
@@ -40,7 +43,7 @@ const res = await fetch(new URL('/v2/bridge-runtime/hello', process.env.TM8_SERV
   body: JSON.stringify({ provider: 'slack', version: 4, runtimeId: 'slack-setup-kit', capabilities: {} }),
 });
 writeFileSync(process.env.SLACK_STUB_OUT!, JSON.stringify({
-  status: res.status, body: await res.json().catch(() => null), cwd: process.cwd(),
+  status: res.status, body: await res.json().catch(() => null), cwd: process.cwd(), pid: process.pid,
   tokenFile, stateDir: process.env.TM8_SLACK_STATE_DIR, serverUrl: process.env.TM8_SERVER_URL,
 }));
 setInterval(() => {}, 60_000);
@@ -84,11 +87,14 @@ beforeAll(async () => {
     TM8_DATABASE_URL: database.url,
     TM8_DATA_DIR: dataDir,
   });
+  exitListenersBefore = process.listenerCount('exit');
   server = await bootstrap({ config: { ...configured, port: 0, dataDir } });
 });
 
+const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
 afterAll(async () => {
-  await server?.server.close();
+  await server?.server.close().catch(() => undefined);
   await server?.db?.end();
   await database?.destroy();
   for (const k of ENV) {
@@ -100,7 +106,7 @@ afterAll(async () => {
 describe('TM8_SLACK_RUNTIME=1 (the laptop path of SETUP.md)', () => {
   it('starts the runtime in its directory with its token file and state dir, and its hello is answered', async () => {
     const out = await until(async () => JSON.parse(await readFile(outFile, 'utf8')) as {
-      status: number; body: { connections: unknown[] }; cwd: string; tokenFile: string; stateDir: string; serverUrl: string;
+      status: number; body: { connections: unknown[] }; cwd: string; pid: number; tokenFile: string; stateDir: string; serverUrl: string;
     });
     expect(out.status).toBe(200);
     expect(Array.isArray(out.body.connections)).toBe(true);
@@ -120,5 +126,22 @@ describe('TM8_SLACK_RUNTIME=1 (the laptop path of SETUP.md)', () => {
       return r.rows;
     });
     expect(live).toEqual([{ label: 'slack-runtime', n: '1' }, { label: 'whatsapp-runtime', n: '1' }]);
+  });
+
+  it('stopBridgeRuntimes kills the runtime at once, while the server is still open, and does not restart it', async () => {
+    const { pid } = JSON.parse(await readFile(outFile, 'utf8')) as { pid: number };
+    expect(alive(pid)).toBe(true);
+    expect(process.listenerCount('exit')).toBe(exitListenersBefore + 1);
+    server.stopBridgeRuntimes();
+    await until(async () => (alive(pid) ? undefined : true), 5_000);
+    // The supervisor's restart would come after >= 1 s; it must not.
+    await new Promise((r) => setTimeout(r, 1_500));
+    const again = JSON.parse(await readFile(outFile, 'utf8')) as { pid: number };
+    expect(again.pid).toBe(pid);
+  });
+
+  it('closing the server removes its exit backstop listener', async () => {
+    await server.server.close();
+    expect(process.listenerCount('exit')).toBe(exitListenersBefore);
   });
 });

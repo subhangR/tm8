@@ -255,6 +255,14 @@ export interface BootstrappedServer {
    */
   readonly preview: { readonly url: string; readonly port: number; close(): Promise<void> } | undefined;
   /**
+   * Kills the supervised bridge runtimes (WhatsApp, Slack) synchronously and
+   * stops restarting them. The shutdown path calls it FIRST: `server.close()`
+   * can wait on a runtime's own live connections, and a runtime left running
+   * past the process outlives it (stop_prod SIGKILLs this process, never its
+   * children), then picks up the next server's token and runs twice.
+   */
+  readonly stopBridgeRuntimes: () => void;
+  /**
    * The `#claim=` URL, present only while this node is UNCLAIMED.
    *
    * It is already printed to stdout, which is the whole story for a server
@@ -1105,14 +1113,15 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // (and starts the sidecar, if a command is given) now that it is listening.
   let bridgeSupervisor: BridgeRuntimeSupervisor | undefined;
   let slackSupervisor: BridgeRuntimeSupervisor | undefined;
+  // stop() kills synchronously; see BootstrappedServer.stopBridgeRuntimes.
+  const stopBridgeRuntimes = (): void => { void bridgeSupervisor?.stop(); void slackSupervisor?.stop(); };
   if (bridgeHub) {
     await bridgeHub.start();
-    server.http.once('close', () => { void bridgeHub.stop(); void bridgeSupervisor?.stop(); void slackSupervisor?.stop(); });
-    // A supervised runtime is a child process, and process.exit does not take it
-    // along: the shutdown path exits even when the listener never reports
-    // 'close' (a runtime's live connections hold it open), which would leave the
-    // runtime orphaned and reconnecting on a revoked token. stop() kills synchronously.
-    process.once('exit', () => { void bridgeSupervisor?.stop(); void slackSupervisor?.stop(); });
+    // Backstop for any exit that skips the shutdown path: process.exit does not
+    // take a child process along. Removed with the listener, so a process that
+    // boots many servers (tests) does not pile up listeners.
+    process.once('exit', stopBridgeRuntimes);
+    server.http.once('close', () => { void bridgeHub.stop(); stopBridgeRuntimes(); process.off('exit', stopBridgeRuntimes); });
     const ownerClaims = async () => {
       const o = await owner!();
       return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'bridges.runtime-mint' };
@@ -1581,7 +1590,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     });
   }
 
-  return { server, subscriptions, events, url, db, delivery, preview, scheduler, execution, claimUrl };
+  return { server, subscriptions, events, url, db, delivery, preview, scheduler, execution, claimUrl, stopBridgeRuntimes };
 }
 
 /** How long shutdown waits for the warm lane pool to remove its lanes. */
@@ -1614,7 +1623,7 @@ export async function main(): Promise<void> {
 
     // TRUE only here: this is the one caller that owns the process lifetime and
     // can therefore stop what it starts (see BootstrapOptions.startBackgroundJobs).
-    const { server, url, db, delivery, preview, scheduler, execution, claimUrl } = await bootstrap({
+    const { server, url, db, delivery, preview, scheduler, execution, claimUrl, stopBridgeRuntimes } = await bootstrap({
       startBackgroundJobs: true,
       ...(sidecar ? { config: await desktopServerConfig() } : {}),
       // The shared registry owns Claude/Codex execution. The orchestrator owns
@@ -1674,6 +1683,9 @@ export async function main(): Promise<void> {
     const shutdown = (signal: string): void => {
       console.log(`\n${signal} — shutting down`);
       report({ phase: 'stopping', message: 'Shutting down…' });
+      // Before anything awaits: the bridge runtimes are child processes, and a
+      // close() that never resolves must not leave them running (see the field).
+      stopBridgeRuntimes();
       // FIRST, before anything is torn down: tell every live session why it is
       // about to die (171). This process holds their PTYs, so they die with it
       // either way — but this is the only moment the reason is known
