@@ -231,7 +231,9 @@ describe('the add-bridge wizard', () => {
 
   it('links a new number: the code arrives on the socket, linked is read back, and it is offered here', async () => {
     const { port, client } = await open();
-    fireEvent.click(screen.getByRole('button', { name: '+ Link a new number' }));
+    /* Two providers now, so the button asks which before it opens a dialog. */
+    fireEvent.click(screen.getByRole('button', { name: '+ Add an account' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'WhatsApp number' }));
     const dialog = screen.getByTestId('bridge-link-number');
     fireEvent.click(within(dialog).getByLabelText(/^Can't scan\?/));
     fireEvent.change(within(dialog).getByLabelText('Phone number'), { target: { value: '+91 98000 00094' } });
@@ -269,7 +271,8 @@ describe('review #1447 round 1', () => {
       },
     };
     render(<AddBridgeWizard port={port} spaceId={SPACE} onClose={() => {}} onCreated={() => {}} />);
-    fireEvent.click(await screen.findByRole('button', { name: '+ Link a new number' }));
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add an account' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'WhatsApp number' }));
     const dialog = screen.getByTestId('bridge-link-number');
     fireEvent.click(within(dialog).getByLabelText(/^Can't scan\?/));
     fireEvent.change(within(dialog).getByLabelText('Phone number'), { target: { value: '+919800000094' } });
@@ -326,13 +329,19 @@ describe('review #1447 round 1', () => {
 describe('Settings → Bridges › Accounts & secrets, on connections.list', () => {
   it('lists my numbers with where they are offered, and offers, withdraws and removes', async () => {
     const t = wizardPort();
-    render(<BridgesSection port={t.port} spaceId={SPACE} />);
+    /* A bridge riding an account that is NOT mine, stated here rather than
+       leant on: every account the fixture seeds is the viewer's own (the Slack
+       workspace included, since lane D's token flow needs one I own). */
+    const foreign = { ...t.views[0]!, id: 'ent-bridge-foreign', connectionId: 'ffffffff-0000-4000-8000-000000000001' };
+    const port = { ...t.port, list: vi.fn(async () => [...t.views, foreign]) };
+    render(<BridgesSection port={port} spaceId={SPACE} />);
     const row = await screen.findByTestId('connection-0b9f3c1e-6b1a-4c55-9a51-7d3a0c1b9494');
     expect(row.textContent).toContain('Ada · work phone');
     expect(row.textContent).toContain('2 bridges here');
     expect(screen.getByTestId('connection-6f1e2d3c-4b5a-4968-8776-655443322110').textContent).toContain('not offered here');
-    // The Slack bridge rides a number that is not mine: listed, no controls.
-    expect(screen.getByTestId('connection-other-5d3e8a10-2f4b-4c7e-8a9d-0c1f2e3d4a5b').textContent).toContain('another member’s number');
+    // Someone else's account: listed, with no controls.
+    expect(screen.getByTestId('connection-other-ffffffff-0000-4000-8000-000000000001').textContent)
+      .toContain('another member’s number');
 
     fireEvent.click(screen.getByRole('button', { name: 'More for Ada · personal' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Offer Ada · personal to this space' }));

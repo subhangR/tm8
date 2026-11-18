@@ -1,5 +1,6 @@
 import type {
   BridgeConnectionAuthFrame,
+  BridgeConnectionCredential,
   BridgeConnectionView,
   BridgeDetailView,
   BridgeFacts,
@@ -8,10 +9,12 @@ import type {
   BridgeLogEntry,
   BridgeView,
   EntitySummary,
+  SlackAccount,
 } from '@tm8/contract';
 import { CollabError } from '@tm8/contract';
 import type { BridgesClient } from './api';
 import type { ConversationItem } from '@tm8/contract';
+import { SLACK_APP_TOKEN_RE, SLACK_BOT_TOKEN_RE, SLACK_MANIFEST_BOT_SCOPES, slackExternalAccountId } from './slack';
 
 /*
  * THE FIXTURE SEAM'S BRIDGES CLIENT — an in-memory store with the server's
@@ -88,9 +91,23 @@ export const FIXTURE_QR_PNG = 'iVBORw0KGgoAAAANSUhEUgAAABkAAAAZCAAAAADhgtq/AAAAi
 const FIXTURE_SPACE = 'sp-atelier';
 const NOW = '2026-07-28T10:40:00.000Z';
 
-/** The viewer's own numbers: one offered here (carrying Infra and Rahul), one linked but not offered here. */
+/**
+ * What `auth.test` answers for the fixture workspace: an Enterprise Grid org,
+ * so the connected line and the Grid branch of `slackAccountLine` both have
+ * something to draw. Every manifest scope is granted here; the reduced set is
+ * what a `-noscope` token gets (see `begin`).
+ */
+export const FIXTURE_SLACK_ACCOUNT: SlackAccount = {
+  teamId: 'T024ACME', teamName: 'Acme', url: 'https://acme.enterprise.slack.com/',
+  enterpriseId: 'E024ACME', enterpriseName: 'Acme Corp', isEnterpriseInstall: true,
+  botUserId: 'U07TM8BOT', botId: 'B07TM8BOT', botName: 'tm8',
+  scopes: [...SLACK_MANIFEST_BOT_SCOPES],
+};
+
+/** The viewer's own accounts: two WhatsApp numbers and one Slack workspace, the first of each offered here. */
 function seedConnections(views: readonly BridgeView[]): BridgeConnectionView[] {
   const wa = views.find((v) => v.provider === 'whatsapp');
+  const slack = views.find((v) => v.provider === 'slack');
   return [
     {
       id: wa?.connectionId ?? '0b9f3c1e-6b1a-4c55-9a51-7d3a0c1b9494', provider: 'whatsapp', ownerAccountId: 'acct-ada',
@@ -106,12 +123,41 @@ function seedConnections(views: readonly BridgeView[]): BridgeConnectionView[] {
       label: 'Ada · personal', externalAccountId: '+91 ···· 1999', status: 'linked', runtimeId: 'rt-1',
       createdAt: NOW, lastSeenAt: NOW, offers: [],
     },
+    {
+      /* Slack (protocol v4): externalAccountId is the team id — or the
+         enterprise id on an org-wide Grid install — and `account` is what
+         auth.test answered. No number, no QR. */
+      id: slack?.connectionId ?? '5d3e8a10-2f4b-4c7e-8a9d-0c1f2e3d4a5b', provider: 'slack', ownerAccountId: 'acct-ada',
+      label: 'Acme Slack', externalAccountId: 'E024ACME', status: 'linked', runtimeId: 'rt-slack-1',
+      createdAt: NOW, lastSeenAt: NOW, account: FIXTURE_SLACK_ACCOUNT,
+      offers: [{
+        credentialId: '019f0000-0000-7000-8000-0000000000c2', spaceId: FIXTURE_SPACE, visibility: 'private',
+        status: 'active', createdAt: NOW,
+        bridges: views.filter((v) => v.provider === 'slack' && v.status !== 'ended').length, agentGroups: false,
+      }],
+    },
+  ];
+}
+
+/**
+ * The live channel list the Slack runtime would answer: only channels the bot
+ * is in (`conversations.list`), public as `channel` and private as
+ * `private_channel`. A channel the bot was removed from arrives as
+ * `not_a_member`, which the picker draws read-only.
+ */
+function seedSlackConversations(views: readonly BridgeView[]): ConversationItem[] {
+  const deploys = views.find((v) => v.provider === 'slack');
+  return [
+    { conversationId: deploys?.conversation.externalId ?? 'C04DEPLOYS', kind: 'channel', name: 'deploys', size: 31, canSend: true, reason: null },
+    { conversationId: 'C04SUPPORT', kind: 'channel', name: 'eng-support', size: 48, canSend: true, reason: null },
+    { conversationId: 'C04INCID', kind: 'private_channel', name: 'incidents', size: 7, canSend: true, reason: null },
+    { conversationId: 'C04ANNOUNCE', kind: 'channel', name: 'announcements', size: 212, canSend: false, reason: 'not_a_member' },
   ];
 }
 
 /** The live group list a runtime would answer for a linked number. */
 function seedConversations(views: readonly BridgeView[]): ConversationItem[] {
-  const infra = views.find((v) => v.conversation.kind === 'group');
+  const infra = views.find((v) => v.conversation.kind === 'group' && v.provider === 'whatsapp');
   return [
     { conversationId: infra?.conversation.externalId ?? '1203630xxxx@g.us', kind: 'group', name: 'Infra', size: 14, canSend: true, reason: null },
     { conversationId: '1203631gaming@g.us', kind: 'group', name: 'Gaming', size: 31, canSend: true, reason: null },
@@ -148,6 +194,7 @@ export function createFixtureBridgesClient(
   const handles = new Map(seed.map((b) => [b.id, seedHandles(b)]));
   const connectionsById = new Map(seedConnections(seed).map((c) => [c.id, c]));
   const conversationList = seedConversations(seed);
+  const slackConversationList = seedSlackConversations(seed);
   const handovers = new Map<string, BridgeHandover>();
   const authSubs = new Set<(frame: BridgeConnectionAuthFrame) => void>();
   const connection = (id: string) => {
@@ -215,8 +262,46 @@ export function createFixtureBridgesClient(
     connections: {
       list: async () => [...connectionsById.values()].filter((c) => c.status !== 'removed'),
       begin: async (input) => {
+        const provider = input.provider ?? 'whatsapp';
         const id = input.connectionId ?? `0c0c0c0c-0000-4000-8000-${String(connectionsById.size + 1).padStart(12, '0')}`;
         const prev = connectionsById.get(id);
+        if (provider === 'slack') {
+          /* The token path (v4): no QR, no pairing. The runtime would check the
+             pair with auth.test and answer a `state` frame; the fixture settles
+             it on a timer so a surface sees connecting → linked|logged_out the
+             way it really arrives, and reads the outcome off the TOKEN SHAPE so
+             a test can ask for each branch:
+               xoxb-…-noscope  → linked, but the manifest scopes trimmed
+               xoxb-…-invalid  → logged_out invalid_auth
+               xoxb-…-inactive → logged_out account_inactive
+               anything else   → linked with the full account
+             The tokens are used here and dropped; nothing keeps them, which is
+             also what the real server does. */
+          const creds = input.credential as BridgeConnectionCredential | undefined;
+          const bad = !creds || !SLACK_BOT_TOKEN_RE.test(creds.botToken) || !SLACK_APP_TOKEN_RE.test(creds.appToken);
+          if (!creds && !prev) throw new CollabError('invalid_input', 'a new Slack connection needs both tokens');
+          const connecting: BridgeConnectionView = {
+            id, provider: 'slack', ownerAccountId: 'acct-ada', label: input.label ?? prev?.label ?? 'Slack workspace',
+            externalAccountId: prev?.externalAccountId ?? null, status: 'connecting', runtimeId: 'rt-slack-1',
+            createdAt: prev?.createdAt ?? new Date().toISOString(), lastSeenAt: null, offers: prev?.offers ?? [],
+            account: null,
+          };
+          connectionsById.set(id, connecting);
+          const refuse = (detail: string): BridgeConnectionView =>
+            ({ ...connecting, status: 'logged_out', detail, account: null });
+          const settled: BridgeConnectionView = bad ? refuse('not_allowed_token_type')
+            : creds!.botToken.endsWith('-invalid') ? refuse('invalid_auth')
+              : creds!.botToken.endsWith('-inactive') ? refuse('account_inactive')
+                : {
+                  ...connecting, status: 'linked', lastSeenAt: new Date().toISOString(),
+                  externalAccountId: FIXTURE_SLACK_ACCOUNT.enterpriseId ?? FIXTURE_SLACK_ACCOUNT.teamId,
+                  account: creds!.botToken.endsWith('-noscope')
+                    ? { ...FIXTURE_SLACK_ACCOUNT, scopes: ['channels:history', 'channels:read', 'chat:write'] }
+                    : FIXTURE_SLACK_ACCOUNT,
+                };
+          setTimeout(() => connectionsById.set(id, settled), 20);
+          return { connection: connecting, runtime: 'connecting' };
+        }
         const next: BridgeConnectionView = {
           id, provider: 'whatsapp', ownerAccountId: 'acct-ada', label: input.label ?? prev?.label ?? 'New number',
           externalAccountId: prev?.externalAccountId ?? null, status: 'connecting', runtimeId: 'rt-1',
@@ -296,8 +381,12 @@ export function createFixtureBridgesClient(
     },
     conversations: async (connectionId) => {
       const c = connection(connectionId);
-      if (c.status !== 'linked') throw new CollabError('conflict', 'the number is not linked: link it first', { details: { reason: 'not_linked' } });
-      return { connectionId, items: conversationList };
+      if (c.status !== 'linked') {
+        throw new CollabError('conflict', c.provider === 'slack'
+          ? 'the workspace is not connected: paste its tokens first'
+          : 'the number is not linked: link it first', { details: { reason: 'not_linked' } });
+      }
+      return { connectionId, items: c.provider === 'slack' ? slackConversationList : conversationList };
     },
     list: async (spaceId, opts = {}) =>
       [...bridges.values()].filter((b) => b.spaceId === spaceId && (opts.includeEnded || b.status !== 'ended')),

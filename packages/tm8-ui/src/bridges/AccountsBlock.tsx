@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { BridgeConnectionView, BridgeView } from '@tm8/contract';
+import type { BridgeConnectionView, BridgeProvider, BridgeView } from '@tm8/contract';
 import { Pill } from '../kit';
 import { shortDate } from '../kit/time';
 import { useDismissable } from '../panels/useDismissable';
@@ -8,6 +8,8 @@ import { BridgeProviderMark, bridgeProviderLabel } from './bridge-marks';
 import { ConsequenceDialog } from './ConsequenceDialog';
 import { CONNECTION_TONE, CONNECTION_WORD, bridgeFailureOf } from './format';
 import { LinkNumberDialog } from './LinkNumberDialog';
+import { SlackTokensDialog } from './SlackTokensDialog';
+import { connectsByTokens, missingScopeLines, slackAccountLine, slackRefusalWords } from './slack';
 
 /**
  * Settings → Bridges › ACCOUNTS & SECRETS (§4.2, v2 §1.6).
@@ -55,13 +57,17 @@ export function AccountsBlock({
   const [mine, setMine] = useState<BridgeConnectionView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
-  const [linking, setLinking] = useState<{ relink: BridgeConnectionView | null } | null>(null);
+  const [linking, setLinking] = useState<{ provider: BridgeProvider; relink: BridgeConnectionView | null } | null>(null);
+  const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<BridgeConnectionView | null>(null);
   const [withdrawing, setWithdrawing] = useState<BridgeConnectionView | null>(null);
   const [busy, setBusy] = useState(false);
   const menuCell = useRef<HTMLDivElement>(null);
   const closeMenu = useCallback(() => setMenuFor(null), []);
   useDismissable(menuFor !== null, menuCell, closeMenu);
+  const addCell = useRef<HTMLDivElement>(null);
+  const closeAdd = useCallback(() => setAdding(false), []);
+  useDismissable(adding, addCell, closeAdd);
 
   const reload = useCallback(async () => {
     if (!live) return;
@@ -99,15 +105,32 @@ export function AccountsBlock({
     <div className="brg-set__group">
       <div className="brg-set__grouphead">
         <span className="set-eyebrow">Accounts &amp; secrets</span>
-        <button
-          type="button"
-          className="set-chip set-chip--sm"
-          disabled={linkReason !== null || busy}
-          title={linkReason ?? undefined}
-          onClick={() => setLinking({ relink: null })}
-        >
-          + Link a new account
-        </button>
+        <div className="brg-set__menu" ref={addCell}>
+          <button
+            type="button"
+            className="set-chip set-chip--sm"
+            aria-haspopup="menu"
+            aria-expanded={adding}
+            disabled={linkReason !== null || busy}
+            title={linkReason ?? undefined}
+            data-testid="bridges-add-account"
+            onClick={() => setAdding(!adding)}
+          >
+            + Add an account
+          </button>
+          {adding ? (
+            <div className="brg-menu" role="menu" aria-label="Add an account">
+              <button type="button" role="menuitem" onClick={() => { setAdding(false); setLinking({ provider: 'whatsapp', relink: null }); }}>
+                WhatsApp number
+                <span className="brg-menu__help">Link the phone that has the number, by QR or a pairing code.</span>
+              </button>
+              <button type="button" role="menuitem" onClick={() => { setAdding(false); setLinking({ provider: 'slack', relink: null }); }}>
+                Slack workspace
+                <span className="brg-menu__help">Create the app from tm8's manifest, then paste its bot and app-level tokens.</span>
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
       {error ? <p className="brg-error brg-set__note" role="alert">{error}</p> : null}
       <ul className="brg-set__rows" data-testid="bridges-connections">
@@ -118,7 +141,9 @@ export function AccountsBlock({
             <li key={c.id} className="brg-set__conn" data-testid={`connection-${c.id}`}>
               <BridgeProviderMark provider={c.provider} />
               <span className="brg-set__provider">{c.label}</span>
-              <span className="brg-set__mono">{c.externalAccountId ?? 'not linked yet'}</span>
+              <span className="brg-set__mono">
+                {c.externalAccountId ?? (connectsByTokens(c.provider) ? 'no tokens yet' : 'not linked yet')}
+              </span>
               <Pill tone={CONNECTION_TONE[status]} dot="solid">{CONNECTION_WORD[status]}</Pill>
               <span className="brg-set__muted">{c.lastSeenAt ? `seen ${shortDate(c.lastSeenAt)}` : 'never seen'}</span>
               <span className="brg-set__count">
@@ -160,8 +185,15 @@ export function AccountsBlock({
                     >
                       Copy connection id
                     </button>
-                    <button type="button" role="menuitem" onClick={() => { setMenuFor(null); setLinking({ relink: c }); }}>
-                      Re-link {c.label}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => { setMenuFor(null); setLinking({ provider: c.provider, relink: c }); }}
+                    >
+                      {connectsByTokens(c.provider) ? `Paste new tokens for ${c.label}` : `Re-link ${c.label}`}
+                      {connectsByTokens(c.provider) ? (
+                        <span className="brg-menu__help">Rotating the tokens means pasting the new pair; tm8 cannot read the sealed ones.</span>
+                      ) : null}
                     </button>
                     <hr className="brg-menu__rule" />
                     <button type="button" role="menuitem" className="brg-menu__danger" onClick={() => { setMenuFor(null); setRemoving(c); }}>
@@ -170,6 +202,11 @@ export function AccountsBlock({
                   </div>
                 ) : null}
               </div>
+              {/* `.brg-set__conn` is a SEVEN-column grid: an eighth child in
+                  the row's flow pushes the ⋯ menu onto a line of its own. So
+                  the Slack lines come last and span every column, as their own
+                  line under the row (.brg-set__connnote). */}
+              <SlackConnectionWords connection={c} onRotate={() => setLinking({ provider: 'slack', relink: c })} />
             </li>
           );
         })}
@@ -197,15 +234,27 @@ export function AccountsBlock({
         <span className="brg-set__muted">coming soon — tracked in the Resources task</span>
       </div>
 
-      {linking ? (
-        <LinkNumberDialog
-          port={port}
-          spaceId={spaceId}
-          relink={linking.relink}
-          onClose={() => setLinking(null)}
-          onLinked={(c) => { setLinking(null); void reload(); onChanged(`${c.label} is linked${c.offers.some((o) => o.spaceId === spaceId) ? ' and offered to this space' : ''}.`); }}
-        />
-      ) : null}
+      {linking ? (() => {
+        const here = (c: BridgeConnectionView) => (c.offers.some((o) => o.spaceId === spaceId) ? ' and offered to this space' : '');
+        const done = (c: BridgeConnectionView, word: string) => { setLinking(null); void reload(); onChanged(`${c.label} is ${word}${here(c)}.`); };
+        return connectsByTokens(linking.provider) ? (
+          <SlackTokensDialog
+            port={port}
+            spaceId={spaceId}
+            relink={linking.relink}
+            onClose={() => { setLinking(null); void reload(); }}
+            onLinked={(c) => done(c, 'connected')}
+          />
+        ) : (
+          <LinkNumberDialog
+            port={port}
+            spaceId={spaceId}
+            relink={linking.relink}
+            onClose={() => setLinking(null)}
+            onLinked={(c) => done(c, 'linked')}
+          />
+        );
+      })() : null}
       {withdrawing ? (() => {
         /* v2 §1.5: unsharing a connection stops every bridge riding it here —
            named, in numbers, before the second click (review #1447 r1). */
@@ -238,7 +287,9 @@ export function AccountsBlock({
         <ConsequenceDialog
           title={`Remove ${removing.label}?`}
           consequences={[
-            'WhatsApp logs this device out; the phone keeps its chats.',
+            connectsByTokens(removing.provider)
+              ? 'The Socket Mode connection stops and the sealed tokens are deleted. The Slack app stays installed; revoke the tokens in Slack too if that is what you want.'
+              : 'WhatsApp logs this device out; the phone keeps its chats.',
             `${removing.offers.reduce((n, o) => n + o.bridges, 0)} bridge(s) riding it, in every space it is offered to, end. Their logged messages stay, read-only.`,
             `It is withdrawn from ${removing.offers.length} space(s).`,
           ]}
@@ -253,6 +304,51 @@ export function AccountsBlock({
             });
           }}
         />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * What a Slack row says beyond its status word (§1.1 step 4, §4):
+ *   · linked   → *Connected to Acme (acme.enterprise.slack.com) as @tm8*, and,
+ *                when the install granted fewer scopes than the manifest asks
+ *                for, which ones and what stops working;
+ *   · logged_out → Slack's own error code in words an admin can act on, with
+ *                the door to paste a fresh pair right there.
+ * Nothing for a WhatsApp row, and nothing for a Slack row whose runtime has
+ * not reported yet: an empty state is not an error.
+ */
+function SlackConnectionWords({
+  connection,
+  onRotate,
+}: {
+  connection: BridgeConnectionView;
+  onRotate(): void;
+}) {
+  if (connection.provider !== 'slack') return null;
+  const missing = missingScopeLines(connection.account);
+  if (connection.status === 'logged_out') {
+    return (
+      <div className="brg-set__connnote">
+        <p className="brg-error" role="alert" data-testid={`connection-refused-${connection.id}`}>
+          {slackRefusalWords(connection.detail)}{' '}
+          <button type="button" className="brg-link" onClick={onRotate}>Paste new tokens</button>
+        </p>
+      </div>
+    );
+  }
+  if (!connection.account) return null;
+  return (
+    <div className="brg-set__connnote">
+      <p className="set-note" data-testid={`connection-account-${connection.id}`}>
+        {slackAccountLine(connection.account)}
+      </p>
+      {missing.length > 0 ? (
+        <p className="brg-warn" role="status" data-testid={`connection-scopes-${connection.id}`}>
+          Missing {missing.length} scope{missing.length === 1 ? '' : 's'} the bridge uses: {missing.join('; ')}. Add them
+          in the Slack app's OAuth &amp; Permissions, reinstall it, then paste the new bot token.
+        </p>
       ) : null}
     </div>
   );

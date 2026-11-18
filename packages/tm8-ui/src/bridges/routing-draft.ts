@@ -55,7 +55,17 @@ export function draftProblem(draft: RoutingDraft): string | null {
 export function patchOf(view: BridgeView, draft: RoutingDraft): BridgePatch | null {
   const patch: BridgePatch = {};
   const policy: Partial<BridgePolicy> = {};
-  for (const key of Object.keys(draft.policy) as (keyof RoutingDraft['policy'])[]) {
+  /* The draft's own keys, plus threadMode: it is OPTIONAL on BridgePolicy
+     (absent on a provider without native threads), so a bridge whose view
+     carries no threadMode yet has no such key in the draft either — and
+     iterating only the draft's keys would silently drop the first time
+     someone sets it. */
+  const keys = new Set<keyof RoutingDraft['policy']>([
+    ...(Object.keys(draft.policy) as (keyof RoutingDraft['policy'])[]),
+    'threadMode',
+  ]);
+  for (const key of keys) {
+    if (draft.policy[key] === undefined && view.policy[key] === undefined) continue;
     if (draft.policy[key] !== view.policy[key]) (policy as Record<string, unknown>)[key] = draft.policy[key];
   }
   const style = lineOrNull(draft.style);

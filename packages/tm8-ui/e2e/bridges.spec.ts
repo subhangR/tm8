@@ -252,3 +252,166 @@ test('hand-over: offer from ⋯, the banner, accept after one more ask', async (
   await expect(banner).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('65-handover-done.png') });
 });
+
+/*
+ * ---------------------------------------------------------------------------
+ * SLACK (Slack bridge design §1.1–1.3): the token connection, the channel
+ * picker, thread mode and View in Slack — in a real browser, because jsdom
+ * cannot see that a dialog's state block fits, that the lock sits beside the
+ * #name, or that the Slack mark is actually tinted.
+ *
+ *   bunx playwright test -c e2e/bridges.config.ts -g Slack
+ * ---------------------------------------------------------------------------
+ */
+
+/* The fixture's tokens: they must match the contract's structural regexes. */
+/*
+ * The tokens in this file are deliberately unrealistic — short, with zero
+ * digit groups and a NOTAREAL… body. They still satisfy the contract's
+ * regexes, which is all the code under test reads, and they do not look
+ * enough like real Slack tokens to trip GitHub's secret scanning (which
+ * blocked a push of this branch when they did).
+ */
+const SLACK_BOT = 'xoxb-0-0-NOTAREALBOTTOKEN';
+const SLACK_APP = 'xapp-0-A0-0-NOTAREALAPPTOKEN';
+const SLACK_CONNECTION = '5d3e8a10-2f4b-4c7e-8a9d-0c1f2e3d4a5b';
+
+async function openSlackTokenDialog(page: Page) {
+  await openSettings(page);
+  await page.getByTestId('bridges-add-account').click();
+  await page.getByRole('menuitem', { name: /Slack workspace/ }).click();
+  await expect(page.getByTestId('bridge-slack-tokens')).toBeVisible();
+}
+
+test('Slack: the connection row names the workspace auth.test answered', async ({ page }, info) => {
+  await openSettings(page);
+  const row = page.getByTestId(`connection-${SLACK_CONNECTION}`);
+  await expect(row).toBeVisible();
+  await expect(page.getByTestId(`connection-account-${SLACK_CONNECTION}`))
+    .toContainText('Connected to Acme · Acme Corp (acme.enterprise.slack.com) as @tm8');
+  await page.screenshot({ path: info.outputPath('80-slack-connection-row.png') });
+
+  // The rotation door says pasting, not re-linking a device.
+  await page.getByRole('button', { name: 'More for Acme Slack' }).click();
+  await expect(page.getByRole('menuitem', { name: /Paste new tokens for Acme Slack/ })).toBeVisible();
+  await page.screenshot({ path: info.outputPath('81-slack-row-menu.png') });
+});
+
+test('Slack: the token form refuses a bad pair locally, then connects', async ({ page }, info) => {
+  await openSlackTokenDialog(page);
+  await page.screenshot({ path: info.outputPath('82-slack-token-form.png') });
+
+  // Both inputs are secrets, and nothing will autofill them.
+  for (const label of ['Bot token', 'App-level token']) {
+    await expect(page.getByLabel(label)).toHaveAttribute('type', 'password');
+    await expect(page.getByLabel(label)).toHaveAttribute('autocomplete', 'off');
+  }
+
+  // The pair the other way round: refused here, named, never sent.
+  await page.getByLabel('Bot token').fill(SLACK_APP);
+  await page.getByLabel('App-level token').fill(SLACK_BOT);
+  await page.getByRole('button', { name: 'Connect' }).click();
+  await expect(page.getByTestId('slack-token-problem')).toContainText('other way round');
+  await page.screenshot({ path: info.outputPath('83-slack-token-swapped.png') });
+
+  // The real pair: the runtime's auth.test answer comes back as the account.
+  await page.getByLabel('Bot token').fill(SLACK_BOT);
+  await page.getByLabel('App-level token').fill(SLACK_APP);
+  await page.getByLabel('Workspace label').fill('Acme Slack 2');
+  await page.getByRole('button', { name: 'Connect' }).click();
+  await expect(page.getByTestId('slack-connected')).toContainText('Connected to Acme');
+  // The hard rule, in a real browser: neither token is anywhere on the page.
+  expect(await page.content()).not.toContain(SLACK_BOT);
+  expect(await page.content()).not.toContain(SLACK_APP);
+  expect(await page.inputValue('input[aria-label="Bot token"]')).toBe('');
+  await page.screenshot({ path: info.outputPath('84-slack-connected.png') });
+});
+
+test('Slack: a refused token says what to do about it', async ({ page }, info) => {
+  await openSlackTokenDialog(page);
+  await page.getByLabel('Bot token').fill('xoxb-0-0-invalid');
+  await page.getByLabel('App-level token').fill(SLACK_APP);
+  await page.getByRole('button', { name: 'Connect' }).click();
+  await expect(page.getByTestId('slack-refused')).toContainText('revoked, rotated or copied');
+  await page.screenshot({ path: info.outputPath('85-slack-refused.png') });
+});
+
+test('Slack: a thin install names the scopes it is missing', async ({ page }, info) => {
+  await openSlackTokenDialog(page);
+  await page.getByLabel('Bot token').fill('xoxb-0-0-noscope');
+  await page.getByLabel('App-level token').fill(SLACK_APP);
+  await page.getByRole('button', { name: 'Connect' }).click();
+  await expect(page.getByTestId('slack-missing-scopes')).toContainText('chat:write.customize');
+  await page.screenshot({ path: info.outputPath('86-slack-missing-scopes.png'), fullPage: true });
+});
+
+test('Slack: the channel picker, thread mode, and the every-message confirm', async ({ page }, info) => {
+  await openSettings(page);
+  await page.getByTestId('bridges-add').click();
+  await expect(page.getByTestId('wizard-step-connection')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('87-wizard-1-two-providers.png') });
+
+  await page.getByRole('button', { name: 'Use Acme Slack' }).click();
+  await expect(page.getByRole('option', { name: /#eng-support/ })).toBeVisible();
+  // #name, a lock on the private channel, and Slack's own words for read-only.
+  await expect(page.getByRole('option', { name: /#incidents/ })).toContainText('#incidents');
+  await expect(page.getByRole('option', { name: /#announcements/ })).toContainText('/invite @tm8 there first');
+  await page.screenshot({ path: info.outputPath('88-wizard-2-channels.png'), fullPage: true });
+
+  await page.getByRole('option', { name: /#eng-support/ }).click();
+  await page.getByRole('button', { name: 'Next: where it lands' }).click();
+  await expect(page.getByTestId('wizard-step-target')).toBeVisible();
+  await page.getByRole('combobox', { name: 'Target', exact: true }).selectOption({ label: 'Plan the launch sequence' });
+  await expect(page.getByTestId('bridge-thread-mode')).toBeVisible();
+  // Slack has no reply-signature switch: every reply carries its own voice.
+  await expect(page.getByTestId('wizard-voice-note')).toBeVisible();
+  await expect(page.getByText('How replies are signed')).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath('89-wizard-3-thread-mode.png'), fullPage: true });
+
+  await page.getByLabel(/^Every message/).first().check();
+  await page.getByRole('button', { name: 'Create bridge' }).click();
+  await expect(page.getByTestId('bridge-consequences')).toContainText('EVERY top-level message');
+  await page.screenshot({ path: info.outputPath('90-wizard-thread-confirm.png') });
+  await page.getByRole('button', { name: 'Yes, create it' }).click();
+  await expect(page.getByTestId('wizard-step-test')).toBeVisible();
+  await expect(page.getByTestId('wizard-step-test')).toContainText('THREAD');
+  await page.screenshot({ path: info.outputPath('91-wizard-4-slack-test.png') });
+
+  // The new Slack bridge's own panel: thread mode is editable there.
+  await page.getByRole('button', { name: 'Finish' }).click();
+  await expect(page.getByTestId('bridge-page')).toBeVisible({ timeout: 60_000 });
+  await page.screenshot({ path: info.outputPath('92-slack-bridge-page.png') });
+  await page.getByRole('tab', { name: 'Routing' }).click();
+  await expect(page.getByTestId('bridge-thread-mode')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('93-slack-routing-thread-mode.png'), fullPage: true });
+});
+
+test('Slack: View in Slack opens the channel', async ({ page }, info) => {
+  await openBridge(page, 'ent-bridge-deploys');
+  const link = page.getByTestId('slack-channel-link');
+  await expect(link).toBeVisible();
+  await expect(link).toHaveAttribute('href', 'https://acme.enterprise.slack.com/archives/C04DEPLOYS');
+  await expect(link).toHaveAttribute('target', '_blank');
+  await page.screenshot({ path: info.outputPath('94-slack-view-in-slack.png') });
+});
+
+test.describe('Slack in dark theme', () => {
+  test.use({ colorScheme: 'dark' });
+  test('Slack: the token dialog and the channel picker in dark', async ({ page }, info) => {
+    await page.addInitScript(() => window.localStorage.setItem('tm8ui.theme', 'dark'));
+    await openSlackTokenDialog(page);
+    await page.screenshot({ path: info.outputPath('95-dark-slack-token-form.png') });
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await page.getByTestId('bridges-add').click();
+    await page.getByRole('button', { name: 'Use Acme Slack' }).click();
+    await expect(page.getByRole('option', { name: /#incidents/ })).toBeVisible();
+    await page.screenshot({ path: info.outputPath('96-dark-slack-channels.png'), fullPage: true });
+  });
+});
+
+test('Slack: the token dialog at 900×600 does not scroll the page sideways', async ({ page }, info) => {
+  await page.setViewportSize({ width: 900, height: 600 });
+  await openSlackTokenDialog(page);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+  await page.screenshot({ path: info.outputPath('97-slack-token-form-900x600.png') });
+});

@@ -36,11 +36,19 @@ const PROVIDER_LABEL = new Map<string, string>([
   ['messenger', 'Messenger'],
 ]);
 
-/** A `Map`, so an inherited key never resolves (connector-logos.tsx, S27). */
+/**
+ * A `Map`, so an inherited key never resolves (connector-logos.tsx, S27).
+ *
+ * Slack's is `⌗` (VIEWDATA SQUARE), the four-stroke hash Slack's own channel
+ * glyph draws — a bare `#` is the channel marker the picker and titles already
+ * put in front of a name (`#deploys`), so the mark beside such a title would
+ * read as a stutter. It is a bundled text glyph like every other mark here: no
+ * `<img>`, no URL, nothing fetched.
+ */
 const PROVIDER_GLYPH = new Map<string, string>([
   ['whatsapp', '◍'],
   ['telegram', '➤'],
-  ['slack', '#'],
+  ['slack', '⌗'],
   ['discord', '◈'],
   ['instagram', '◎'],
   ['messenger', '◉'],
