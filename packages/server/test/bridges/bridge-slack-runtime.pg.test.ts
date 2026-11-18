@@ -120,8 +120,8 @@ const OWN_TEAM = { teamId: 'T0ACME', enterpriseId: null, guest: false, external:
 const MIGRATION_443 = readFileSync(join(MIGRATIONS_DIR, '443_bridge_slack_provider.sql'), 'utf8');
 const VOICE_FN = MIGRATION_443.slice(MIGRATION_443.indexOf('create or replace function internal.bridge_outbox_voice'),
   MIGRATION_443.indexOf('$$;', MIGRATION_443.indexOf('create or replace function internal.bridge_outbox_voice')) + 3);
-const linksOf = (sender: string) => database.query<{ method: string; revoked: boolean }>(
-  `select method, revoked_at is not null as revoked from public.bridge_identity_links
+const linksOf = (sender: string) => database.query<{ method: string; revoked: boolean; revoked_reason: string | null }>(
+  `select method, revoked_at is not null as revoked, revoked_reason from public.bridge_identity_links
     where provider = 'slack' and external_id = $1 order by verified_at`, [sender]);
 
 const account = {
@@ -369,7 +369,7 @@ describe('a Slack channel end to end (lane A ac3)', () => {
       sender: { externalId: 'U0SIBLNG2', altId: null, name: 'Sib', fromMe: false, email: SLACK_EMAIL,
         team: { teamId: 'T0SIB', enterpriseId: 'E0ACME', guest: false, external: false } } });
     expect(res.body.author).toMatchObject({ kind: 'member', actorId: ownerMember, trust: 'asserted' });
-    expect(await linksOf('U0SIBLNG2')).toEqual([{ method: 'email', revoked: false }]);
+    expect(await linksOf('U0SIBLNG2')).toEqual([{ method: 'email', revoked: false, revoked_reason: null }]);
     await call('/v2/bridge-runtime/state', runtimeToken, { connectionId: slackConnection, status: 'linked', detail: null, account });
     // Back on a single-workspace install, the sibling no longer qualifies: the link follows the evidence.
     const again = await inbound({ externalMessageId: '1790000000.000291', body: 'hello again',
@@ -377,6 +377,24 @@ describe('a Slack channel end to end (lane A ac3)', () => {
         team: { teamId: 'T0SIB', enterpriseId: 'E0ACME', guest: false, external: false } } });
     expect(again.body.author).toMatchObject({ kind: 'bridge', trust: 'guest' });
     expect((await linksOf('U0SIBLNG2'))[0]!.revoked).toBe(true);
+  });
+
+  it('an automatic revoke never blocks a later auto-link; an admin\'s revoke does (review finding 3)', async () => {
+    let n = 0;
+    const say = (email: string) => inbound({ externalMessageId: `1790000000.0004${String(n++).padStart(2, '0')}`, body: 'hi',
+      sender: { externalId: 'U0ROUND01', altId: null, name: 'Round', fromMe: false, email, team: OWN_TEAM } });
+    expect((await say(SLACK_EMAIL)).body.author).toMatchObject({ kind: 'member', trust: 'asserted' });
+    // Slack's email changes away and back: revoked automatically, then linked again.
+    expect((await say('round.new@acme.example')).body.author).toMatchObject({ kind: 'bridge', trust: 'guest' });
+    expect((await say(SLACK_EMAIL)).body.author).toMatchObject({ kind: 'member', trust: 'asserted' });
+    expect(await linksOf('U0ROUND01')).toEqual([
+      { method: 'email', revoked: true, revoked_reason: 'auto' },
+      { method: 'email', revoked: false, revoked_reason: null },
+    ]);
+    // A space admin revokes it (bridges.participants.update memberId: null): that sticks.
+    await db.tx(human(), (q) => q.rpc('update_bridge_participant', [slackBridge, 'U0ROUND01', JSON.stringify({ memberId: null }), null, randomUUID()]));
+    expect((await say(SLACK_EMAIL)).body.author).toMatchObject({ kind: 'bridge', trust: 'guest' });
+    expect((await linksOf('U0ROUND01')).at(-1)).toEqual({ method: 'email', revoked: true, revoked_reason: null });
   });
 
   it('a bot never links, and a non-matching email stays a guest', async () => {

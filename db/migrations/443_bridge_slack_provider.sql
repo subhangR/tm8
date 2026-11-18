@@ -333,7 +333,12 @@ alter table public.bridge_identity_links
   drop constraint bridge_identity_links_method_check,
   add constraint bridge_identity_links_method_check check (method in ('code', 'invite', 'admin', 'email')),
   drop constraint bridge_identity_links_check,
-  add constraint bridge_identity_links_check check ((method in ('admin', 'email')) = (space_id is not null));
+  add constraint bridge_identity_links_check check ((method in ('admin', 'email')) = (space_id is not null)),
+  -- Why a link was revoked. Null: a person did it (an admin, the member). 'auto':
+  -- the email auto-link's evidence stopped holding; that never blocks a later
+  -- auto-link (review #1505 finding 3).
+  add column revoked_reason text check (revoked_reason is null or revoked_reason = 'auto'),
+  add constraint bridge_identity_links_revoked_reason_shape check (revoked_reason is null or revoked_at is not null);
 
 -- Called by the inbound door in the same transaction, BEFORE
 -- bridge_runtime_inbound, so the resolver there already sees the link. Reads
@@ -409,16 +414,16 @@ begin
   end if;
   -- Slack's email no longer names that member: the email link follows it.
   if cur.id is not null then
-    update public.bridge_identity_links set revoked_at = now() where id = cur.id;
+    update public.bridge_identity_links set revoked_at = now(), revoked_reason = 'auto' where id = cur.id;
   end if;
   if who is null then
     return jsonb_build_object('status', case when cur.id is null then 'ignored' else 'revoked' end, 'reason', 'no_match');
   end if;
-  -- An admin's revoke of this email link sticks.
+  -- A person's revoke of this email link (an admin's) sticks; an automatic one does not.
   if exists (select 1 from public.bridge_identity_links l
               where l.provider = 'slack' and l.external_id = sender and l.space_id = b.space_id
                 and l.method = 'email' and l.identity_id = who and l.revoked_at is not null
-                and l.id is distinct from cur.id) then
+                and l.revoked_reason is null) then
     return jsonb_build_object('status', 'ignored', 'reason', 'revoked_before');
   end if;
   begin
