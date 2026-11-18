@@ -174,7 +174,9 @@ describe('thread mode in the wizard', () => {
     expect(within(field).getByRole('radio', { name: /Mention \(default\)/ })).toHaveProperty('checked', true);
     expect(within(field).getByRole('radio', { name: /Every message/ })).toBeTruthy();
     expect(within(field).getByRole('radio', { name: /Off/ })).toBeTruthy();
-    expect(field.textContent).toMatch(/child of the bridge's target session/);
+    /* The target here is a chat, so the copy is the chat one; the per-target
+       wording has its own test below. */
+    expect(field.textContent).toMatch(/Each thread gets its own session/);
     expect(field.textContent).toMatch(/idle after 2 hours/);
   });
 
@@ -207,6 +209,21 @@ describe('thread mode in the wizard', () => {
     expect(screen.queryByText('How replies are signed')).toBeNull();
     expect(screen.getByTestId('wizard-voice-note').textContent)
       .toMatch(/under the answering session's own name and icon, with no prefix/);
+  });
+
+  /* #1509 delta review, nit 1: "a child of the bridge's target session" is
+     only true when the target IS a session. */
+  it('says what a thread’s session belongs to, per target', async () => {
+    const t = await toTarget();            // the default target here is a chat
+    expect(screen.getByTestId('bridge-thread-mode').textContent)
+      .toMatch(/Each thread gets its own session/);
+    expect(screen.getByTestId('bridge-thread-mode').textContent)
+      .not.toMatch(/child of the bridge's target session/);
+
+    fireEvent.click(screen.getByRole('radio', { name: /Session/ }));
+    await waitFor(() => expect(screen.getByTestId('bridge-thread-mode').textContent)
+      .toMatch(/child of the bridge's target session/));
+    void t;
   });
 
   it('is not offered for a channel mirror, which has no sessions', async () => {
@@ -293,6 +310,13 @@ describe('thread mode on the Routing tab', () => {
     const confirm = await screen.findByTestId('bridge-consequences');
     expect(confirm.textContent).toMatch(/EVERY top-level message/);
     expect(t.port.update).not.toHaveBeenCalled();
+  });
+
+  it('says "its own session" on a chat-target bridge, not "a child of"', () => {
+    const t = testPort({ served: ['bridges.update'] });
+    const view = slackView({ policy: { ...slackView().policy, threadMode: 'mention' } });
+    render(<RoutingTab view={view} port={t.port} onView={() => {}} />);
+    expect(screen.getByTestId('bridge-thread-mode').textContent).toMatch(/Each thread gets its own session/);
   });
 
   it('is absent on a WhatsApp bridge', () => {

@@ -406,6 +406,32 @@ test('Slack: the channel picker, thread mode, and the every-message confirm', as
   await page.screenshot({ path: info.outputPath('93-slack-routing-thread-mode.png'), fullPage: true });
 });
 
+test('Slack: Escape on the connected screen lands where Done does', async ({ page }, info) => {
+  /* #1509 delta review A: the workspace is already connected AND offered by
+     this point, so dismissing must settle, not cancel. In the wizard, a
+     cancel left step 1 showing no sign of it. */
+  await openSettings(page);
+  await page.getByTestId('bridges-add').click();
+  await expect(page.getByTestId('wizard-step-connection')).toBeVisible();
+  /* Settings is still mounted behind the wizard and has its own
+     "+ Add an account", so this must be scoped to the wizard. */
+  const wizard = page.getByTestId('add-bridge-wizard');
+  await wizard.getByRole('button', { name: '+ Add an account' }).click();
+  await wizard.getByRole('menuitem', { name: 'Slack workspace' }).click();
+  await expect(page.getByTestId('bridge-slack-tokens')).toBeVisible();
+  await page.getByLabel('Bot token').fill(SLACK_BOT);
+  await page.getByLabel('App-level token').fill(SLACK_APP);
+  await page.getByLabel('Workspace label').fill('Escaped WS');
+  await connectBtn(page).click();
+  await expect(page.getByTestId('slack-connected')).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('bridge-slack-tokens')).toBeHidden();
+  // the wizard moved on, exactly as Done would have taken it
+  await expect(page.getByTestId('wizard-step-conversation')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('98-slack-escape-settles.png') });
+});
+
 test('Slack: View in Slack opens the channel', async ({ page }, info) => {
   await openBridge(page, 'ent-bridge-deploys');
   const link = page.getByTestId('slack-channel-link');

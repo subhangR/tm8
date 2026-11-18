@@ -389,6 +389,54 @@ describe('the connected state survives its host', () => {
     expect(screen.getByTestId('slack-missing-scopes').textContent).toMatch(/chat:write\.customize/);
   });
 
+  /*
+   * #1509 delta review A: once the tokens have worked, the workspace EXISTS
+   * on the server. Escape and a click outside used to call onClose, which in
+   * the wizard is only setLinking(null) — no reload, no step 2 — so the new
+   * workspace was never listed and the person sat on step 1 looking at a
+   * connection that was already connected and offered.
+   */
+  it('the wizard: Escape on the connected screen lands where Done does', async () => {
+    const t = slackPort(['bridges.connections.list', 'bridges.conversations.list', 'bridges.create']);
+    render(<AddBridgeWizard port={t.port} spaceId={SPACE} onClose={() => {}} onCreated={() => {}} />);
+    await screen.findByRole('button', { name: 'Use Acme Slack' });
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add an account' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Slack workspace' }));
+    await screen.findByTestId('bridge-slack-tokens');
+    paste(BOT, APP);
+    vi.useFakeTimers();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Connect' })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(screen.getByTestId('slack-connected')).toBeTruthy();
+
+    // Escape, not Done.
+    await act(async () => { fireEvent.keyDown(document, { key: 'Escape' }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+
+    // the dialog is gone AND the wizard moved on, as Done would have done
+    expect(screen.queryByTestId('bridge-slack-tokens')).toBeNull();
+    expect(screen.getByTestId('wizard-step-conversation')).toBeTruthy();
+  });
+
+  it('cancelling BEFORE the tokens work is still a cancel', async () => {
+    const t = slackPort();
+    const linked: BridgeConnectionView[] = [];
+    let closed = 0;
+    render(
+      <SlackTokensDialog
+        port={t.port}
+        spaceId={SPACE}
+        relink={null}
+        onClose={() => { closed += 1; }}
+        onLinked={(c) => linked.push(c)}
+      />,
+    );
+    await act(async () => { fireEvent.keyDown(document, { key: 'Escape' }); });
+    expect(closed).toBe(1);
+    expect(linked).toHaveLength(0);
+  });
+
   it('the add-bridge wizard shows a workspace’s missing scopes on its row', async () => {
     /* The wizard path showed them NOWHERE: it went straight to step 2. */
     const t = slackPort(['bridges.connections.list', 'bridges.conversations.list', 'bridges.create']);

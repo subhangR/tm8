@@ -570,6 +570,7 @@ export function AddBridgeWizard({
               {hasNativeThreads(providerId) && targetKind !== 'channel' ? (
                 <ThreadModeChoice
                   name="w-threadmode"
+                  targetKind={targetKind}
                   value={policy.threadMode ?? DEFAULT_SLACK_THREAD_MODE}
                   onChange={(v) => setPolicy((p) => ({ ...p, threadMode: v }))}
                 />
@@ -699,11 +700,14 @@ export function ThreadModeChoice({
   value,
   onChange,
   disabled,
+  targetKind,
 }: {
   name: string;
   value: BridgeThreadMode;
   onChange(v: BridgeThreadMode): void;
   disabled?: boolean;
+  /** Where the bridge lands: what a thread's session is a child OF, if anything. */
+  targetKind?: BridgeTargetKind;
 }) {
   return (
     <fieldset className="brg-choice" data-testid="bridge-thread-mode">
@@ -723,8 +727,12 @@ export function ThreadModeChoice({
         </label>
       ))}
       <p className="brg-hint">
-        A thread's session is a child of the bridge's target session, goes idle after 2 hours with no replies, and the
-        next reply in that thread wakes it with its history.
+        {/* "a child of the target session" only holds when the target IS a
+            session; a chat target has no session to parent them on (#1509
+            delta review, nit 1). */}
+        {targetKind === 'work_session'
+          ? "A thread's session is a child of the bridge's target session, goes idle after 2 hours with no replies, and the next reply in that thread wakes it with its history."
+          : "Each thread gets its own session, which goes idle after 2 hours with no replies; the next reply in that thread wakes it with its history."}
       </p>
     </fieldset>
   );

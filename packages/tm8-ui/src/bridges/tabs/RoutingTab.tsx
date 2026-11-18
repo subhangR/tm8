@@ -193,6 +193,7 @@ export function RoutingTab({
           {hasNativeThreads(view.provider) && view.target.kind !== 'channel' ? (
             <ThreadModeChoice
               name="threadMode"
+              targetKind={view.target.kind}
               value={draft.policy.threadMode ?? DEFAULT_SLACK_THREAD_MODE}
               onChange={(v) => setPolicy('threadMode', v)}
             />

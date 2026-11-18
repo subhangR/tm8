@@ -62,12 +62,31 @@ export function SlackTokensDialog({
    * person now sees the result and dismisses it with Done.
    */
   const [settled, setSettled] = useState<BridgeConnectionView | null>(null);
+  /**
+   * Bumped by each submit. The poll below keys on it, so a retry tears the old
+   * interval down: otherwise a poll in flight from the previous attempt could
+   * land after the new one started and put the old refusal back on screen for
+   * a beat (#1509 delta review, nit 3).
+   */
+  const [attempt, setAttempt] = useState(0);
   /* The connection as the runtime last reported it: what linked/logged_out is read from. */
   const [watched, setWatched] = useState<BridgeConnectionView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const dialog = useRef<HTMLDivElement>(null);
-  const close = useCallback(() => { if (!busy) onClose(); }, [busy, onClose]);
+  /*
+   * Dismissing the dialog means different things before and after the tokens
+   * worked. Before: nothing happened, so Escape or a click outside cancels.
+   * AFTER: the workspace IS connected and offered on the server, so cancelling
+   * throws that away on the client — in the wizard `onClose` is only
+   * `setLinking(null)`, with no reload and no step 2, so the new workspace
+   * never appeared and the person was stuck on step 1 looking at a connection
+   * that exists (#1509 delta review A). Once `settled`, every exit is Done.
+   */
+  const close = useCallback(() => {
+    if (busy) return;
+    if (settled) onLinked(settled); else onClose();
+  }, [busy, settled, onClose, onLinked]);
   useDismissable(true, dialog, close);
 
   /* Wait for the runtime's word on the tokens: linked (with the account from
@@ -99,7 +118,7 @@ export function SlackTokensDialog({
       }, () => {});
     }, 1200);
     return () => { live = false; clearInterval(tick); };
-  }, [pending, port, offerHere, spaceId]);
+  }, [pending, attempt, port, offerHere, spaceId]);
 
   const problem = slackTokenProblem(botToken, appToken);
   /* Only after a submit: an untouched form must not open covered in red. */
@@ -123,6 +142,7 @@ export function SlackTokensDialog({
     setBusy(true);
     setError(null);
     setWatched(null);
+    setAttempt((n) => n + 1);
     try {
       const result = await port.connections.begin({
         provider: 'slack',

@@ -274,6 +274,18 @@
 .brg-linkdlg input[type='password'] {
   flex: 1 1 auto;
   min-width: 0;
+  /* …and drawn like the dialog's other fields, not as a native box. */
+  font: inherit;
+  padding: 5px 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  letter-spacing: 0.08em;
+}
+.cv2-root .brg-linkdlg input[type='password']:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
 }
 
 /* The connect result under the token form: one block, so the connected line,
