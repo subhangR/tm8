@@ -33,6 +33,13 @@ import { bridgesWorkerClaims } from '../outbox.js';
 
 /** A thread session with nothing in its thread for this long, and waiting for input, is stopped. */
 export const BRIDGE_THREAD_IDLE_MS = 2 * 60 * 60_000;
+/**
+ * One sweep's time budget, well under the watchdog job's 60 s timeout. Threads
+ * handed out but not reached are marked (444) and come back in a later sweep.
+ */
+export const BRIDGE_THREAD_SWEEP_BUDGET_MS = 20_000;
+/** Stops per sweep (444 adds at most 5 starts). */
+const SWEEP_BATCH = 10;
 
 interface ThreadContext {
   bridgeId: string;
@@ -101,9 +108,13 @@ export function createBridgeThreadKeeper(o: {
   readonly stopWorker?: BridgeCommandPorts['stopWorker'];
   readonly postNotice: (db: Db, input: BridgeNoticeInput) => Promise<unknown>;
   readonly idleMs?: number;
+  readonly sweepBudgetMs?: number;
+  readonly now?: () => number;
   readonly log?: (line: string) => void;
 }): BridgeThreadKeeper {
   const idleMs = o.idleMs ?? BRIDGE_THREAD_IDLE_MS;
+  const budgetMs = o.sweepBudgetMs ?? BRIDGE_THREAD_SWEEP_BUDGET_MS;
+  const now = o.now ?? Date.now;
   const running = new Map<string, Promise<BridgeThreadOutcome>>();
 
   const context = (bridgeId: string, messageId: string) =>
@@ -186,15 +197,18 @@ export function createBridgeThreadKeeper(o: {
     ensure: (bridgeId, messageId) => ensureWith(bridgeId, messageId, false),
 
     async sweepThreads() {
+      const deadline = now() + budgetMs;
       let due: DueThread[];
       try {
-        due = await o.db.rpc<DueThread[]>(bridgesWorkerClaims('bridges.threads'), 'bridge_threads_due', [Math.round(idleMs / 1000), 20]);
+        due = await o.db.rpc<DueThread[]>(bridgesWorkerClaims('bridges.threads'), 'bridge_threads_due', [Math.round(idleMs / 1000), SWEEP_BATCH]);
       } catch (err) {
         o.log?.(`[bridges] thread sweep failed: ${(err as Error).message}`);
         return 0;
       }
       let acted = 0;
       for (const row of Array.isArray(due) ? due : []) {
+        // Out of time: the rest were marked when handed out and come back later.
+        if (now() > deadline) break;
         try {
           if (row.action === 'start') {
             // Nothing delivered the root to a session, so its brief carries it.

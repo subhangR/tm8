@@ -121,15 +121,24 @@ create table public.bridge_threads (
   created_at       timestamptz not null default now(),
   -- The last message in the thread, either way; idle is measured from it.
   last_activity_at timestamptz not null default now(),
-  -- Set when the idle sweep stopped the session; cleared when it is bound again.
+  -- Set when the idle sweep stopped the session; cleared when it is bound
+  -- again, or when the session runs again by any other way (a manual resume).
   idle_stopped_at  timestamptz,
+  -- When the sweep last handed this thread out to be stopped: a stop that is
+  -- skipped or fails is not handed out again for 15 minutes, so a thread that
+  -- cannot be stopped never holds a place in every sweep.
+  stop_attempted_at timestamptz,
   start_attempts   integer not null default 0 check (start_attempts >= 0),
   primary key (bridge_id, root_external_id),
   unique (root_message_id)
 );
-create index bridge_threads_session_idx on public.bridge_threads(session_id) where session_id is not null;
-create index bridge_threads_idle_idx on public.bridge_threads(last_activity_at)
+-- The sweep's three scans, each on its own partial index: stop candidates
+-- (session set, oldest activity first), sessions to un-mark after a manual
+-- resume, and starts the server missed (no session yet).
+create index bridge_threads_stop_idx on public.bridge_threads(last_activity_at)
   where session_id is not null and idle_stopped_at is null;
+create index bridge_threads_stopped_idx on public.bridge_threads(session_id) where idle_stopped_at is not null;
+create index bridge_threads_unstarted_idx on public.bridge_threads(created_at) where session_id is null;
 alter table public.bridge_threads enable row level security;
 -- No policy and no grant: written and read only by the definers below.
 
@@ -559,7 +568,7 @@ begin
     raise exception 'a thread session is a work session in the bridge''s space' using errcode = '22023';
   end if;
   update public.bridge_threads
-     set session_id = p_session_id, idle_stopped_at = null, last_activity_at = now()
+     set session_id = p_session_id, idle_stopped_at = null, stop_attempted_at = null, last_activity_at = now()
    where bridge_id = th.bridge_id and root_external_id = th.root_external_id;
   select * into root_o from public.message_origins where message_id = th.root_message_id;
   author := case when root_o.external_sender_id is not null
@@ -576,35 +585,67 @@ $$;
 revoke all on function public.bridge_thread_bind(uuid, text, uuid) from public;
 grant execute on function public.bridge_thread_bind(uuid, text, uuid) to tm8_app;
 
--- The watchdog's work, oldest first:
+-- The watchdog's work, oldest first, at most p_limit stops and 5 starts:
 --   'stop'  a thread session waiting for input (status idle) with nothing in
---           its thread for p_idle_seconds;
+--           its thread for p_idle_seconds. Handing one out marks it
+--           (stop_attempted_at) and it is not handed out again for 15 minutes,
+--           whatever becomes of the stop.
 --   'start' a thread whose session never started (the server stopped between
 --           the inbound commit and the keeper), tried at most 3 times within
 --           its first hour. Each one handed out counts as an attempt.
-create or replace function public.bridge_threads_due(p_idle_seconds integer, p_limit integer default 20)
+-- First it un-marks threads whose session runs again since the sweep stopped
+-- it (a manual resume), and prunes the threads of removed (ended) or deleted
+-- bridges once their session no longer runs: no message can reach them again.
+-- A live bridge keeps every thread row, since a reply weeks later still
+-- resumes that thread's session.
+create or replace function public.bridge_threads_due(p_idle_seconds integer, p_limit integer default 10)
 returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
-declare stops jsonb; starts jsonb;
+declare stops jsonb; starts jsonb; n integer := least(greatest(coalesce(p_limit, 10), 1), 50);
 begin
   perform internal.require_bridges_worker();
-  select coalesce(jsonb_agg(jsonb_build_object('action', 'stop', 'bridgeId', x.bridge_id,
-                                               'rootExternalId', x.root_external_id, 'rootMessageId', x.root_message_id,
-                                               'sessionId', x.session_id)), '[]'::jsonb) into stops
-    from (select t.* from public.bridge_threads t
-            join public.work_sessions ws on ws.entity_id = t.session_id
-            join public.bridges br on br.entity_id = t.bridge_id
-           where t.idle_stopped_at is null
-             and t.last_activity_at < now() - make_interval(secs => greatest(p_idle_seconds, 60))
-             and ws.status = 'idle'
-           order by t.last_activity_at
-           limit greatest(coalesce(p_limit, 20), 1)) x;
+  update public.bridge_threads t set idle_stopped_at = null
+    from public.work_sessions ws
+   where t.idle_stopped_at is not null and ws.entity_id = t.session_id
+     and ws.status in ('spawning', 'running', 'idle') and ws.status_changed_at > t.idle_stopped_at;
+  delete from public.bridge_threads t
+   where (t.bridge_id, t.root_external_id) in (
+     select d.bridge_id, d.root_external_id from public.bridge_threads d
+       join public.bridges br on br.entity_id = d.bridge_id
+       join public.entities be on be.id = d.bridge_id
+      where (br.ended_at is not null or be.deleted_at is not null)
+        and (d.session_id is null or not internal.bridge_session_live(d.session_id))
+      limit 500);
+
+  with due as (
+    select t.bridge_id, t.root_external_id from public.bridge_threads t
+      join public.work_sessions ws on ws.entity_id = t.session_id and ws.status = 'idle'
+      join public.entities se on se.id = t.session_id and se.deleted_at is null
+      join public.entities be on be.id = t.bridge_id and be.deleted_at is null
+     where t.session_id is not null and t.idle_stopped_at is null
+       and t.last_activity_at < now() - make_interval(secs => greatest(p_idle_seconds, 60))
+       and (t.stop_attempted_at is null or t.stop_attempted_at < now() - interval '15 minutes')
+     order by t.last_activity_at
+     limit n
+     for update of t skip locked
+  ), marked as (
+    update public.bridge_threads t set stop_attempted_at = now()
+      from due where t.bridge_id = due.bridge_id and t.root_external_id = due.root_external_id
+    returning t.bridge_id, t.root_external_id, t.root_message_id, t.session_id, t.last_activity_at
+  )
+  select coalesce(jsonb_agg(jsonb_build_object('action', 'stop', 'bridgeId', marked.bridge_id,
+                                               'rootExternalId', marked.root_external_id,
+                                               'rootMessageId', marked.root_message_id,
+                                               'sessionId', marked.session_id)
+                            order by marked.last_activity_at), '[]'::jsonb) into stops
+    from marked;
   with due as (
     select t.bridge_id, t.root_external_id from public.bridge_threads t
       join public.bridges br on br.entity_id = t.bridge_id and br.ended_at is null and br.paused_at is null
+      join public.entities be on be.id = t.bridge_id and be.deleted_at is null
      where t.session_id is null and t.start_attempts < 3
        and t.created_at < now() - interval '1 minute' and t.created_at > now() - interval '1 hour'
      order by t.created_at
-     limit greatest(coalesce(p_limit, 20), 1)
+     limit least(n, 5)
      for update of t skip locked
   ), bumped as (
     update public.bridge_threads t set start_attempts = t.start_attempts + 1

@@ -321,6 +321,87 @@ describe('444: Slack thread mode', () => {
     expect((await threadRow(root))!.idle_stopped_at).toBeNull();
   });
 
+  /** A thread row with its own session and root message, written as the database owner. */
+  async function rawThread(o: { bridgeId?: string; status: string; idleFor: string; deletedSession?: boolean }) {
+    const session = randomUUID(), message = randomUUID(), ext = ts();
+    await owner(`insert into public.entities(id, space_id, kind, created_by, visibility, deleted_at)
+      values ($1,$2,'work_session',$3,'space',$4)`, [session, spaceId, teammate, o.deletedSession ? new Date() : null]);
+    await owner(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at) values ($1,'raw',$2,'none',now())`, [session, o.status]);
+    await owner(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'message',$3)`, [message, spaceId, ownerMember]);
+    await owner(`insert into public.messages(entity_id, anchor_id, author_id, body) values ($1,$2,$3,'raw root')`, [message, o.bridgeId ?? bridge, ownerMember]);
+    await owner(`insert into public.bridge_threads(bridge_id, root_external_id, root_message_id, session_id, last_activity_at)
+      values ($1,$2,$3,$4, now() - $5::interval)`, [o.bridgeId ?? bridge, ext, message, session, o.idleFor]);
+    return { session, ext };
+  }
+
+  it('idle sweep: threads it cannot stop never starve the rest; deleted sessions are skipped; a manual resume un-marks', async () => {
+    // The good thread: idle 3h, its session waiting for input.
+    await owner(`update public.bridge_threads set last_activity_at = now() - interval '3 hours', idle_stopped_at = null, stop_attempted_at = null
+      where bridge_id = $1 and root_external_id = $2`, [bridge, root]);
+    await setStatus(threadSession, 'idle');
+    // 25 older threads whose stop always fails, and one whose session was deleted.
+    const poison = new Set<string>();
+    for (let i = 0; i < 25; i += 1) poison.add((await rawThread({ status: 'idle', idleFor: '5 hours' })).session);
+    const deleted = await rawThread({ status: 'idle', idleFor: '6 hours', deletedSession: true });
+    const calls: string[] = [];
+    const sweeper = createBridgeThreadKeeper({
+      db, ...workers,
+      async stopWorker(_claims, sessionId) {
+        calls.push(sessionId);
+        if (poison.has(sessionId)) throw new Error('not_found');
+        await setStatus(sessionId, 'exited');
+      },
+      async postNotice() { return {}; },
+    });
+    expect(await sweeper.sweepThreads()).toBe(0);
+    expect(await sweeper.sweepThreads()).toBe(0);
+    expect(await sweeper.sweepThreads()).toBe(1);
+    expect(calls.filter((c) => poison.has(c))).toHaveLength(25);
+    expect(new Set(calls).size).toBe(calls.length); // each tried once, none handed out again
+    expect(calls).toContain(threadSession);
+    expect(calls).not.toContain(deleted.session);
+    expect((await threadRow(root))!.idle_stopped_at).not.toBeNull();
+    expect(await sweeper.sweepThreads()).toBe(0);
+
+    // Resumed by hand (not through the thread keeper): the mark goes, and it can idle out again.
+    await setStatus(threadSession, 'running');
+    await sweeper.sweepThreads();
+    expect((await threadRow(root))!.idle_stopped_at).toBeNull();
+
+    await owner('delete from public.bridge_threads where session_id = any($1::uuid[])', [[...poison, deleted.session]]);
+  });
+
+  it('idle sweep: bounded by its time budget; threads of a removed bridge are pruned once their session stops', async () => {
+    const a = await rawThread({ status: 'idle', idleFor: '4 hours' });
+    const b = await rawThread({ status: 'idle', idleFor: '4 hours' });
+    let clock = 0;
+    const calls: string[] = [];
+    const sweeper = createBridgeThreadKeeper({
+      db, ...workers, sweepBudgetMs: 1_500, now: () => (clock += 1_000),
+      async stopWorker(_claims, sessionId) { calls.push(sessionId); await setStatus(sessionId, 'exited'); },
+      async postNotice() { return {}; },
+    });
+    expect(await sweeper.sweepThreads()).toBe(1);
+    expect(calls).toHaveLength(1);
+    await owner('delete from public.bridge_threads where session_id = any($1::uuid[])', [[a.session, b.session]]);
+
+    // A second Slack bridge, removed: its threads go once their session no longer runs.
+    const other = randomUUID();
+    await owner(`insert into public.entities(id, space_id, kind, created_by, visibility) values ($1,$2,'work_session',$3,'space')`, [other, spaceId, teammate]);
+    await owner(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at) values ($1,'Other desk','running','none',now())`, [other]);
+    const created = await db.tx(human(), (q) => q.rpc<{ entity: { id: string } }>('create_bridge', [spaceId, connection, 'C0OTHER',
+      JSON.stringify({ kind: 'channel', title: 'other', memberCount: 3 }), other, JSON.stringify({}), teammate, null, null, true, null, null, randomUUID()]));
+    const gone = await rawThread({ bridgeId: created.entity.id, status: 'running', idleFor: '1 minute' });
+    const version = Number((await owner<{ version: number }>('select version from public.entities where id = $1', [created.entity.id]))[0]!.version);
+    await db.tx(human(), (q) => q.rpc('remove_bridge', [created.entity.id, version, null, randomUUID()]));
+    const left = async () => (await owner<{ n: number }>('select count(*)::int n from public.bridge_threads where root_external_id = $1', [gone.ext]))[0]!.n;
+    await threads().sweepThreads();
+    expect(await left()).toBe(1); // its session still runs
+    await setStatus(gone.session, 'exited');
+    await threads().sweepThreads();
+    expect(await left()).toBe(0);
+  });
+
   it('every: any top-level message starts a session; a start the server missed is made by the sweep with the root in its brief', async () => {
     await setPolicy({ threadMode: 'every' });
     const missedRoot = ts();
@@ -382,6 +463,8 @@ describe('444: /tm8 slash commands', () => {
 
   /** What routes.ts does: detect inside the inbound transaction, store, then run after commit. */
   async function slash(text: string, sender = OWNER_SLACK) {
+    // This file posts faster than a channel ever does: keep the outbox's per-minute buckets (406) out of it.
+    await owner(`update public.bridge_outbox set created_at = now() - interval '2 minutes' where bridge_id = $1`, [bridge]);
     const [verb, ...rest] = text.split(' ');
     const body = `/${verb} ${rest.join(' ')}`.trim();
     const ex = executor();
