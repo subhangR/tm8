@@ -374,7 +374,7 @@ ok "workspace dependencies present"
 # its node_modules. Installed only when this machine runs it (TM8_SLACK_RUNTIME,
 # from env.sh's bridges.env), and again when its lockfile moves.
 SLACK_PKG="$SRC/integrations/slack-bridge"
-if [[ "${TM8_SLACK_RUNTIME:-}" =~ ^(1|true|TRUE|yes|on)$ && -f "$SLACK_PKG/package-lock.json" ]]; then
+if tm8_is_on "${TM8_SLACK_RUNTIME:-}" && [[ -f "$SLACK_PKG/package-lock.json" ]]; then
   if [[ ! -f "$SLACK_PKG/node_modules/.package-lock.json" || "$SLACK_PKG/package-lock.json" -nt "$SLACK_PKG/node_modules/.package-lock.json" ]]; then
     info "npm ci in integrations/slack-bridge (the Slack runtime) …"
     (cd "$SLACK_PKG" && PATH="$(dirname "$TM8_NODE_BIN"):$PATH" npm ci --no-audit --no-fund >/dev/null) \

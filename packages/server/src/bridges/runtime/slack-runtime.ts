@@ -51,11 +51,20 @@ export interface SlackRuntimeHost {
   readonly home?: string;
 }
 
-const truthy = (v: string | undefined): boolean => /^(1|true|yes|on)$/i.test(v?.trim() ?? '');
+/**
+ * THE rule for an on/off setting such as TM8_SLACK_RUNTIME: trimmed (CR and
+ * spaces included), case-insensitive, one of 1, true, yes, on. The same rule
+ * lives in deploy/prod/env.sh (tm8_is_on, which deploy.sh uses) and
+ * scripts/lib/env.mjs (isOn, for doctor); test/bridges/slack-on-flag.test.ts
+ * runs all three over one table, so they cannot drift apart.
+ */
+export function isOn(v: string | undefined): boolean {
+  return ['1', 'true', 'yes', 'on'].includes((v ?? '').trim().toLowerCase());
+}
 
 /** Answers null when the node runs no Slack runtime (the default). */
 export function slackRuntimePlan(env: NodeJS.ProcessEnv, host: SlackRuntimeHost): SlackRuntimePlan | null {
-  const enabled = truthy(env.TM8_SLACK_RUNTIME);
+  const enabled = isOn(env.TM8_SLACK_RUNTIME);
   const commandJson = env.TM8_SLACK_RUNTIME_COMMAND?.trim();
   const tokenFileEnv = env.TM8_SLACK_RUNTIME_TOKEN_FILE?.trim();
   if (!enabled && !commandJson && !tokenFileEnv) return null;

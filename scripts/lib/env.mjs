@@ -141,6 +141,15 @@ function loadDotenvFiles(env) {
   return { merged, loaded };
 }
 
+/**
+ * An on/off setting (TM8_SLACK_RUNTIME): trimmed, case-insensitive, one of 1,
+ * true, yes, on. The same rule as isOn in packages/server/src/bridges/runtime/
+ * slack-runtime.ts and tm8_is_on in deploy/prod/env.sh (one test pins all three).
+ */
+export function isOn(v) {
+  return ["1", "true", "yes", "on"].includes(String(v ?? "").trim().toLowerCase());
+}
+
 /** Expand a leading `~` against the user's home directory. */
 export function expandHome(p) {
   if (p === "~") return homedir();

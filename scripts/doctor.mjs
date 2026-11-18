@@ -7,7 +7,7 @@
 import { existsSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { REPO_ROOT, expandHome, resolveEnv } from "./lib/env.mjs";
+import { REPO_ROOT, expandHome, isOn, resolveEnv } from "./lib/env.mjs";
 import { preflight } from "./lib/preflight.mjs";
 import { logger } from "./lib/run.mjs";
 import { PG_MAJOR, inspectDatabase, redact } from "./lib/pg.mjs";
@@ -106,7 +106,7 @@ if (agentCmd) {
 // Opt-in (TM8_SLACK_RUNTIME=1): the server supervises integrations/slack-bridge,
 // a standalone npm package that `bun install` does not fill. Missing deps would
 // otherwise surface only as one warning line in the server log.
-if (/^(1|true|yes|on)$/i.test(env.TM8_SLACK_RUNTIME ?? "")) {
+if (isOn(env.TM8_SLACK_RUNTIME)) {
   log.info("");
   const pkg = expandHome(env.TM8_SLACK_RUNTIME_CWD?.trim() || join(REPO_ROOT, "integrations", "slack-bridge"));
   const stateDir = expandHome(env.TM8_SLACK_STATE_DIR?.trim() || join(dataDir, "bridges", "slack-runtime"));

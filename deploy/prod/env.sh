@@ -23,6 +23,16 @@ TM8_PROD_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export TM8_PROD_ROOT
 
 # --- bridges ----------------------------------------------------------------
+# An on/off setting (TM8_SLACK_RUNTIME): trimmed (CR and spaces too),
+# case-insensitive, one of 1, true, yes, on. The same rule as isOn in
+# packages/server/src/bridges/runtime/slack-runtime.ts; one test pins both.
+tm8_is_on() {
+  local v="${1-}"
+  v="${v//$'\r'/}"
+  v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
+  v="$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]')"
+  [[ "$v" == 1 || "$v" == true || "$v" == yes || "$v" == on ]]
+}
 # The connector runtimes are opt-in, per machine, and must survive a restart from
 # any shell, so they come from one small file rather than the ambient env:
 #   ~/.config/tm8/bridges.env        e.g.  TM8_SLACK_RUNTIME=1
