@@ -123,9 +123,11 @@ export type SlackAccount = {
   teamName: string
   /** The workspace URL, e.g. https://acme.slack.com/ — the base for "View in Slack" links. */
   url: string
-  /** Set on Enterprise Grid. */
+  /** Set on Enterprise Grid, for an org-wide install AND for a single workspace of a Grid org. */
   enterpriseId: string | null
   enterpriseName: string | null
+  /** auth.test `is_enterprise_install`: the app is installed org-wide on a Grid org (externalAccountId = enterpriseId). */
+  isEnterpriseInstall: boolean
   botUserId: string
   botId: string | null
   botName: string
@@ -183,14 +185,15 @@ export type InboundFrame = {
   /**
    * v4, native-thread providers: set on a thread REPLY, naming the thread's root message (Slack `thread_ts`). Absent or
    * null on a top-level message, whose own externalMessageId is the root of any thread it starts. A Slack thread reply
-   * also fills `replyTo` with the root, so quote-based routing keeps working.
+   * also fills `replyTo` with the root, so quote-based routing keeps working. Slack's own unfurl/attachment-only
+   * `message_changed` events are not edits and never arrive.
    */
   thread?: { rootExternalMessageId: string } | null
   /**
    * v4: an edit of an earlier message (Slack `message_changed`). externalMessageId names the EDITED message, `body` and
    * `media` are its new content. The server updates its copy; an edit is never routed as a new turn.
    */
-  edit?: { editedAt: number } | null
+  edit?: { /** epoch SECONDS (Slack `edited.ts`, floored). */ editedAt: number } | null
   /**
    * v4: the message was deleted at the provider (Slack `message_deleted`). externalMessageId names it; body is ''. The
    * server tombstones its copy (Enterprise retention, design §2.3) and routes nothing.
@@ -201,7 +204,7 @@ export type InboundFrame = {
    * server's existing command parser handles it exactly as a WhatsApp `/work`) and sets this. externalMessageId is
    * `cmd:<trigger_id>`, kind 'text'. Slash commands carry no thread, so the answer goes to the channel.
    */
-  slashCommand?: { command: string; text: string } | null
+  slashCommand?: { /** The slash command as Slack names it, e.g. '/tm8'. */ command: string; /** Everything after it, as typed. */ text: string } | null
   /** WhatsApp's messageTimestamp: epoch SECONDS. Slack: the ts, floored to seconds. */
   ts: number
 }
@@ -295,6 +298,8 @@ export type ConnectCredential = { kind: 'slack_tokens'; botToken: string; appTok
 /**
  * v4: how an outbound message is signed on a perUserVoice provider (Slack chat:write.customize): the author's display
  * name and icon replace the `Title (handle):` prefix. `iconUrl` must be a public https URL; null uses the app's icon.
+ * Slack file uploads cannot carry a custom name or icon: a `send` with media posts the file as the app, and the
+ * runtime posts the caption (if any) as a separate voiced message in the same thread.
  */
 export type SendVoice = { username: string; iconUrl: string | null; iconEmoji?: string | null }
 

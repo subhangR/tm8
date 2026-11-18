@@ -769,6 +769,9 @@ export const BridgeConnectionAuthFlowSchema: z.ZodType<BridgeConnectionAuthFlow>
   z.object({ kind: z.literal('qr') }).strict(),
   z.object({ kind: z.literal('pairing'), phone: z.string().regex(/^\+?[0-9]{6,20}$/, 'a phone number in international form, digits only') }).strict(),
 ]);
+/** Slack token shapes (contract only: the runtime's auth.test is the real check). */
+export const SLACK_BOT_TOKEN_RE = /^xoxb-\d+-\d+-[A-Za-z0-9]+$/;
+export const SLACK_APP_TOKEN_RE = /^xapp-\d+-[A-Z0-9]+-\d+-[A-Za-z0-9]+$/;
 export const BridgeConnectionBeginInputSchema: z.ZodType<BridgeConnectionBeginInput> = z.object({
   ...Command,
   provider: BridgeProviderSchema,
@@ -777,12 +780,16 @@ export const BridgeConnectionBeginInputSchema: z.ZodType<BridgeConnectionBeginIn
   authFlow: BridgeConnectionAuthFlowSchema.optional(),
   credential: z.object({
     kind: z.literal('slack_tokens'),
-    botToken: z.string().regex(/^xoxb-[A-Za-z0-9-]{10,250}$/, 'a Slack bot token starts with xoxb-'),
-    appToken: z.string().regex(/^xapp-[A-Za-z0-9-]{10,250}$/, 'a Slack app-level token starts with xapp-'),
+    botToken: z.string().trim().max(300)
+      .regex(SLACK_BOT_TOKEN_RE, 'a Slack bot token looks like xoxb-<digits>-<digits>-<letters and digits> (OAuth & Permissions)'),
+    appToken: z.string().trim().max(300)
+      .regex(SLACK_APP_TOKEN_RE, 'a Slack app-level token looks like xapp-<digit>-<id>-<digits>-<hex> (Basic Information → App-Level Tokens)'),
   }).strict().optional(),
 }).strict()
-  .refine(i => !(i.credential && i.authFlow), 'pass credential (Slack) or authFlow (WhatsApp), not both')
-  .refine(i => !i.credential || i.provider === 'slack', 'credential is for provider slack');
+  .refine(i => !i.credential || i.provider === 'slack', { message: 'credential is for provider slack', path: ['credential'] })
+  .refine(i => !i.authFlow || i.provider === 'whatsapp', { message: 'authFlow is for provider whatsapp', path: ['authFlow'] })
+  .refine(i => i.provider !== 'slack' || i.credential !== undefined || i.connectionId !== undefined,
+    { message: 'a new Slack connection needs credential (the bot and app-level tokens)', path: ['credential'] });
 export const BridgeConnectionOfferInputSchema: z.ZodType<BridgeConnectionOfferInput> = z.object({
   ...Command,
   connectionId: Id.optional(),
@@ -822,7 +829,7 @@ export const BridgeConnectionViewSchema: z.ZodType<BridgeConnectionView> = z.obj
   offers: z.array(BridgeConnectionOfferSchema),
   account: z.object({
     teamId: z.string(), teamName: z.string(), url: z.string(), enterpriseId: z.string().nullable(),
-    enterpriseName: z.string().nullable(), botUserId: z.string(), botId: z.string().nullable(), botName: z.string(),
+    enterpriseName: z.string().nullable(), isEnterpriseInstall: z.boolean(), botUserId: z.string(), botId: z.string().nullable(), botName: z.string(),
     scopes: z.array(z.string()),
   }).strict().nullable().optional(),
   detail: z.string().max(500).nullable().optional(),
