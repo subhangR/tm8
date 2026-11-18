@@ -624,6 +624,40 @@ describe('a Slack channel end to end (lane A ac3)', () => {
       { outboxId: send.outboxId, connectionId: slackConnection, externalMessageId: '1790000001.000400', message: null })).body).toMatchObject({ status: 'sent' });
   });
 
+  it('slack_not_connected holds the row (no attempt spent, never permanent) until the connection is linked again', async () => {
+    const isSend = (f: ServerFrame): f is Extract<ServerFrame, { type: 'send' }> => f.type === 'send' && f.connectionId === slackConnection;
+    slackFrames.length = 0;
+    expect((await call('/v2/messages', browserToken, { anchorIds: [slackBridge], body: 'held one', clientMutationId: randomUUID() })).status).toBe(200);
+    let frame = await until(() => slackFrames.find(isSend));
+    for (let i = 0; i < 7; i++) {
+      const held = await call('/v2/bridge-runtime/sent', runtimeToken,
+        { outboxId: frame.outboxId, connectionId: slackConnection, failed: { reason: 'slack_not_connected', retryable: true } });
+      expect(held.body, `round ${i}`).toMatchObject({ status: 'failed_retryable' });
+      const [row] = await database.query<{ attempts: number; last_error: string; wait: number }>(
+        `select attempts, last_error, extract(epoch from next_attempt_at - now())::float as wait from public.bridge_outbox where id = $1`, [frame.outboxId]);
+      expect(row).toMatchObject({ attempts: 0, last_error: 'held: slack_not_connected' });
+      expect(row!.wait).toBeGreaterThan(25);
+      slackFrames.length = 0;
+      await database.query(`update public.bridge_outbox set next_attempt_at = now() where id = $1`, [frame.outboxId]);
+      frame = await until(() => slackFrames.find(isSend));
+    }
+    // The runtime says the connection logged out: the row is not taken while it is not linked.
+    await call('/v2/bridge-runtime/sent', runtimeToken,
+      { outboxId: frame.outboxId, connectionId: slackConnection, failed: { reason: 'slack_not_connected', retryable: true } });
+    await call('/v2/bridge-runtime/state', runtimeToken, { connectionId: slackConnection, status: 'logged_out', detail: 'token_revoked' });
+    slackFrames.length = 0;
+    await database.query(`update public.bridge_outbox set next_attempt_at = now() where id = $1`, [frame.outboxId]);
+    await new Promise((r) => setTimeout(r, 2500));
+    expect(slackFrames.filter(isSend)).toEqual([]);
+    // Linked again (re-pasted): it goes out and settles.
+    await call('/v2/bridge-runtime/state', runtimeToken, { connectionId: slackConnection, status: 'linked', detail: null, account });
+    const back = await until(() => slackFrames.find(isSend));
+    expect(back).toMatchObject({ outboxId: frame.outboxId, text: 'held one' });
+    expect((await call('/v2/bridge-runtime/sent', runtimeToken,
+      { outboxId: back.outboxId, connectionId: slackConnection, externalMessageId: '1790000001.000500', message: null })).body)
+      .toMatchObject({ status: 'sent' });
+  });
+
   it('an email-linked (asserted) member is refused admin-tier commands and may use member-tier ones (review finding 2)', async () => {
     const isSend = (f: ServerFrame): f is Extract<ServerFrame, { type: 'send' }> => f.type === 'send' && f.connectionId === slackConnection;
     const ask = async (id: string, text: string): Promise<string> => {

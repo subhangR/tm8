@@ -694,11 +694,12 @@ begin
                 where active.connection_id = r.connection_id and active.status = 'dispatching') then
       continue;
     end if;
-    -- 443: keep order. A row waiting out its retry (it was first) holds the later ones of its connection.
+    -- 443: keep order. A row waiting out a Retry-After or held for a connection
+    -- that is not live (it was first) holds the later ones of its connection.
     if exists (select 1 from public.bridge_outbox earlier
                 where earlier.connection_id = r.connection_id and earlier.status = 'failed_retryable'
                   and earlier.next_attempt_at > now() and earlier.created_at < r.created_at
-                  and earlier.last_error like 'retry_after:%') then
+                  and (earlier.last_error like 'retry_after:%' or earlier.last_error like 'held:%')) then
       continue;
     end if;
     reason := case
@@ -761,7 +762,8 @@ grant execute on function internal.bridge_outbox_take(text[], integer) to tm8_ap
 
 -- sent: 398's, plus v4's failed.retryAfterSec: the next try waits at least as
 -- long as the provider asked (capped at an hour), and a provider's rate limit
--- gets ten tries rather than five.
+-- gets ten tries rather than five. failed.reason 'slack_not_connected' holds
+-- the row (no attempt spent) until the connection is linked again.
 create or replace function public.bridge_runtime_sent(p_frame jsonb) returns jsonb
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare ob public.bridge_outbox; ok boolean := p_frame ? 'externalMessageId'; retryable boolean; retry_after numeric;
@@ -785,6 +787,16 @@ begin
               ob.external_conversation_id, null, ob.external_reply_to, now(), p_frame -> 'message')
       on conflict do nothing;
     end if;
+  elsif p_frame #>> '{failed,reason}' = 'slack_not_connected' then
+    -- The runtime does not hold this connection live (logged out, or between a
+    -- drop and its state frame). Not the row's fault: it is held, without
+    -- spending an attempt, and take sends it once the connection is linked
+    -- again (take only takes rows of a linked connection). The pause stops a
+    -- hot loop while the server still thinks the connection is linked.
+    update public.bridge_outbox
+       set status = 'failed_retryable', settled_at = null, attempts = greatest(ob.attempts - 1, 0),
+           next_attempt_at = now() + interval '30 seconds', last_error = 'held: slack_not_connected'
+     where id = ob.id;
   else
     retry_after := case when jsonb_typeof(p_frame #> '{failed,retryAfterSec}') = 'number'
                         then least(greatest((p_frame #>> '{failed,retryAfterSec}')::numeric, 0), 3600) end;
