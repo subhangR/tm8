@@ -1,6 +1,6 @@
 /**
  * The Slack app manifest an admin pastes (integrations/slack-bridge/slack-app-manifest.yaml):
- * Socket Mode with no request URLs, exactly the design §4 bot scopes and events, the /tm8
+ * Socket Mode with no request URLs, exactly the design §4 bot scopes, §4's events plus their private-channel twins, the /tm8
  * command, Grid org install on, token rotation off. An offline shape check against Slack's
  * published manifest fields; Slack's own validator runs only when the manifest is pasted.
  */
@@ -39,10 +39,13 @@ describe('slack app manifest', () => {
     expect(manifest.oauth_config.redirect_urls).toBeUndefined();
   });
 
-  it('subscribes to exactly the design §4 bot events', () => {
+  it('subscribes to the design §4 bot events and their private-channel twins', () => {
+    // Slack sends channel_left/archive/rename for public channels only; a private channel sends group_*.
     expect([...manifest.settings.event_subscriptions.bot_events].sort()).toEqual([
-      'app_mention', 'channel_archive', 'channel_left', 'channel_rename', 'member_joined_channel',
-      'message.channels', 'message.groups', 'reaction_added',
+      'app_mention', 'channel_archive', 'channel_left', 'channel_rename', 'channel_unarchive',
+      'group_archive', 'group_left', 'group_rename', 'group_unarchive',
+      'member_joined_channel', 'member_left_channel', 'message.channels', 'message.groups',
+      'reaction_added', 'reaction_removed',
     ]);
   });
 

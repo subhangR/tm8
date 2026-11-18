@@ -73,8 +73,11 @@ What the manifest asks for, and why:
 | `users:read`, `users:read.email` | Show who wrote a message; link a Slack user to the tm8 member with the same verified email |
 | `commands` | The `/tm8` slash command |
 
-Events: `message.channels`, `message.groups`, `app_mention`, `reaction_added`, `member_joined_channel`,
-`channel_left`, `channel_archive`, `channel_rename`.
+Events: `message.channels`, `message.groups` (messages, edits and deletes in public and private channels),
+`app_mention`, `reaction_added`, `reaction_removed`, `member_joined_channel`, `member_left_channel`, and the
+channel lifecycle: `channel_left`, `channel_archive`, `channel_unarchive`, `channel_rename` for public channels and
+their twins `group_left`, `group_archive`, `group_unarchive`, `group_rename` for private ones (Slack sends the
+`group_*` ones instead for a private channel). None of them needs a scope beyond the table above.
 
 tm8 can only see a channel **after it has been invited to it**, and the tm8 runtime drops anything from a
 channel that is not connected as a bridge before it reaches the tm8 server.

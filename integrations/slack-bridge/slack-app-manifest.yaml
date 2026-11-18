@@ -4,7 +4,10 @@
 # Socket Mode: the runtime opens an outbound WebSocket to Slack, so there are no request URLs,
 # no public endpoint and no inbound firewall rule. Events, the /tm8 command and acks all ride it.
 #
-# Scopes are exactly design §4 (docs: tm8 doc "Slack bridge: plugging an enterprise Slack into tm8").
+# Scopes are exactly design §4. Events are §4's plus the private-channel twins Slack sends instead of the
+# channel_* ones (group_left/archive/rename), the unarchives, member_left_channel and reaction_removed, all of
+# which the runtime handles; none needs a scope beyond §4's.
+# Design: tm8 doc "Slack bridge: plugging an enterprise Slack into tm8".
 # Optional and left OUT on purpose (DM the bot to reach a session): im:history, im:read, im:write
 # plus the message.im event. Add them only if you want DMs; see SETUP.md › Optional: direct messages.
 # The app-level token (xapp-) is not declared here: you generate it under Basic Information with
@@ -55,10 +58,17 @@ settings:
       - message.groups
       - app_mention
       - reaction_added
+      - reaction_removed
       - member_joined_channel
+      - member_left_channel
       - channel_left
       - channel_archive
+      - channel_unarchive
       - channel_rename
+      - group_left
+      - group_archive
+      - group_unarchive
+      - group_rename
   interactivity:
     is_enabled: false
   org_deploy_enabled: true
