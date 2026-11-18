@@ -7,9 +7,12 @@
 # Network: outbound HTTPS to slack.com / *.slack.com and WSS to wss-*.slack.com, plus the tm8 server. Nothing inbound.
 # Behind a proxy: -e TM8_SLACK_PROXY_URL=http://proxy:3128 (or HTTPS_PROXY / NO_PROXY); SETUP.md › Behind a proxy.
 #
+# The tm8 server binds loopback (TM8_BIND=127.0.0.1), so on Linux the container shares the host's network. Port: the
+# server's, 4610 for `bun run dev`, 7778 for `bun run local`. Docker Desktop (macOS/Windows): drop --network host and
+# use -e TM8_SERVER_URL=http://host.docker.internal:<port>, which Desktop forwards to the host's loopback.
 #   docker build -t tm8-slack-runtime integrations/slack-bridge
 #   docker run -d --name slack-runtime --restart unless-stopped --user "$(id -u):$(id -g)" \
-#     -e TM8_SERVER_URL=http://host.docker.internal:7778 --add-host host.docker.internal:host-gateway \
+#     --network host -e TM8_SERVER_URL=http://127.0.0.1:4610 \
 #     -v "$HOME/.tm8-dev/data/bridges/slack-runtime-secrets:/app/secrets:ro" \
 #     -v tm8-slack-state:/app/state tm8-slack-runtime
 FROM node:22-slim AS deps

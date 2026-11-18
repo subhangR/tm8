@@ -420,16 +420,23 @@ TM8_SLACK_STATE_DIR=~/.tm8-dev/data/bridges/slack-runtime \
 npm run runtime
 ```
 
-With Docker (see the [`Dockerfile`](Dockerfile) header):
+With Docker (see the [`Dockerfile`](Dockerfile) header). The tm8 server listens on loopback (`127.0.0.1`) only,
+so on **Linux** the container shares the host's network (`--network host`) and talks to `127.0.0.1`. Use the
+server's port: `4610` for `bun run dev`, `7778` for `bun run local`.
 
 ```bash
 docker build -t tm8-slack-runtime integrations/slack-bridge
 docker run -d --name slack-runtime --restart unless-stopped --user "$(id -u):$(id -g)" \
-  -e TM8_SERVER_URL=http://host.docker.internal:7778 --add-host host.docker.internal:host-gateway \
+  --network host -e TM8_SERVER_URL=http://127.0.0.1:4610 \
   -v ~/.tm8-dev/data/bridges/slack-runtime-secrets:/app/secrets:ro \
   -v tm8-slack-state:/app/state \
   tm8-slack-runtime
 ```
+
+On **Docker Desktop** (macOS, Windows), leave out `--network host` and use
+`-e TM8_SERVER_URL=http://host.docker.internal:4610` instead; Docker Desktop forwards that name to your machine's
+loopback. (On Linux, `host.docker.internal` points at the Docker bridge, where a loopback-only server does not
+listen.)
 
 Mount the token's **directory**, not the file: the server replaces the file at each new login, and a container
 with only the old file mounted keeps reading a revoked login. The `--user` must be the user that owns that
