@@ -1,0 +1,22 @@
+{
+  "name": "slack-bridge",
+  "version": "1.0.0",
+  "description": "Slack <-> tm8 connector runtime (Socket Mode), speaking the bridge runtime protocol v4",
+  "scripts": {
+    "runtime": "tsx src/runtime-main.ts",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc -p ."
+  },
+  "license": "ISC",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,54 @@
+# TO INSTALL: copy to .github/workflows/slack-bridge.yml. It lives here because the lane push token has no
+# `workflow` scope; whoever holds one moves it (git mv) in a follow-up commit.
+#
+# integrations/slack-bridge — the Slack connector runtime's typecheck and its fake-Slack suite.
+#
+# The package sits outside the bun workspace with its own npm lockfile (like whatsapp-bridge), so ci.yml's module
+# graph (tools/ci/affected.sh) maps it to no job. This workflow is that job, gated by GitHub's own path filter: it
+# runs only when the runtime, or the protocol module it mirrors byte-for-byte, changes. Cheap: one npm ci of four
+# dev packages and ~10 s of tests, no postgres, no bun.
+
+name: slack-bridge
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - integrations/slack-bridge/**
+      - packages/contract/src/bridge-runtime-protocol.ts
+      - .github/workflows/slack-bridge.yml
+  pull_request:
+    paths:
+      - integrations/slack-bridge/**
+      - packages/contract/src/bridge-runtime-protocol.ts
+      - .github/workflows/slack-bridge.yml
+  workflow_dispatch:
+
+concurrency:
+  group: slack-bridge-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  slack-bridge:
+    name: slack-bridge (typecheck + tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: integrations/slack-bridge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: integrations/slack-bridge/package-lock.json
+      - run: npm ci
+      # The runtime's copy of the connector protocol must be the canonical module, byte for byte.
+      - name: Protocol mirror
+        run: cmp src/runtime/protocol.ts ../../packages/contract/src/bridge-runtime-protocol.ts
+      - run: npm run typecheck
+      - run: npm test
