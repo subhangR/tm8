@@ -94,14 +94,22 @@ end
 $$;
 revoke all on function internal.validate_bridge_policy(jsonb) from public;
 
--- A Slack bridge always has a thread mode ('mention' unless asked otherwise);
--- no other provider has native threads, so none may set one.
+-- A Slack bridge always has a thread mode; no other provider has native
+-- threads, so none may set one. Coordinator ruling (#1509 review): thread
+-- mode is for a session target (thread sessions are its children) and a chat
+-- target (top-level thread sessions). A tm8 channel is a mirror, so its thread
+-- mode is 'off': the default, and the only value a create or a patch may set
+-- (anything else is refused, not ignored). A target never crosses the channel
+-- line (425's retarget_bridge), so a bridge keeps its side.
 create or replace function internal.bridge_thread_mode_row() returns trigger
 language plpgsql set search_path = public, internal, pg_temp as $$
 begin
   if new.provider = 'slack' then
     if not (new.policy ? 'threadMode') then
-      new.policy := new.policy || '{"threadMode":"mention"}'::jsonb;
+      new.policy := new.policy || jsonb_build_object('threadMode', case when new.target_kind = 'channel' then 'off' else 'mention' end);
+    elsif new.target_kind = 'channel' and new.policy ->> 'threadMode' <> 'off' then
+      raise exception 'a Slack channel bridged to a tm8 channel mirrors it: thread mode is off for a channel target'
+        using errcode = '22023', detail = jsonb_build_object('reason', 'thread_mode_channel_target')::text;
     end if;
   elsif new.policy ? 'threadMode' then
     raise exception 'policy.threadMode is for Slack bridges only' using errcode = '22023';
@@ -111,7 +119,7 @@ end
 $$;
 revoke all on function internal.bridge_thread_mode_row() from public;
 -- Fires after bridges_guard (names sort), which has already validated the rest.
-create trigger bridges_thread_mode before insert or update of policy, provider on public.bridges
+create trigger bridges_thread_mode before insert or update of policy, provider, target_kind on public.bridges
 for each row execute function internal.bridge_thread_mode_row();
 
 -- -----------------------------------------------------------------------------
@@ -406,7 +414,8 @@ begin
   -- returned above), and whoMayTrigger applies (`allowed`).
   elsif b.provider = 'slack' and reply_ext is null and ext not like 'cmd:%'
         and jsonb_typeof(p_frame -> 'slashCommand') is distinct from 'object'
-        and b.policy ->> 'trigger' <> 'none' and b.policy ->> 'direction' = 'both' then
+        and b.policy ->> 'trigger' <> 'none' and b.policy ->> 'direction' = 'both'
+        and b.target_kind <> 'channel' then
     thread_mode := coalesce(b.policy ->> 'threadMode', 'off');
     starts := case thread_mode
       when 'every' then true

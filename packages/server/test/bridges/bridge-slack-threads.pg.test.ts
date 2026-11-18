@@ -45,7 +45,7 @@ const owner = <T>(sql: string, params: unknown[] = []) => scratch.transaction(as
 });
 
 type Inbound = {
-  status: string; messageId: string; routed: boolean; bridgeId: string; command?: boolean;
+  status: string; messageId: string; routed: boolean; bridgeId: string; command?: boolean; wakeChat?: unknown;
   targetSession?: { sessionId: string; live: boolean };
   thread?: { rootExternalId: string; sessionId?: string; started?: boolean };
 };
@@ -545,24 +545,56 @@ describe('444: Slack thread mode', () => {
     threadSession = replacement;
   });
 
-  it('a bridge whose target is not a session starts top-level thread sessions', async () => {
-    const channel = randomUUID();
-    await owner(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'channel',$3)`, [channel, spaceId, ownerMember]);
-    await owner(`insert into public.channels(entity_id, space_id, name) values ($1,$2,'support-log')`, [channel, spaceId]);
-    const created = await db.tx(human(), (q) => q.rpc<{ entity: { id: string } }>('create_bridge', [spaceId, connection, 'C0CHANTARGET',
-      JSON.stringify({ kind: 'channel', title: 'support-log', memberCount: 5 }), channel,
-      JSON.stringify({ trigger: 'mention' }), teammate, null, null, true, null, null, randomUUID()]));
-    const channelBridge = created.entity.id;
+  it('a chat target starts top-level thread sessions (no parent)', async () => {
+    const chat = randomUUID();
+    await owner(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'chat',$3)`, [chat, spaceId, ownerMember]);
+    await owner(`insert into public.chats(entity_id, space_id, title, teammate_id, model, provider, agent_tool,
+        chat_mode, workdir_mode, cwd, native_session_id, configured_by_identity_id, configured_by_member_id, client_mutation_id)
+      values ($1,$2,'Support chat',$3,'claude-opus-5','anthropic','claude-code','ask','scratch','/tmp/f444', gen_random_uuid(), $4, $5, $6)`,
+      [chat, spaceId, teammate, ownerIdentity, ownerMember, `f444-${randomUUID()}`]);
+    const created = await db.tx(human(), (q) => q.rpc<{ entity: { id: string } }>('create_bridge', [spaceId, connection, 'C0CHATTARGET',
+      JSON.stringify({ kind: 'channel', title: 'support-chat', memberCount: 5 }), chat,
+      JSON.stringify({}), teammate, null, null, true, null, null, randomUUID()]));
+    const chatBridge = created.entity.id;
+    expect((await owner<{ policy: Record<string, unknown> }>('select policy from public.bridges where entity_id = $1', [chatBridge]))[0]!.policy)
+      .toMatchObject({ threadMode: 'mention' });
     const ext = ts();
     const stored = await db.rpc<Inbound>(runtime(), 'bridge_runtime_inbound', [JSON.stringify({
-      ...frame({ ext, body: `<@${BOT}> summarise yesterday`, mentions: [BOT] }), conversationId: 'C0CHANTARGET' }), false]);
+      ...frame({ ext, body: `<@${BOT}> summarise yesterday`, mentions: [BOT] }), conversationId: 'C0CHATTARGET' }), false]);
     expect(stored).toMatchObject({ status: 'stored', routed: false, thread: { rootExternalId: ext, started: true } });
-    expect(await keeper().ensure(channelBridge, stored.messageId)).toBe('started');
+    expect(stored.wakeChat ?? null).toBeNull(); // the chat itself takes no turn
+    expect(await keeper().ensure(chatBridge, stored.messageId)).toBe('started');
     expect(spawns.at(-1)).toMatchObject({ parentSessionId: null, teamMemberId: teammate, origins: [{ command: '/thread', providerMessageId: ext }] });
-    const own = (await owner<{ session_id: string }>('select session_id::text from public.bridge_threads where bridge_id = $1', [channelBridge]))[0]!.session_id;
+    const own = (await owner<{ session_id: string }>('select session_id::text from public.bridge_threads where bridge_id = $1', [chatBridge]))[0]!.session_id;
     const { port, sent } = capturingPort();
     await createBridgeSessionDelivery({ db, delivery: port })(stored.messageId);
     expect(sent.map((x) => x.session)).toEqual([own]);
+  });
+
+  it('a tm8 channel target: thread mode is off by default, and mention or every is refused', async () => {
+    const channel = randomUUID();
+    await owner(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'channel',$3)`, [channel, spaceId, ownerMember]);
+    await owner(`insert into public.channels(entity_id, space_id, name) values ($1,$2,'support-log')`, [channel, spaceId]);
+    const create = (policy: Record<string, unknown>, conv: string) => db.tx(human(), (q) => q.rpc<{ entity: { id: string } }>('create_bridge',
+      [spaceId, connection, conv, JSON.stringify({ kind: 'channel', title: 'support-log', memberCount: 5 }), channel,
+        JSON.stringify(policy), teammate, null, null, true, null, null, randomUUID()]));
+    await expect(create({ trigger: 'mention', threadMode: 'mention' }, 'C0CHANTARGET'))
+      .rejects.toMatchObject({ message: expect.stringMatching(/thread mode is off for a channel target/) });
+    const channelBridge = (await create({ trigger: 'mention' }, 'C0CHANTARGET')).entity.id;
+    const policyOf = async () => (await owner<{ policy: Record<string, unknown> }>('select policy from public.bridges where entity_id = $1', [channelBridge]))[0]!.policy;
+    expect(await policyOf()).toMatchObject({ threadMode: 'off' });
+    const version = async () => Number((await owner<{ version: number }>('select version from public.entities where id = $1', [channelBridge]))[0]!.version);
+    for (const mode of ['mention', 'every']) {
+      await expect(db.tx(human(), async (q) => q.rpc('update_bridge', [channelBridge, await version(), JSON.stringify({ policy: { threadMode: mode } }), null, randomUUID()])))
+        .rejects.toMatchObject({ message: expect.stringMatching(/thread mode is off for a channel target/) });
+    }
+    expect(await policyOf()).toMatchObject({ threadMode: 'off' });
+    // A top-level @mention starts no thread: the channel mirrors it.
+    const stored = await db.rpc<Inbound>(runtime(), 'bridge_runtime_inbound', [JSON.stringify({
+      ...frame({ body: `<@${BOT}> summarise yesterday`, mentions: [BOT] }), conversationId: 'C0CHANTARGET' }), false]);
+    expect(stored).toMatchObject({ status: 'stored' });
+    expect(stored.thread).toBeUndefined();
+    expect((await owner<{ n: number }>('select count(*)::int n from public.bridge_threads where bridge_id = $1', [channelBridge]))[0]!.n).toBe(0);
   });
 
   it('wiring: the command executor\'s sweep runs the thread sweep, and the keeper starts threads, through the real worker port', async () => {
