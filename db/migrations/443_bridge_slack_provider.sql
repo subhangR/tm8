@@ -286,6 +286,15 @@ begin
   select * into conn from public.bridge_connections
    where id = (p_frame ->> 'connectionId')::uuid and status <> 'removed' for update;
   if conn.id is null then raise exception 'bridge connection not found' using errcode = 'P0002'; end if;
+  -- A runtime posts its state frames without waiting for the one before, so a
+  -- 'connecting' (sent first, as it starts) can land after the 'linked' or
+  -- 'logged_out' that settled it (lane G's twin stuck in 'connecting'). Only
+  -- begin moves a settled connection back to connecting, in SQL, before it asks
+  -- the runtime; a runtime's 'connecting' never demotes linked or logged_out.
+  if st = 'connecting' and conn.status in ('linked', 'logged_out') then
+    update public.bridge_connections set last_seen_at = now() where id = conn.id;
+    return jsonb_build_object('connectionId', conn.id, 'status', conn.status, 'ignored', 'stale_connecting');
+  end if;
   if v_detail ~* '(xox[a-z]-|xapp-|[A-Za-z0-9_-]{32,})' then v_detail := '[redacted]'; end if;
   if conn.provider = 'slack' then
     acct := internal.bridge_slack_account(p_frame -> 'account');

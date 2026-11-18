@@ -351,6 +351,25 @@ describe('state.account (lane A ac2)', () => {
     expect(row).toEqual({ self_ids: ['919800000009@s.whatsapp.net', '12345@lid'], external_account_id: '919800000009@s.whatsapp.net', provider_account: null });
   });
 
+  it('a runtime\'s late \'connecting\' never demotes a settled connection (frames race; lane G\'s twin)', async () => {
+    const statusOf = async () => (await database.query<{ status: string; state_detail: string | null }>(
+      'select status, state_detail from public.bridge_connections where id = $1', [slackConnection]))[0];
+    // logged_out lands first, its 'connecting' after.
+    await call('/v2/bridge-runtime/state', runtimeToken, { connectionId: slackConnection, status: 'logged_out', detail: 'app_already_connected' });
+    const late = await call('/v2/bridge-runtime/state', runtimeToken, { connectionId: slackConnection, status: 'connecting', detail: null });
+    expect(late.body).toEqual({ connectionId: slackConnection, status: 'logged_out', ignored: 'stale_connecting' });
+    expect(await statusOf()).toEqual({ status: 'logged_out', state_detail: 'app_already_connected' });
+    // linked lands first, its 'connecting' after.
+    await call('/v2/bridge-runtime/state', runtimeToken, { connectionId: slackConnection, status: 'linked', detail: null, account });
+    await call('/v2/bridge-runtime/state', runtimeToken, { connectionId: slackConnection, status: 'connecting', detail: null });
+    expect(await statusOf()).toEqual({ status: 'linked', state_detail: null });
+    // From offline (a dropped socket retrying) 'connecting' still applies.
+    await call('/v2/bridge-runtime/state', runtimeToken, { connectionId: slackConnection, status: 'offline', detail: 'network_error' });
+    await call('/v2/bridge-runtime/state', runtimeToken, { connectionId: slackConnection, status: 'connecting', detail: null });
+    expect((await statusOf())!.status).toBe('connecting');
+    await call('/v2/bridge-runtime/state', runtimeToken, { connectionId: slackConnection, status: 'linked', detail: null, account });
+  });
+
   it('an org-wide Enterprise Grid install is known by its org', async () => {
     const grid = { ...account, enterpriseId: 'E0ACME', enterpriseName: 'Acme Corp', isEnterpriseInstall: true };
     await call('/v2/bridge-runtime/state', runtimeToken, { connectionId: slackConnection, status: 'linked', detail: null, account: grid });
