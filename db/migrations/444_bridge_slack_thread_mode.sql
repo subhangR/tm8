@@ -641,10 +641,14 @@ returns jsonb language plpgsql security definer set search_path = public, intern
 declare stops jsonb; starts jsonb; n integer := least(greatest(coalesce(p_limit, 10), 1), 50);
 begin
   perform internal.require_bridges_worker();
+  -- Driven from the running sessions (few; work_sessions_status_idx) into the
+  -- stopped threads (bridge_threads_stopped_idx), never a scan of every thread
+  -- the sweep ever stopped.
   update public.bridge_threads t set idle_stopped_at = null
-    from public.work_sessions ws
-   where t.idle_stopped_at is not null and ws.entity_id = t.session_id
-     and ws.status in ('spawning', 'running', 'idle') and ws.status_changed_at > t.idle_stopped_at;
+   where t.idle_stopped_at is not null
+     and t.session_id = any(array(select ws.entity_id from public.work_sessions ws
+                                   where ws.status in ('spawning', 'running', 'idle')))
+     and t.idle_stopped_at < (select ws.status_changed_at from public.work_sessions ws where ws.entity_id = t.session_id);
   delete from public.bridge_threads t
    where (t.bridge_id, t.root_external_id) in (
      select d.bridge_id, d.root_external_id from public.bridge_threads d

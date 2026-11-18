@@ -427,6 +427,33 @@ describe('444: Slack thread mode', () => {
     await owner('delete from public.bridge_threads where session_id = any($1::uuid[])', [[...poison, deleted.session]]);
   });
 
+  it('idle sweep: un-marking resumed sessions reads the running sessions, not every stopped thread', async () => {
+    // 3000 threads the sweep stopped long ago (their sessions ended), against a few running sessions.
+    await owner(`with s as (
+        insert into public.entities(id, space_id, kind, created_by, visibility)
+        select gen_random_uuid(), $1, 'work_session', $2, 'space' from generate_series(1, 3000) returning id)
+      insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
+      select id, 'old', 'exited', 'none', now() from s`, [spaceId, teammate]);
+    await owner(`with m as (
+        insert into public.entities(id, space_id, kind, created_by)
+        select gen_random_uuid(), $1, 'message', $2 from generate_series(1, 3000) returning id),
+      mm as (insert into public.messages(entity_id, anchor_id, author_id, body) select id, $3, $2, 'old root' from m returning entity_id),
+      ss as (select entity_id, row_number() over () n from public.work_sessions where title = 'old'),
+      rr as (select entity_id, row_number() over () n from mm)
+      insert into public.bridge_threads(bridge_id, root_external_id, root_message_id, session_id, idle_stopped_at)
+      select $3, 'OLD-' || rr.n, rr.entity_id, ss.entity_id, now() - interval '30 days' from rr join ss using (n)`,
+      [spaceId, ownerMember, bridge]);
+    await owner('analyze public.bridge_threads; analyze public.work_sessions');
+    const plan = (await owner<{ 'QUERY PLAN': string }>(`explain update public.bridge_threads t set idle_stopped_at = null
+       where t.idle_stopped_at is not null
+         and t.session_id = any(array(select ws.entity_id from public.work_sessions ws
+                                       where ws.status in ('spawning', 'running', 'idle')))
+         and t.idle_stopped_at < (select ws.status_changed_at from public.work_sessions ws where ws.entity_id = t.session_id)`)).map((r) => r['QUERY PLAN']).join('\n');
+    expect(plan).not.toMatch(/Seq Scan on bridge_threads/);
+    expect(plan).toMatch(/bridge_threads_stopped_idx/);
+    await owner(`delete from public.bridge_threads where root_external_id like 'OLD-%' and bridge_id = $1`, [bridge]);
+  });
+
   it('idle sweep: bounded by its time budget; threads of a removed bridge are pruned once their session stops', async () => {
     const a = await rawThread({ status: 'idle', idleFor: '4 hours' });
     const b = await rawThread({ status: 'idle', idleFor: '4 hours' });
