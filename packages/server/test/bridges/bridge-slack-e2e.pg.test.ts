@@ -27,13 +27,14 @@
 import { mkdtemp, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { TM8_CLIENT_HEADER, TM8_CLIENT_HEADER_VALUE } from '@tm8/contract';
 
 import { createDb } from '../../src/db/client.js';
+import { createW2BlobStore } from '../../src/files/w2-blob-store.js';
 import type { Db } from '../../src/db/types.js';
 import { loadConfig } from '../../src/http/config.js';
 import { formatToken, generateSecret, hashToken } from '../../src/identity/crypto.js';
@@ -65,6 +66,7 @@ let slack: FakeSlack;
 let runtime: Runtime;
 let link: HttpWsLink;
 let stateDir = '';
+let dataDir = '';
 let runtimeToken = '';
 let browserToken = '';
 const spaceId = randomUUID(), ownerMember = randomUUID(), teammate = randomUUID(), target = randomUUID();
@@ -177,7 +179,7 @@ beforeAll(async () => {
   try {
     server = await bootstrap({ config: { ...loadConfig({
       ...process.env, TM8_BIND: '127.0.0.1', TM8_PORT: '4613', TM8_NODE_MODE: 'single', TM8_DATABASE_URL: database.url,
-      TM8_DATA_DIR: await mkdtemp(join(tmpdir(), 'tm8-slack-e2e-')), TM8_DISABLE_AUTO_OWNER: '1',
+      TM8_DATA_DIR: dataDir = await mkdtemp(join(tmpdir(), 'tm8-slack-e2e-')), TM8_DISABLE_AUTO_OWNER: '1',
     }), port: 0 } });
   } finally {
     if (priorDeliveryUrl === undefined) delete process.env['TM8_DELIVERY_DATABASE_URL'];
@@ -404,6 +406,56 @@ describe('Slack end to end: real server + real slack-bridge runtime + fake Slack
     // The 429 came back to the server as failed{retryAfterSec}; the outbox re-sent it, and the row settled sent.
     await until('the retried row to settle sent', async () => (await owner<{ status: string }>(
       `select status from public.bridge_outbox where external_message_id = $1 and kind = 'send'`, [m.ts]))[0]?.status === 'sent' || undefined);
+  });
+
+  it('files: a Slack file in the thread reaches the session as an attachment; a tm8 file goes up into the thread', async () => {
+    // In: a file_share in the thread. The server asks for the bytes (media.fetch), the runtime downloads url_private
+    // with the bot token and hands them over, and the file is attached to the stored message delivered to the session.
+    const log = Buffer.from('Safari 18.1: CSP violation font-src\n');
+    const shot = slack.file({ name: 'console.log', mimetype: 'text/plain', bytes: log, channels: [CHANNEL] });
+    const ts = slack.ts();
+    await event({ type: 'message', subtype: 'file_share', channel: CHANNEL, user: PRIYA, text: 'the console output', ts, thread_ts: root, files: [slack.fileRef(shot)] });
+    const attached = await until('the Slack file attached in tm8', async () => {
+      const rows = await owner<{ message_id: string; attachments: { fileEntityId: string; name: string; mime: string }[] }>(
+        `select m.entity_id::text as message_id, m.attachments from public.message_origins o join public.messages m on m.entity_id = o.message_id
+          where o.direction = 'in' and o.external_message_id = $1`, [ts]);
+      return rows.find((r) => r.attachments?.length);
+    });
+    expect(attached.attachments).toEqual([expect.objectContaining({ name: 'console.log', mime: 'text/plain' })]);
+    const [file] = await owner<{ size_bytes: string }>('select size_bytes::text from public.files where entity_id = $1', [attached.attachments[0]!.fileEntityId]);
+    expect(Number(file!.size_bytes)).toBe(log.length);
+    expect(slack.fileRequests.some((q) => q.path.includes(shot.id) && q.authorization === `Bearer ${slack.botToken}`)).toBe(true);
+    await until('the file message delivered to the thread session', async () => (await owner<{ target: string }>(
+      `select distinct d.target_work_session_id::text as target from public.session_message_deliveries d
+         join public.message_origins o on o.message_id = d.message_id
+        where o.direction = 'in' and o.external_message_id = $1`, [ts]))
+      .some((r) => r.target === threadSession) || undefined);
+
+    // Out: the session answers with a tm8 file. It streams through files.getUploadURLExternal (no token on the
+    // upload URL) and files.completeUploadExternal into the thread.
+    const report = Buffer.from('%PDF-1.7 regression report '.repeat(200));
+    const fileId = randomUUID();
+    const blobs = createW2BlobStore({ dataDir });
+    const storagePath = blobs.storagePath(spaceId, randomUUID());
+    const sha256 = createHash('sha256').update(report).digest('hex');
+    await blobs.writeUpload({ stream: (async function* () { yield report; })(), storagePath, expectedSpaceId: spaceId,
+      expectedSizeBytes: report.length, expectedChecksumSha256: sha256 });
+    await owner(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'file',$3)`, [fileId, spaceId, teammate]);
+    await owner(`insert into public.files(entity_id, name, mime_type, size_bytes, storage_path, checksum_sha256) values ($1,$2,'application/pdf',$3,$4,$5)`,
+      [fileId, 'report.pdf', report.length, storagePath, sha256]);
+    const secret = generateSecret();
+    const agent = await db.tx(human(), (q) => q.rpc<{ id: string }>('issue_agent_auth_session', [
+      threadSession, teammate, hashToken(secret), new Date(Date.now() + 3_600_000).toISOString(), 'slack-e2e thread session files']));
+    const sent = await call('/v2/messages', formatToken(agent.id, secret),
+      { replyToMessageId: attached.message_id, body: 'The regression report', attachmentIds: [fileId], clientMutationId: randomUUID() });
+    expect(sent.status, sent.raw).toBe(200);
+    const done = await until('files.completeUploadExternal', () => slack.callsOf('files.completeUploadExternal').at(-1));
+    const [up] = slack.callsOf('files.getUploadURLExternal');
+    expect(up!.params).toMatchObject({ filename: 'report.pdf', length: String(report.length) });
+    const uploadedId = JSON.parse(done.params.files!)[0].id as string;
+    expect(slack.uploaded(uploadedId)!.equals(report)).toBe(true);
+    expect(done.params).toMatchObject({ channel_id: CHANNEL, thread_ts: root });
+    expect(slack.fileRequests.filter((q) => q.path.startsWith('/upload/')).every((q) => q.authorization === null)).toBe(true);
   });
 
   it('7. an edit and a delete in Slack are mirrored into tm8', async () => {
