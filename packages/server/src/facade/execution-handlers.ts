@@ -3458,7 +3458,7 @@ export function createBridgeWorkerPort(deps: { db: Db; spawnService: SpawnServic
       const spawned = await rethrowing(() => spawnService.spawn(claims, {
         spaceId: request.spaceId,
         teamMemberId: request.teamMemberId,
-        parentSessionId: null,
+        parentSessionId: request.parentSessionId ?? null,
         taskIds: request.taskId ? [request.taskId] : [],
         projectId: request.projectId,
         mode: null,

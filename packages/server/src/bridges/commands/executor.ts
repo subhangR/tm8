@@ -1432,8 +1432,11 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
         return;
       }
 
-      // §4.8: ≤ 2 s, or ⏳ first and the answer when it lands.
+      // §4.8: ≤ 2 s, or ⏳ first and the answer when it lands. A Slack slash
+      // command ('cmd:<trigger_id>', 444) is no message, so there is nothing to react to.
+      const reactable = !input.externalMessageId.startsWith('cmd:');
       const ack = setTimeout(() => {
+        if (!reactable) return;
         void ports.react?.(ports.db, {
           bridgeId: input.bridgeId, messageId: input.messageId, emoji: '⏳', idempotencyKey: `ack:${cmd.key}`,
         }).catch(() => undefined);

@@ -57,6 +57,8 @@ export interface SpawnWorkerRequest {
   origins: BridgeCommandOrigin[];
   /** The session's brief, after its launch context (a fork's topic, D83). */
   promptExtra?: string | null;
+  /** 444: a Slack thread's session is a child of the bridge's target session. */
+  parentSessionId?: string | null;
 }
 
 export type { BridgeAuthor, BridgeCommandDetectContext, BridgeCommandHook } from '../runtime/command-hook.js';

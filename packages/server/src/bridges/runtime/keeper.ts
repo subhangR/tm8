@@ -17,10 +17,15 @@
  *
  * One `ensure` per bridge runs at a time: messages that arrive while a session
  * is being resumed wait for that one attempt instead of starting their own.
+ *
+ * 444: a message in a Slack thread that has (or is to get) its own session is
+ * the thread keeper's (runtime/threads.ts), asked first and per thread; the
+ * bridge's own target is then left alone.
  */
 import type { Db, DbClaims } from '../../db/types.js';
 import type { BridgeCommandPorts, BridgeNoticeInput } from '../commands/ports.js';
 import { bridgesWorkerClaims } from '../outbox.js';
+import type { BridgeThreadKeeper, BridgeThreadOutcome } from './threads.js';
 
 interface ManagedContext {
   bridgeId: string;
@@ -35,7 +40,7 @@ interface ManagedContext {
   live: boolean;
 }
 
-export type BridgeKeeperOutcome = 'live' | 'resumed' | 'replaced' | 'skipped' | 'failed';
+export type BridgeKeeperOutcome = 'live' | 'resumed' | 'replaced' | 'skipped' | 'failed' | BridgeThreadOutcome;
 
 export interface BridgeSessionKeeper {
   /** Make the bridge's session target able to take `messageId`. Never throws. */
@@ -47,6 +52,8 @@ export function createBridgeSessionKeeper(o: {
   readonly spawnWorker: BridgeCommandPorts['spawnWorker'];
   readonly resumeWorker: BridgeCommandPorts['resumeWorker'];
   readonly postNotice: (db: Db, input: BridgeNoticeInput) => Promise<unknown>;
+  /** 444: Slack thread sessions. Absent: every message is the bridge target's. */
+  readonly threads?: BridgeThreadKeeper;
   readonly log?: (line: string) => void;
 }): BridgeSessionKeeper {
   const running = new Map<string, Promise<BridgeKeeperOutcome>>();
@@ -98,6 +105,8 @@ export function createBridgeSessionKeeper(o: {
 
   return {
     async ensure(bridgeId, messageId) {
+      const threaded = o.threads ? await o.threads.ensure(bridgeId, messageId) : null;
+      if (threaded) return threaded;
       const prior = running.get(bridgeId);
       if (prior) return prior.then(() => 'live' as const);
       const run = attempt(bridgeId, messageId).catch((err) => {
