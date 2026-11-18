@@ -212,6 +212,11 @@
 }
 
 .brg-set__conn .brg-set__menu { position: relative; }
+/* The anchor for the + Add an account menu in the group head. Only a
+   positioning context: it must NOT take .brg-set__menu's width: 1%, which
+   clipped the button's label. */
+.brg-set__addmenu { position: relative; display: inline-flex; }
+
 /* A Slack row's extra lines (the connected workspace, a refusal, missing
    scopes): their own line UNDER the row, spanning all seven columns, so the
    row's own cells — and the ⋯ menu — keep their places. */

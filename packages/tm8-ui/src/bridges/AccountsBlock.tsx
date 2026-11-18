@@ -105,7 +105,11 @@ export function AccountsBlock({
     <div className="brg-set__group">
       <div className="brg-set__grouphead">
         <span className="set-eyebrow">Accounts &amp; secrets</span>
-        <div className="brg-set__menu" ref={addCell}>
+        {/* NOT .brg-set__menu: that is the table cell's class (width: 1%,
+            text-align: right), which squeezed this button until its label was
+            clipped at the right edge (#1509 review). This wrapper only needs
+            to be a positioning context for the menu. */}
+        <div className="brg-set__addmenu" ref={addCell}>
           <button
             type="button"
             className="set-chip set-chip--sm"
