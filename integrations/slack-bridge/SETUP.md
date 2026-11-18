@@ -406,15 +406,16 @@ TM8_SLACK_PROXY_URL=http://proxy.example.com:3128
 The server can mint the runtime's login without starting it, for when you run the runtime in a container or under
 your own process manager:
 
-- On the tm8 server set **`TM8_SLACK_RUNTIME_TOKEN_FILE=/path/slack-runtime.token`** and leave
-  `TM8_SLACK_RUNTIME` unset. The server writes a fresh login to that file (mode 0600) and keeps it fresh.
+- On the tm8 server set **`TM8_SLACK_RUNTIME_TOKEN_FILE=<TM8_DATA_DIR>/bridges/slack-runtime-secrets/runtime.token`**
+  (any path works; keep the file alone in its directory) and leave `TM8_SLACK_RUNTIME` unset. The server writes a
+  fresh login to that file (mode 0600) at every start and every few days, replacing the file each time.
 - Run the runtime with `TM8_SERVER_URL`, `TM8_BRIDGE_RUNTIME_TOKEN_FILE` (that file) and `TM8_SLACK_STATE_DIR`.
 
 By hand, from this folder:
 
 ```bash
 TM8_SERVER_URL=http://127.0.0.1:4610 \
-TM8_BRIDGE_RUNTIME_TOKEN_FILE=~/.tm8-dev/data/bridges/slack-runtime.token \
+TM8_BRIDGE_RUNTIME_TOKEN_FILE=~/.tm8-dev/data/bridges/slack-runtime-secrets/runtime.token \
 TM8_SLACK_STATE_DIR=~/.tm8-dev/data/bridges/slack-runtime \
 npm run runtime
 ```
@@ -425,12 +426,14 @@ With Docker (see the [`Dockerfile`](Dockerfile) header):
 docker build -t tm8-slack-runtime integrations/slack-bridge
 docker run -d --name slack-runtime --restart unless-stopped --user "$(id -u):$(id -g)" \
   -e TM8_SERVER_URL=http://host.docker.internal:7778 --add-host host.docker.internal:host-gateway \
-  -v /path/slack-runtime.token:/app/secrets/runtime.token:ro \
+  -v ~/.tm8-dev/data/bridges/slack-runtime-secrets:/app/secrets:ro \
   -v tm8-slack-state:/app/state \
   tm8-slack-runtime
 ```
 
-The `--user` must be the user that owns the token file (the tm8 server's user). `tm8-slack-state` is the volume
+Mount the token's **directory**, not the file: the server replaces the file at each new login, and a container
+with only the old file mounted keeps reading a revoked login. The `--user` must be the user that owns that
+directory (the tm8 server's user). `tm8-slack-state` is the volume
 that holds the sealed tokens: keep it, and back it up.
 
 ### All settings
@@ -441,7 +444,7 @@ Set these where you set `TM8_SLACK_RUNTIME` (B2). Only the first is needed on a 
 |---|---|---|
 | `TM8_SLACK_RUNTIME` | unset (off) | `1`: the tm8 server starts and supervises the Slack runtime from `integrations/slack-bridge` |
 | `TM8_SLACK_STATE_DIR` | `<TM8_DATA_DIR>/bridges/slack-runtime` | Where the sealed tokens live (see above) |
-| `TM8_SLACK_RUNTIME_TOKEN_FILE` | `<TM8_DATA_DIR>/bridges/slack-runtime.token` | Where the server writes the runtime's login. Set alone: the server mints, you run the runtime |
+| `TM8_SLACK_RUNTIME_TOKEN_FILE` | `<TM8_DATA_DIR>/bridges/slack-runtime-secrets/runtime.token` | Where the server writes the runtime's login. Set alone: the server mints, you run the runtime |
 | `TM8_SLACK_RUNTIME_COMMAND` | unset | JSON argv to run instead of the default, e.g. `["docker","start","-a","slack-runtime"]` |
 | `TM8_SLACK_RUNTIME_CWD` | `<checkout>/integrations/slack-bridge` | Folder the runtime starts in |
 | `TM8_SLACK_PROXY_URL` | unset | HTTP(S) proxy for all Slack traffic ([Behind a proxy](#behind-a-proxy)); `HTTPS_PROXY` / `NO_PROXY` are used when it is unset |

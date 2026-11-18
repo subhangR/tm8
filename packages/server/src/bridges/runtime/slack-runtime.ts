@@ -57,7 +57,9 @@ export function slackRuntimePlan(env: NodeJS.ProcessEnv, host: SlackRuntimeHost)
   const tokenFileEnv = env.TM8_SLACK_RUNTIME_TOKEN_FILE?.trim();
   if (!enabled && !commandJson && !tokenFileEnv) return null;
 
-  const tokenFile = resolve(tokenFileEnv || join(host.dataDir, 'bridges', 'slack-runtime.token'));
+  // A directory of its own: a container mounts the directory (never the file, which each
+  // mint replaces by rename) and sees nothing else of bridges/.
+  const tokenFile = resolve(tokenFileEnv || join(host.dataDir, 'bridges', 'slack-runtime-secrets', 'runtime.token'));
   const stateDir = resolve(env.TM8_SLACK_STATE_DIR?.trim() || join(host.dataDir, 'bridges', 'slack-runtime'));
   const childEnv: NodeJS.ProcessEnv = { TM8_SLACK_STATE_DIR: stateDir };
   for (const name of PASSED_THROUGH) if (env[name]?.trim()) childEnv[name] = env[name]!.trim();

@@ -27,7 +27,7 @@ describe('slackRuntimePlan', () => {
     const plan = slackRuntimePlan({ TM8_SLACK_RUNTIME: '1' }, host());
     expect(plan).toEqual({
       label: 'slack-runtime',
-      tokenFile: '/data/bridges/slack-runtime.token',
+      tokenFile: '/data/bridges/slack-runtime-secrets/runtime.token',
       stateDir: '/data/bridges/slack-runtime',
       command: {
         file: '/usr/bin/node',

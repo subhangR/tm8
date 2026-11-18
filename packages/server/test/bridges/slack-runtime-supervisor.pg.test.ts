@@ -105,7 +105,7 @@ describe('TM8_SLACK_RUNTIME=1 (the laptop path of SETUP.md)', () => {
     expect(out.status).toBe(200);
     expect(Array.isArray(out.body.connections)).toBe(true);
     expect(out.cwd).toBe(stubDir);
-    expect(out.tokenFile).toBe(join(dataDir, 'bridges', 'slack-runtime.token'));
+    expect(out.tokenFile).toBe(join(dataDir, 'bridges', 'slack-runtime-secrets', 'runtime.token'));
     expect(out.stateDir).toBe(join(dataDir, 'bridges', 'slack-runtime'));
     expect(out.serverUrl).toBe(server.url);
     expect((await stat(out.tokenFile)).mode & 0o777).toBe(0o600);

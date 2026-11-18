@@ -1,14 +1,16 @@
 # slack-runtime: the tm8 Slack connector runtime (Socket Mode). Pure JS (ws + tsx), nothing native to build.
 # State lives in mounted volumes:
 #   /app/state    TM8_SLACK_STATE_DIR: each connection's sealed tokens. Persistent volume; back it up (SETUP.md).
-#   /app/secrets  the bridge_runtime bearer the tm8 node writes (TM8_SLACK_RUNTIME_TOKEN_FILE on the node), ro.
+#   /app/secrets  the DIRECTORY holding the bridge_runtime bearer the tm8 node writes (TM8_SLACK_RUNTIME_TOKEN_FILE on
+#                 the node, <dir>/runtime.token), ro. Mount the directory, never the file: each mint writes a new file
+#                 and renames it into place, and a single-file bind mount keeps the old, revoked one.
 # Network: outbound HTTPS to slack.com / *.slack.com and WSS to wss-*.slack.com, plus the tm8 server. Nothing inbound.
 # Behind a proxy: -e TM8_SLACK_PROXY_URL=http://proxy:3128 (or HTTPS_PROXY / NO_PROXY); SETUP.md › Behind a proxy.
 #
 #   docker build -t tm8-slack-runtime integrations/slack-bridge
 #   docker run -d --name slack-runtime --restart unless-stopped --user "$(id -u):$(id -g)" \
 #     -e TM8_SERVER_URL=http://host.docker.internal:7778 --add-host host.docker.internal:host-gateway \
-#     -v "$HOME/.tm8-dev/data/bridges/slack-runtime.token:/app/secrets/runtime.token:ro" \
+#     -v "$HOME/.tm8-dev/data/bridges/slack-runtime-secrets:/app/secrets:ro" \
 #     -v tm8-slack-state:/app/state tm8-slack-runtime
 FROM node:22-slim AS deps
 WORKDIR /app
