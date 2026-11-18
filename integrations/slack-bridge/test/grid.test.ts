@@ -144,6 +144,37 @@ describe('per-request refusals never cost the install its tokens (review #2)', (
   }
 })
 
+describe('picker robustness on Grid (review #6)', () => {
+  test('a failing workspace is skipped and logged; the others still list', async () => {
+    await org()
+    r.slack.workspaces[0]!.failWith = 'internal_error'
+    r.tm8.push({ type: 'conversation.list', requestId: 'f1', connectionId: CONN })
+    const f = await r.tm8.waitFor('conversations', (x) => x.requestId === 'f1')
+    // T0US only: its #general no longer collides, so it keeps its plain name.
+    assert.deepEqual(f.items.map((i: any) => [i.conversationId, i.name]), [['C0USGEN', 'general'], ['C0SHARED', 'incidents'], ['G0USSEC', 'us-secret']])
+    assert.ok(r.logs.some((l) => /1 of 2 workspaces skipped: T0EU internal_error/.test(l)), r.logs.join('\n'))
+  })
+
+  test('every workspace failing is an error, not an empty org', async () => {
+    await org()
+    for (const w of r.slack.workspaces) w.failWith = 'internal_error'
+    r.tm8.push({ type: 'conversation.list', requestId: 'f2', connectionId: CONN })
+    assert.equal((await r.tm8.waitFor('conversations', (x) => x.requestId === 'f2')).error, 'internal_error')
+  })
+
+  test('the page budget is per workspace: a huge first workspace does not hide the next', async () => {
+    await org()
+    // 120 channels in T0EU at two per fake page is 60 pages, past the 50-page budget; T0US must still list.
+    for (let i = 0; i < 120; i++) r.slack.channel({ id: `C0BIG${String(i).padStart(3, '0')}`, name: `big-${String(i).padStart(3, '0')}`, teams: ['T0EU'] })
+    r.tm8.push({ type: 'conversation.list', requestId: 'f3', connectionId: CONN })
+    const f = await r.tm8.waitFor('conversations', (x) => x.requestId === 'f3', 15000)
+    const ids = f.items.map((i: any) => i.conversationId)
+    assert.ok(ids.includes('G0USSEC') && ids.includes('C0USGEN'), 'the second workspace listed')
+    assert.equal(r.slack.callsOf('users.conversations').filter((c) => c.params.team_id === 'T0EU').length, 50)
+    assert.ok(r.logs.some((l) => /workspace T0EU has more than 10000 channels/.test(l)))
+  })
+})
+
 describe('a workspace install on a Grid workspace', () => {
   test('lists without auth.teams.list or a team_id, as any workspace install', async () => {
     r = await rig()

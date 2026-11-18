@@ -39,6 +39,8 @@ const USER_ID = /^[UW][A-Z0-9]+$/
 /** Slack's own ceiling for one file. */
 const MAX_UPLOAD = 1024 * 1024 * 1024
 const SEEN_CAP = 5000
+/** users.conversations pages (of 200) read per workspace for the picker. */
+const PICKER_PAGES = 50
 const HELD_CAP = 2000
 
 /** Message subtypes that are someone saying something; every other subtype is channel plumbing and skipped. */
@@ -734,21 +736,20 @@ export class SlackConnection {
     if (!this.tokens) throw new Error('Slack is not connected')
     const workspaces = this.account?.isEnterpriseInstall ? await this.workspaces() : [null]
     const seen = new Map<string, { item: ConversationItem; workspace: string | null }>()
-    let pages = 0
+    const failed: { id: string; code: string }[] = []
     for (const ws of workspaces) {
       let cursor: string | undefined
-      do {
-        if (++pages > 100) break // a runaway cursor; 20,000 channels is past any picker
+      // The page budget is per workspace: a big one can't starve the ones after it.
+      for (let page = 0; page < PICKER_PAGES; page++) {
         let body: Record<string, any>
         try {
           body = (await this.bot('users.conversations', { types: 'public_channel,private_channel', exclude_archived: true, limit: 200, cursor, team_id: ws?.id })).body
         } catch (e) {
-          // One Grid workspace the token is not granted is that workspace's problem, not the install's: skip it.
-          if (ws && e instanceof SlackApiError && e.code === 'team_access_not_granted') {
-            this.o.log(`[slack ${this.connectionId}] picker: workspace ${ws.id} skipped: ${e.code}`)
-            break
-          }
-          throw e
+          // On Grid one workspace failing (not granted, rate-limited, down) is that workspace's problem: skip it and
+          // say so in the log; the rest of the org still lists. A workspace install has nothing to fall back on.
+          if (!ws || !(e instanceof SlackApiError) || DEAD_TOKEN.has(e.code)) throw e
+          failed.push({ id: ws.id, code: e.detail })
+          break
         }
         for (const c of body.channels ?? []) {
           if (!c?.id || c.is_archived || seen.has(c.id)) continue
@@ -758,7 +759,14 @@ export class SlackConnection {
           })
         }
         cursor = body.response_metadata?.next_cursor || undefined
-      } while (cursor)
+        if (!cursor) break
+        if (page === PICKER_PAGES - 1) this.o.log(`[slack ${this.connectionId}] picker: ${ws ? `workspace ${ws.id}` : 'workspace'} has more than ${PICKER_PAGES * 200} channels; the list is cut there`)
+      }
+    }
+    if (failed.length) {
+      this.o.log(`[slack ${this.connectionId}] picker: ${failed.length} of ${workspaces.length} workspaces skipped: ${failed.map((f) => `${f.id} ${f.code}`).join(', ')}`)
+      // Every workspace failed: that is an error, not an empty org.
+      if (failed.length === workspaces.length) throw new SlackApiError(failed[0]!.code, 'users.conversations')
     }
     const count = new Map<string, number>()
     for (const { item } of seen.values()) count.set(item.name, (count.get(item.name) ?? 0) + 1)

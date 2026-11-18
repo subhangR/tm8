@@ -35,7 +35,8 @@ export class FakeSlack {
    * The workspaces an org-wide Grid install (team.isEnterpriseInstall) was approved into: auth.teams.list answers
    * them, and on such an install users.conversations / conversations.list refuse to run without a team_id.
    */
-  workspaces: { id: string; name: string; locked?: boolean }[] = [{ id: 'T0FAKE', name: 'Acme' }]
+  /** `locked`: not granted to the install; `failWith`: listing it answers this error. */
+  workspaces: { id: string; name: string; locked?: boolean; failWith?: string }[] = [{ id: 'T0FAKE', name: 'Acme' }]
   scopes = ['app_mentions:read', 'channels:history', 'channels:read', 'chat:write', 'chat:write.customize', 'files:read', 'files:write', 'groups:history', 'groups:read', 'reactions:read', 'reactions:write', 'users:read', 'users:read.email', 'commands']
 
   readonly users = new Map<string, FakeUser>()
@@ -325,6 +326,8 @@ export class FakeSlack {
         const team = params.team_id || this.team.id
         if (!this.team.isEnterpriseInstall && team !== this.team.id) return json(200, { ok: false, error: 'team_access_not_granted' })
         if (this.team.isEnterpriseInstall && !this.workspaces.some((w) => w.id === team && !w.locked)) return json(200, { ok: false, error: 'team_access_not_granted' })
+        const down = this.workspaces.find((w) => w.id === team)?.failWith
+        if (down) return json(200, { ok: false, error: down })
         const types = (params.types ?? 'public_channel').split(',')
         const all = [...this.channels.values()].filter((c) => (method === 'conversations.list' || c.member) && (c.teams ?? [this.team.id]).includes(team) && (params.exclude_archived !== 'true' || !c.archived) && types.includes(c.private ? 'private_channel' : 'public_channel'))
         // Two per page, to exercise the cursor.
