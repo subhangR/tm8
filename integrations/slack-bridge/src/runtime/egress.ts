@@ -18,8 +18,17 @@ export type Env = Record<string, string | undefined>
 
 export class Egress {
   private agents = new Map<string, http.Agent>()
+  /** Each configured proxy, parsed and with its Proxy-Authorization built once, here: never on a live socket. */
+  private proxies: { all: ProxyTarget | null; https: ProxyTarget | null; http: ProxyTarget | null }
 
-  constructor(private env: Env = {}) {}
+  /** Throws a clear configuration error (naming the variable, never its value) when a proxy URL does not parse. */
+  constructor(private env: Env = {}) {
+    this.proxies = {
+      all: parseProxy('TM8_SLACK_PROXY_URL', env.TM8_SLACK_PROXY_URL),
+      https: parseProxy(env.HTTPS_PROXY ? 'HTTPS_PROXY' : 'https_proxy', env.HTTPS_PROXY || env.https_proxy),
+      http: parseProxy(env.HTTP_PROXY ? 'HTTP_PROXY' : 'http_proxy', env.HTTP_PROXY || env.http_proxy),
+    }
+  }
 
   /** No proxy anywhere. */
   static direct(): Egress {
@@ -28,25 +37,25 @@ export class Egress {
 
   /** The proxy for this URL, or null to go direct. */
   proxyFor(target: URL | string): URL | null {
+    return this.targetFor(target)?.url ?? null
+  }
+
+  private targetFor(target: URL | string): ProxyTarget | null {
     const u = typeof target === 'string' ? new URL(target) : target
     const secure = u.protocol === 'https:' || u.protocol === 'wss:'
-    const raw = this.env.TM8_SLACK_PROXY_URL || (secure ? this.env.HTTPS_PROXY || this.env.https_proxy : this.env.HTTP_PROXY || this.env.http_proxy)
-    if (!raw) return null
+    const p = this.proxies.all ?? (secure ? this.proxies.https : this.proxies.http)
+    if (!p) return null
     if (bypassed(u, this.env.NO_PROXY ?? this.env.no_proxy ?? '')) return null
-    try {
-      return new URL(raw.includes('://') ? raw : `http://${raw}`)
-    } catch {
-      throw new Error('the Slack proxy URL is not a URL')
-    }
+    return p
   }
 
   /** The agent for a request to this URL: a tunnelling agent through the proxy, or undefined (Node's default). */
   agentFor(target: URL | string): http.Agent | undefined {
     const u = typeof target === 'string' ? new URL(target) : target
-    const proxy = this.proxyFor(u)
+    const proxy = this.targetFor(u)
     if (!proxy) return undefined
     const secure = u.protocol === 'https:' || u.protocol === 'wss:'
-    const key = `${proxy.href}|${secure}`
+    const key = `${proxy.url.href}|${secure}`
     const held = this.agents.get(key)
     if (held) return held
     const a: http.Agent = new TunnelAgent(proxy, secure)
@@ -66,6 +75,40 @@ export class Egress {
   }
 }
 
+/** A parsed proxy: where it is, and the Proxy-Authorization header line (or '') for its credentials. */
+export type ProxyTarget = { url: URL; auth: string }
+
+/** The proxy's error, with a code the operator can act on: `proxy_auth_required` (407) or `proxy_error`. */
+export class ProxyError extends Error {
+  constructor(readonly code: 'proxy_auth_required' | 'proxy_error', message: string) {
+    super(message)
+  }
+}
+
+/** A credential part of a URL: percent-decoded, or taken literally when it is not valid percent-encoding (`50%off`). */
+function credential(part: string): string {
+  try {
+    return decodeURIComponent(part)
+  } catch {
+    return part
+  }
+}
+
+function parseProxy(name: string, raw: string | undefined): ProxyTarget | null {
+  if (!raw?.trim()) return null
+  let url: URL
+  try {
+    url = new URL(raw.includes('://') ? raw.trim() : `http://${raw.trim()}`)
+  } catch {
+    throw new Error(`${name} is not a valid proxy URL`)
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(`${name} must be an http:// or https:// proxy URL`)
+  const auth = url.username || url.password
+    ? `Proxy-Authorization: Basic ${Buffer.from(`${credential(url.username)}:${credential(url.password)}`).toString('base64')}\r\n`
+    : ''
+  return { url, auth }
+}
+
 /** Does NO_PROXY send this URL direct? */
 export function bypassed(u: URL, noProxy: string): boolean {
   const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase()
@@ -74,7 +117,8 @@ export function bypassed(u: URL, noProxy: string): boolean {
     const entry = raw.trim().toLowerCase()
     if (!entry) continue
     if (entry === '*') return true
-    const m = /^(\[[^\]]+\]|[^:]+)(?::(\d+))?$/.exec(entry)
+    // A bare IPv6 address (`::1`) has colons of its own and no port; `[::1]:8080` is bracketed.
+    const m = net.isIPv6(entry) ? [entry, entry, undefined] : /^(\[[^\]]+\]|[^:]+)(?::(\d+))?$/.exec(entry)
     if (!m) continue
     const name = m[1]!.replace(/^\[|\]$/g, '').replace(/^\*?\./, '')
     if (m[2] && m[2] !== port) continue
@@ -85,7 +129,7 @@ export function bypassed(u: URL, noProxy: string): boolean {
 
 /** An http.Agent whose sockets are CONNECT tunnels through a proxy (TLS on top for https/wss targets). */
 class TunnelAgent extends http.Agent {
-  constructor(private proxy: URL, private secure: boolean) {
+  constructor(private proxy: ProxyTarget, private secure: boolean) {
     super({ keepAlive: true, maxSockets: 32 })
     // https.request refuses an agent of another protocol; ws (wss://) uses https.request with this agent.
     ;(this as unknown as { protocol: string }).protocol = secure ? 'https:' : 'http:'
@@ -108,20 +152,25 @@ class TunnelAgent extends http.Agent {
 }
 
 /** Opens a CONNECT tunnel to host:port through the proxy; resolves with the raw socket once the proxy says 200. */
-export function tunnel(proxy: URL, host: string, port: number, timeoutMs = 30_000): Promise<net.Socket> {
+export function tunnel(target: ProxyTarget, host: string, port: number, timeoutMs = 30_000): Promise<net.Socket> {
   return new Promise((resolve, reject) => {
+    const proxy = target.url
+    // Everything that could throw is done before a socket exists; once it does, every path ends in fail().
+    const authority = `${net.isIPv6(host) ? `[${host}]` : host}:${port}`
+    const request = `CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n${target.auth}\r\n`
     const proxyPort = Number(proxy.port) || (proxy.protocol === 'https:' ? 443 : 80)
     const sock: net.Socket = proxy.protocol === 'https:'
       ? tls.connect({ host: proxy.hostname, port: proxyPort, servername: net.isIP(proxy.hostname) ? undefined : proxy.hostname })
       : net.connect({ host: proxy.hostname, port: proxyPort })
-    const authority = `${net.isIPv6(host) ? `[${host}]` : host}:${port}`
-    const auth = proxy.username ? `Proxy-Authorization: Basic ${Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString('base64')}\r\n` : ''
     let buf = Buffer.alloc(0)
-    const fail = (why: string) => {
+    let done = false
+    const fail = (why: string, code: 'proxy_auth_required' | 'proxy_error' = 'proxy_error') => {
+      if (done) return
+      done = true
       cleanup()
       sock.destroy()
       // The proxy's address is named, never its credentials.
-      reject(new Error(`proxy ${proxy.host}: ${why}`))
+      reject(new ProxyError(code, `proxy ${proxy.host}: ${why}`))
     }
     const timer = setTimeout(() => fail('CONNECT timed out'), timeoutMs)
     const onData = (chunk: Buffer) => {
@@ -132,8 +181,12 @@ export function tunnel(proxy: URL, host: string, port: number, timeoutMs = 30_00
         return
       }
       const status = Number(/^HTTP\/1\.[01] (\d{3})/.exec(buf.subarray(0, end).toString('latin1'))?.[1])
+      if (status === 407) return fail(`CONNECT ${authority} answered 407: the proxy wants (other) credentials`, 'proxy_auth_required')
       if (status !== 200) return fail(`CONNECT ${authority} answered ${status || 'garbage'}`)
+      done = true
       cleanup()
+      // From here the socket belongs to the HTTP client, which listens for its errors; until it does, none may escape.
+      sock.on('error', () => {})
       // Anything past the header already belongs to the tunnelled stream.
       const rest = buf.subarray(end + 4)
       if (rest.length) sock.unshift(rest)
@@ -150,7 +203,7 @@ export function tunnel(proxy: URL, host: string, port: number, timeoutMs = 30_00
     sock.on('data', onData)
     sock.on('error', onError)
     sock.on('close', onClose)
-    sock.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n${auth}\r\n`)
+    sock.write(request)
   })
 }
 

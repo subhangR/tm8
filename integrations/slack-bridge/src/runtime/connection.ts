@@ -5,7 +5,7 @@
 import crypto from 'node:crypto'
 import type { Readable } from 'node:stream'
 import { Allowlist, OutboundRefused, type OutboundKind } from './allowlist.js'
-import { Egress, httpRequest, type HttpResponse } from './egress.js'
+import { Egress, ProxyError, httpRequest, type HttpResponse } from './egress.js'
 import { slackNameOf, unicodeOf } from './emoji.js'
 import { PermanentError, TooLargeError } from './errors.js'
 import type {
@@ -22,7 +22,7 @@ import type {
   SlackAccount,
 } from './protocol.js'
 import { SealedTokens, type SlackTokens } from './sealed-auth.js'
-import { DEAD_TOKEN, LINK_REFUSED, SlackApiError, type SlackApi } from './slack-api.js'
+import { DEAD_TOKEN, LINK_REFUSED, SlackApiError, isRetryable, type SlackApi } from './slack-api.js'
 import { SocketModeClient, type Envelope } from './socket-mode.js'
 import { fromSlackText, splitMessage, toMrkdwn } from './text.js'
 
@@ -490,7 +490,7 @@ export class SlackConnection {
         }
       },
       (e: unknown) => {
-        if (!(e instanceof SlackApiError) || e.code === 'ratelimited' || e.code === 'network_error') this.users.delete(id)
+        if (!(e instanceof SlackApiError) || isRetryable(e.code)) this.users.delete(id)
         return null
       },
     )
@@ -549,7 +549,7 @@ export class SlackConnection {
           all.push(String((await post(part)).body.ts))
           done = true
         } catch (e) {
-          const retryable = e instanceof SlackApiError && ['ratelimited', 'network_error', 'internal_error', 'service_unavailable', 'fatal_error', 'request_timeout'].includes(e.code)
+          const retryable = e instanceof SlackApiError && isRetryable(e.code)
           if (!retryable || attempt === 3) {
             this.o.log(`[slack ${this.connectionId}] part ${all.length + 1}/${parts.length} of outbox ${f.outboxId} not sent: ${(e as Error).message}`)
             break
@@ -704,8 +704,8 @@ export class SlackConnection {
     for (let hop = 0; hop < 4; hop++) {
       try {
         res = await httpRequest(this.o.api.egress, at, { headers: { authorization: `Bearer ${token}` }, timeoutMs: 120_000 })
-      } catch {
-        throw new SlackApiError('network_error', 'url_private')
+      } catch (e) {
+        throw new SlackApiError(e instanceof ProxyError ? e.code : 'network_error', 'url_private')
       }
       const next = res.headers.get('location')
       if (res.status < 300 || res.status >= 400 || !next) break
@@ -886,7 +886,7 @@ function uploadTo(egress: Egress, url: string, source: Buffer | Readable, length
       if (res.status < 200 || res.status >= 300) throw new SlackApiError(`http_${res.status}`, 'file upload')
     },
     (e: Error) => {
-      throw /attachment download failed/.test(e.message) ? e : new SlackApiError('network_error', 'file upload')
+      throw /attachment download failed/.test(e.message) ? e : new SlackApiError(e instanceof ProxyError ? e.code : 'network_error', 'file upload')
     },
   )
 }

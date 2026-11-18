@@ -40,6 +40,20 @@ describe('egress configuration', () => {
     assert.equal(at({ HTTPS_PROXY: 'http://corp:3128', no_proxy: 'slack.com' }), null)
   })
 
+  test('NO_PROXY: bare and bracketed IPv6', () => {
+    assert.equal(bypassed(new URL('http://[::1]:9/x'), '::1'), true)
+    assert.equal(bypassed(new URL('http://[::1]:9/x'), 'localhost,::1'), true)
+    assert.equal(bypassed(new URL('http://[::1]:9/x'), '[::1]:9'), true)
+    assert.equal(bypassed(new URL('http://[::1]:9/x'), '[::1]:10'), false)
+    assert.equal(bypassed(new URL('http://[::2]:9/x'), '::1'), false)
+  })
+
+  test('a proxy URL that does not parse is a clear error at startup, naming the variable and not the value', () => {
+    assert.throws(() => new Egress({ TM8_SLACK_PROXY_URL: 'http://[bad' }), /^Error: TM8_SLACK_PROXY_URL is not a valid proxy URL$/)
+    assert.throws(() => new Egress({ HTTPS_PROXY: 'socks5://corp:1080' }), /HTTPS_PROXY must be an http:\/\/ or https:\/\/ proxy URL/)
+    assert.doesNotThrow(() => new Egress({ TM8_SLACK_PROXY_URL: 'http://alice:50%off@corp:3128' }))
+  })
+
   test('the log line names the proxy host, never its credentials', () => {
     const e = new Egress({ TM8_SLACK_PROXY_URL: 'http://alice:s3cret@corp:3128' })
     assert.equal(e.describe(), 'via proxy http://corp:3128')
@@ -97,11 +111,54 @@ describe('through a CONNECT proxy', () => {
     await r.start()
     r.tm8.push({ type: 'connect', connectionId: CONN, stateKey: r.key.toString('base64'), credential: { kind: 'slack_tokens', botToken: r.slack.botToken, appToken: r.slack.appToken } })
     const s = await r.tm8.waitFor('state', (f) => f.status === 'offline')
-    assert.match(s.detail, /network_error/)
+    // A 407 is named for what it is: the admin's proxy wants credentials.
+    assert.match(s.detail, /^proxy_auth_required; retrying/)
     await sleep(100)
     assert.equal(r.slack.calls.length, 0)
     assert.ok(proxy.refused >= 1)
     assert.ok(!r.tm8.of('state').some((f) => f.status === 'linked'))
+  })
+
+  test('a password with a raw % ("50%off") works as a literal through a real proxy', async () => {
+    proxy = await ConnectProxy.start()
+    proxy.requireAuth = 'alice:50%off'
+    const port = new URL(proxy.url).port
+    r = await rig({ egress: new Egress({ TM8_SLACK_PROXY_URL: `http://alice:50%off@127.0.0.1:${port}` }) })
+    seed(r.slack)
+    await r.start()
+    const states = await r.connect(['C1'])
+    assert.ok(states.some((f) => f.status === 'linked'))
+    assert.ok(proxy.tunnels.length >= 1 && proxy.refused === 0)
+  })
+
+  test('"50%off" and an unreachable proxy: no crash, no uncaught error, the connection retries offline (review delta)', async () => {
+    // A port nothing listens on.
+    const net = await import('node:net')
+    const probe = net.createServer()
+    await new Promise<void>((res) => probe.listen(0, '127.0.0.1', res))
+    const dead = (probe.address() as { port: number }).port
+    await new Promise((res) => probe.close(res))
+    const uncaught: unknown[] = []
+    const onUncaught = (e: unknown) => void uncaught.push(e)
+    process.on('uncaughtException', onUncaught)
+    process.on('unhandledRejection', onUncaught)
+    try {
+      r = await rig({ egress: new Egress({ TM8_SLACK_PROXY_URL: `http://alice:50%off@127.0.0.1:${dead}` }) })
+      seed(r.slack)
+      await r.start()
+      r.tm8.push({ type: 'connect', connectionId: CONN, stateKey: r.key.toString('base64'), credential: { kind: 'slack_tokens', botToken: r.slack.botToken, appToken: r.slack.appToken } })
+      const s = await r.tm8.waitFor('state', (f) => f.status === 'offline')
+      assert.match(s.detail, /^proxy_error; retrying/)
+      // Let a few retries (30 ms backoff in the rig) hit the dead proxy too.
+      await sleep(300)
+      assert.ok(r.tm8.of('state').filter((f) => f.status === 'offline').length >= 2)
+      assert.deepEqual(uncaught, [])
+      assert.equal(r.slack.calls.length, 0)
+      assert.ok(!JSON.stringify(r.tm8.posted).includes('50%off') && !r.logs.join('\n').includes('50%off'))
+    } finally {
+      process.off('uncaughtException', onUncaught)
+      process.off('unhandledRejection', onUncaught)
+    }
   })
 
   test('NO_PROXY sends the fake Slack direct', async () => {

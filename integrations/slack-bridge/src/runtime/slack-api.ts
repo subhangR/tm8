@@ -1,4 +1,4 @@
-import { Egress, httpRequest, readText } from './egress.js'
+import { Egress, ProxyError, httpRequest, readText } from './egress.js'
 
 // A minimal Slack Web API client: form-encoded POSTs to <base><method> with the token as a Bearer header. The base is
 // TM8_SLACK_API_URL (default https://slack.com/api/), the seam the fake Slack in test/ plugs into. Errors carry Slack's
@@ -38,6 +38,7 @@ export const LINK_REFUSED: ReadonlySet<string> = new Set([...DEAD_TOKEN, 'not_al
 /** Codes worth trying again later; anything else is the request's own fault. */
 const RETRYABLE: ReadonlySet<string> = new Set([
   'ratelimited', 'internal_error', 'fatal_error', 'service_unavailable', 'request_timeout', 'network_error', 'slack_not_connected',
+  'proxy_auth_required', 'proxy_error',
 ])
 
 export function isRetryable(code: string): boolean {
@@ -76,7 +77,8 @@ export class SlackApi {
       text = await readText(res.body)
     } catch (e) {
       if (e instanceof SlackApiError) throw e
-      throw new SlackApiError('network_error', method)
+      // A proxy that refused says so (proxy_auth_required is what an enterprise admin needs to see); else network.
+      throw new SlackApiError(e instanceof ProxyError ? e.code : 'network_error', method)
     }
     let body: Record<string, any> | null = null
     try {

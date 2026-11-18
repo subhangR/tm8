@@ -85,9 +85,9 @@ TM8_BRIDGE_RUNTIME_TOKEN_FILE=/path/to/bridge-runtime-token npm run runtime
 | `TM8_SLACK_STATE_DIR` | `./data` | where the sealed tokens live |
 | `TM8_SLACK_API_URL` | `https://slack.com/api/` | Slack Web API base; point it at a fake Slack to test |
 | `TM8_SLACK_RUNTIME_ID` | `slack-<hostname>` | this runtime's stable id |
-| `TM8_SLACK_PROXY_URL` | unset | HTTP(S) proxy for all Slack traffic; overrides the standard variables below. `user:password@` is sent as Proxy-Authorization |
+| `TM8_SLACK_PROXY_URL` | unset | HTTP(S) proxy for all Slack traffic; overrides the standard variables below. `user:password@` is sent as Proxy-Authorization (percent-decoded, or literal when not valid escapes). A URL that does not parse stops the runtime at startup; a 407 shows as `proxy_auth_required` |
 | `HTTPS_PROXY` / `https_proxy` | unset | the standard proxy for `https://` and `wss://` (`HTTP_PROXY` for `http://`) |
-| `NO_PROXY` / `no_proxy` | unset | hosts reached directly: `*`, `host`, `.domain`, `*.domain`, `host:port` |
+| `NO_PROXY` / `no_proxy` | unset | hosts reached directly: `*`, `host`, `.domain`, `*.domain`, `host:port`, `::1`, `[::1]:port` |
 
 In a deployment the server's supervisor starts it with the label `slack-runtime`. The runtime needs outbound HTTPS
 and WSS to `slack.com` and `*.slack.com`, and nothing inbound. Behind a mandatory proxy, set `TM8_SLACK_PROXY_URL`
