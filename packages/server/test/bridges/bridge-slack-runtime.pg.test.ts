@@ -190,11 +190,7 @@ beforeAll(async () => {
   await runtimeSocket(SLACK_RT, slackFrames);
   expect((await call('/v2/bridge-runtime/hello', runtimeToken,
     { provider: 'whatsapp', version: 3, runtimeId: WA_RT, capabilities: WHATSAPP_CAPABILITIES })).status).toBe(200);
-  const hello = await call('/v2/bridge-runtime/hello', runtimeToken,
-    { provider: 'slack', version: 4, runtimeId: SLACK_RT, capabilities: SLACK_CAPABILITIES });
-  expect(hello.status).toBe(200);
-  // A Slack runtime runs Slack connections only: the WhatsApp number is not in its hello reply.
-  expect(hello.body.connections).toEqual([]);
+  // The Slack runtime's socket is open but it has not said hello yet: the restart window.
 });
 
 afterAll(async () => {
@@ -207,6 +203,26 @@ afterAll(async () => {
 });
 
 describe('begin with pasted tokens (lane A ac1)', () => {
+  it('the restart window: a Slack begin before the Slack runtime\'s hello answers offline and reaches no runtime (review finding 4)', async () => {
+    const begun = await call('/v2/me/bridge-connections', browserToken, { clientMutationId: randomUUID(), provider: 'slack',
+      credential: { kind: 'slack_tokens', botToken: BOT_TOKEN, appToken: APP_TOKEN } });
+    expect(begun.status, begun.raw).toBe(200);
+    expect(begun.body.data.runtime).toBe('offline');
+    expect(begun.body.data.connection.runtimeId).toBeNull();
+    const early = begun.body.data.connection.id as string;
+    await new Promise((r) => setTimeout(r, 300));
+    expect([...waFrames, ...slackFrames].filter((f) => f.type === 'connect')).toEqual([]);
+    const hello = await call('/v2/bridge-runtime/hello', runtimeToken,
+      { provider: 'slack', version: 4, runtimeId: SLACK_RT, capabilities: SLACK_CAPABILITIES });
+    expect(hello.status).toBe(200);
+    // A Slack runtime runs Slack connections only: the WhatsApp number is not in its hello reply; the
+    // early connection is (with no credential: the runtime answers no_credential and the owner re-pastes).
+    expect(hello.body.connections.map((c: { connectionId: string }) => c.connectionId)).toEqual([early]);
+    expect(JSON.stringify(hello.body)).not.toContain(BOT_TOKEN);
+    expect((await call(`/v2/me/bridge-connections/${early}/remove`, browserToken, { clientMutationId: randomUUID() })).status).toBe(200);
+  });
+
+
   it('refuses a malformed token without echoing it', async () => {
     const bad = await call('/v2/me/bridge-connections', browserToken, { clientMutationId: randomUUID(), provider: 'slack',
       credential: { kind: 'slack_tokens', botToken: `${BOT_TOKEN}!`, appToken: APP_TOKEN } });

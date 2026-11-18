@@ -198,16 +198,13 @@ export class BridgeRuntimeHub {
   }
 
   /**
-   * The runtime for a provider. Never one that said hello for ANOTHER provider:
-   * a Slack connection must never reach the WhatsApp runtime. A lone runtime
-   * that has not said hello yet is still taken (a fresh socket, hello in flight).
+   * The runtime that said hello for this provider, and no other: never one of
+   * another provider, never one that has not said hello yet (a socket is open
+   * before its hello after every restart; review #1505 finding 4). None: the
+   * caller answers 'offline', and the runtime's hello picks the connection up.
    */
   private runtimeFor(provider: string): RuntimeLink | undefined {
-    const links = [...this.runtimes.values()];
-    const same = links.find((r) => r.provider === provider);
-    if (same) return same;
-    const unknown = links.filter((r) => r.provider === null);
-    return links.length === 1 && unknown.length === 1 ? unknown[0] : undefined;
+    return [...this.runtimes.values()].find((r) => r.provider === provider && r.sink.isOpen);
   }
 
   /** A capability the runtime's sheet turns off. Absent sheet or key: on (v1-v3 WhatsApp runtimes sent none). */

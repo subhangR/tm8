@@ -63,9 +63,14 @@ describe('BridgeRuntimeHub provider routing', () => {
     expect(wa).not.toHaveProperty('credential');
   });
 
-  it('takes a lone runtime that has not said hello yet', async () => {
-    const { hub, add } = harness();
+  it('never takes a runtime that has not said hello yet (the restart window), for either provider', async () => {
+    const { hub, got, add } = harness();
     add('fresh', null);
+    expect(await hub.connect({ provider: 'slack', connectionId: 'c1',
+      credential: { kind: 'slack_tokens', botToken: 'xoxb-1-2-a', appToken: 'xapp-1-A-2-b' } }, caller)).toBeNull();
+    expect(await hub.connect({ provider: 'whatsapp', connectionId: 'c2' }, caller)).toBeNull();
+    expect(got.get('fresh')).toEqual([]);
+    hub.noteHello('fresh', 'slack', 4, SLACK_CAPABILITIES);
     expect(await hub.connect({ provider: 'slack', connectionId: 'c1' }, caller)).toEqual({ runtimeId: 'fresh' });
   });
 
