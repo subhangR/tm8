@@ -211,7 +211,11 @@ export function AccountsBlock({
                   the row's flow pushes the ⋯ menu onto a line of its own. So
                   the Slack lines come last and span every column, as their own
                   line under the row (.brg-set__connnote). */}
-              <SlackConnectionWords connection={c} onRotate={() => setLinking({ provider: 'slack', relink: c })} />
+              <SlackConnectionWords
+                connection={c}
+                rotateReason={linkReason}
+                onRotate={() => setLinking({ provider: 'slack', relink: c })}
+              />
             </li>
           );
         })}
@@ -327,9 +331,12 @@ export function AccountsBlock({
 function SlackConnectionWords({
   connection,
   onRotate,
+  rotateReason,
 }: {
   connection: BridgeConnectionView;
   onRotate(): void;
+  /** Why pasting is off, when the node does not serve begin — as + Add an account says it. */
+  rotateReason: string | null;
 }) {
   if (connection.provider !== 'slack') return null;
   if (connection.status === 'logged_out') {

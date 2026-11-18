@@ -237,9 +237,20 @@ export function createFixtureBridgesClient(
       if (input.targetId === 'none') throw new CollabError('invalid_input', 'pick a target');
       const base = [...bridges.values()][0]!;
       const id = `ent-bridge-${bridges.size + 1}`;
+      /* The new bridge's PROVIDER is the connection's, not the first seeded
+         bridge's. `...base` copied a WhatsApp bridge wholesale, so a bridge
+         made on the Slack workspace came back `provider: 'whatsapp'` — and
+         every provider-shaped surface (thread mode, View in Slack, the mark)
+         then drew the WhatsApp version of itself (#1509 review 5). */
+      const on = connectionsById.get(input.connectionId);
       const view: BridgeView = {
         ...base, id, spaceId, version: 1, title: input.conversation.title,
         connectionId: input.connectionId,
+        provider: on?.provider ?? base.provider,
+        health: {
+          ...base.health, queued: 0, failed24h: 0, detail: null,
+          connection: on?.status === 'removed' ? 'offline' : on?.status ?? base.health.connection,
+        },
         conversation: { externalId: input.conversation.externalId, kind: input.conversation.kind, title: input.conversation.title, memberCount: input.conversation.memberCount ?? null },
         target: (() => {
           const t = targetOf(input.targetId);
@@ -250,7 +261,6 @@ export function createFixtureBridgesClient(
         status: 'live', pausedAt: null, endedAt: null, handles: 0,
         people: { participants: 0, linked: 0, guestsSeen7d: 0 },
         purpose: input.purpose ?? null, retentionDays: input.retentionDays ?? null,
-        health: { ...base.health, queued: 0, failed24h: 0, detail: null },
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       };
       bridges.set(id, view);

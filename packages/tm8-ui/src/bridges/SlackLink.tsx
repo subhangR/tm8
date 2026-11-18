@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { BridgeConnectionView, BridgeView } from '@tm8/contract';
 import type { BridgesPort } from './api';
-import { isSlackTs, slackChannelUrl, slackMessageUrl } from './slack';
+import { isSlackTs, safeWorkspaceUrl, slackChannelUrl, slackMessageUrl } from './slack';
 
 /**
  * VIEW IN SLACK — the way back out (Slack design §1.3: "every Slack message
@@ -34,7 +34,7 @@ export function useSlackWorkspace(
     void port.connections.list().then(
       (rows: BridgeConnectionView[]) => {
         if (!live) return;
-        setUrl(rows.find((r) => r.id === connectionId)?.account?.url ?? null);
+        setUrl(safeWorkspaceUrl(rows.find((r) => r.id === connectionId)?.account?.url));
       },
       () => {},
     );

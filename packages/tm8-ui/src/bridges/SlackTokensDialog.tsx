@@ -212,7 +212,11 @@ export function SlackTokensDialog({
             <input
               type="password"
               value={botToken}
-              autoComplete="off"
+              /* Chrome ignores autocomplete=off on a password field and may
+                 offer to SAVE what was pasted — storage outside the app, which
+                 the hard rule covers. `one-time-code` is the hint that says
+                 this is transient and not worth keeping. */
+              autoComplete="one-time-code"
               autoCorrect="off"
               autoCapitalize="off"
               spellCheck={false}
@@ -230,7 +234,7 @@ export function SlackTokensDialog({
             <input
               type="password"
               value={appToken}
-              autoComplete="off"
+              autoComplete="one-time-code"
               autoCorrect="off"
               autoCapitalize="off"
               spellCheck={false}

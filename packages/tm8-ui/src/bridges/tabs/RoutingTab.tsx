@@ -163,7 +163,9 @@ export function RoutingTab({
               value={draft.policy.whoMayTrigger}
               onChange={(v) => setPolicy('whoMayTrigger', v)}
               options={[
-                ['linked', 'Only people who have verified their number in tm8'],
+                ['linked', view.provider === 'slack'
+                  ? 'Only people whose Slack account is linked to a tm8 member'
+                  : 'Only people who have verified their number in tm8'],
                 ['anyone', `Anyone in the ${convWord}`, 'you\'ll confirm'],
               ]}
             />

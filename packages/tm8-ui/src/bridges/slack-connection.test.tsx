@@ -97,7 +97,10 @@ describe('the Slack token dialog', () => {
     openDialog();
     for (const box of [botBox(), appBox()]) {
       expect(box.type).toBe('password');
-      expect(box.getAttribute('autocomplete')).toBe('off');
+      /* Not 'off': Chrome ignores that on a password field and may offer to
+         SAVE the pasted token, which is storage outside the app and so inside
+         the hard rule. `one-time-code` says it is transient (#1509 review). */
+      expect(box.getAttribute('autocomplete')).toBe('one-time-code');
       expect(box.getAttribute('spellcheck')).toBe('false');
     }
   });

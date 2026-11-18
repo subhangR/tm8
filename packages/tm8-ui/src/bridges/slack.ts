@@ -263,6 +263,21 @@ export function slackMessageUrl(
 }
 
 /**
+ * Only an `https:` workspace URL becomes an `href`. `account.url` comes from
+ * `auth.test`, so it is Slack's own answer and should always be https — but it
+ * reaches the DOM as a link target, and a `javascript:` or `data:` value there
+ * would be the one place this lane could be turned into script.
+ */
+export function safeWorkspaceUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).protocol === 'https:' ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The workspace URL for a bridge's provider links, or null when there is
  * none to build them from: a non-Slack bridge, or a Slack connection whose
  * `auth.test` answer the surface has not read (it rides the CONNECTION, not
@@ -271,7 +286,7 @@ export function slackMessageUrl(
  */
 export function slackWorkspaceUrl(connection: Pick<BridgeConnectionView, 'provider' | 'account'> | null | undefined): string | null {
   if (!connection || connection.provider !== 'slack') return null;
-  return connection.account?.url ?? null;
+  return safeWorkspaceUrl(connection.account?.url);
 }
 
 // ---------------------------------------------------------------------------

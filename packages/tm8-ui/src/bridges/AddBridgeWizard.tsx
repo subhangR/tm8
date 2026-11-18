@@ -112,11 +112,12 @@ const CANNOT_SEND: Record<NonNullable<ConversationItem['reason']>, string> = {
   not_a_member: 'this number is not in the group any more',
 };
 
-/** The same two reasons in Slack's words: a channel the bot was never invited to, or was removed from. */
-const SLACK_CANNOT_SEND: Record<NonNullable<ConversationItem['reason']>, string> = {
-  admins_only: 'this channel only takes posts from people, not apps',
-  not_a_member: 'tm8 is not in this channel: /invite @tm8 there first',
-};
+/** The same two reasons in Slack's words, naming the real bot: a channel it was never invited to, or was removed from. */
+function slackCannotSend(reason: NonNullable<ConversationItem['reason']>, botName: string): string {
+  return reason === 'admins_only'
+    ? 'this channel only takes posts from people, not apps'
+    : `tm8 is not in this channel: /invite @${botName} there first`;
+}
 
 export function AddBridgeWizard({
   port,
@@ -433,7 +434,7 @@ export function AddBridgeWizard({
                             >
                               <span className="brg-wiz__name">
                                 {isPrivateChannel(c) ? (
-                                  <span className="brg-wiz__lock" title="Private channel" aria-label="private channel">🔒</span>
+                                  <span className="brg-wiz__lock" role="img" title="Private channel" aria-label="private channel">🔒</span>
                                 ) : null}
                                 {conversationLabel(c)}
                               </span>
@@ -443,7 +444,7 @@ export function AddBridgeWizard({
                               {taken ? (
                                 <span className="brg-muted">already connected → {taken.target.title}</span>
                               ) : !c.canSend && c.reason ? (
-                                <span className="brg-warn">read-only: {(slack ? SLACK_CANNOT_SEND : CANNOT_SEND)[c.reason]}</span>
+                                <span className="brg-warn">read-only: {slack ? slackCannotSend(c.reason, botName) : CANNOT_SEND[c.reason]}</span>
                               ) : null}
                             </button>
                           </li>
@@ -508,7 +509,7 @@ export function AddBridgeWizard({
                   ) : (teammates ?? []).length === 0 ? <option value="">No teammate in this space yet</option> : null}
                   {(teammates ?? []).map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
                 </select>
-                <span className="brg-hint">Who /work and /start in the group run as. Change it later on the bridge's Routing tab.</span>
+                <span className="brg-hint">Who /work and /start in the {convWord} run as. Change it later on the bridge's Routing tab.</span>
               </label>
             ) : null}
             {targetId === NEW_CHAT ? (
@@ -610,7 +611,7 @@ export function AddBridgeWizard({
                 ✓ tm8 can read “{conversation ? conversationLabel(conversation) : ''}”{conversation?.size ? ` (${conversation.size} people)` : ''}
               </li>
               <li data-ok>✓ The bridge is {created.status}: it lands in {created.target.title}</li>
-              <li>◌ Send a test message to the group — {pendingReason(port, 'bridges.test', 'The test message')}</li>
+              <li>◌ Send a test message to the {convWord} — {pendingReason(port, 'bridges.test', 'The test message')}</li>
               <li>◌ {testLine(created.target.kind, created.target.title, provider, created.policy.threadMode ?? null, botName)}</li>
             </ul>
             <p className="brg-hint">Finish is fine either way: if anything fails later, Health on the bridge says why.</p>

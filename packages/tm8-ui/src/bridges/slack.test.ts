@@ -17,8 +17,8 @@ import {
   DEFAULT_SLACK_THREAD_MODE, SLACK_APP_TOKEN_RE, SLACK_BOT_TOKEN_RE, SLACK_MANIFEST_BOT_SCOPES,
   THREAD_MODE_OPTIONS, capabilitiesOf, connectsByTokens, conversationLabel, hasNativeThreads, isPrivateChannel,
   isSlackTs, missingScopeLines, missingSlackScopes, slackAccountLine, slackChannelLabel, slackChannelUrl,
-  slackExternalAccountId, slackHost, slackMessageUrl, slackPickerEmptyHint, slackRefusalWords, slackTokenProblem,
-  slackWorkspaceUrl,
+  safeWorkspaceUrl, slackExternalAccountId, slackHost, slackMessageUrl, slackPickerEmptyHint, slackRefusalWords,
+  slackTokenProblem, slackWorkspaceUrl,
 } from './slack';
 
 /*
@@ -246,11 +246,23 @@ describe('View in Slack', () => {
     expect(url).not.toContain('thread_ts');
     expect(url).not.toContain('cmd');
   });
+  it('only an https workspace URL becomes a link target', () => {
+    expect(safeWorkspaceUrl('https://acme.slack.com/')).toBe('https://acme.slack.com/');
+    expect(safeWorkspaceUrl('http://acme.slack.com/')).toBeNull();
+    // eslint-disable-next-line no-script-url -- the point of the test
+    expect(safeWorkspaceUrl('javascript:alert(1)')).toBeNull();
+    expect(safeWorkspaceUrl('data:text/html,hi')).toBeNull();
+    expect(safeWorkspaceUrl('not a url')).toBeNull();
+    expect(safeWorkspaceUrl(null)).toBeNull();
+  });
+
   it('has no workspace URL for a non-Slack connection, or a Slack one that has not reported', () => {
     expect(slackWorkspaceUrl(null)).toBeNull();
     expect(slackWorkspaceUrl({ provider: 'whatsapp', account: null })).toBeNull();
     expect(slackWorkspaceUrl({ provider: 'slack', account: null })).toBeNull();
     expect(slackWorkspaceUrl({ provider: 'slack', account: account() })).toBe('https://acme.slack.com/');
+    // …and a workspace URL that is not https yields no link at all
+    expect(slackWorkspaceUrl({ provider: 'slack', account: account({ url: 'http://acme.slack.com/' }) })).toBeNull();
   });
 });
 

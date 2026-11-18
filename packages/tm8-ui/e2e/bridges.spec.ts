@@ -281,7 +281,13 @@ async function openSlackTokenDialog(page: Page) {
   await page.getByTestId('bridges-add-account').click();
   await page.getByRole('menuitem', { name: /Slack workspace/ }).click();
   await expect(page.getByTestId('bridge-slack-tokens')).toBeVisible();
+  return page.getByTestId('bridge-slack-tokens');
 }
+
+/* The dialog, so 'Connect' cannot match the nav's 'Connect Apps' — a
+   strict-mode violation that failed three of these tests as authored. */
+const tokenDialog = (page: Page) => page.getByTestId('bridge-slack-tokens');
+const connectBtn = (page: Page) => tokenDialog(page).getByRole('button', { name: 'Connect', exact: true });
 
 test('Slack: the connection row names the workspace auth.test answered', async ({ page }, info) => {
   await openSettings(page);
@@ -301,16 +307,22 @@ test('Slack: the token form refuses a bad pair locally, then connects', async ({
   await openSlackTokenDialog(page);
   await page.screenshot({ path: info.outputPath('82-slack-token-form.png') });
 
-  // Both inputs are secrets, and nothing will autofill them.
+  // Both inputs are secrets, and nothing will autofill or offer to SAVE them:
+  // Chrome ignores autocomplete=off on a password field, so the hint is
+  // one-time-code (#1509 review).
   for (const label of ['Bot token', 'App-level token']) {
     await expect(page.getByLabel(label)).toHaveAttribute('type', 'password');
-    await expect(page.getByLabel(label)).toHaveAttribute('autocomplete', 'off');
+    await expect(page.getByLabel(label)).toHaveAttribute('autocomplete', 'one-time-code');
   }
+  // …and they are as wide as the field below them, not half of it.
+  const botBox = await page.getByLabel('Bot token').boundingBox();
+  const nameBox = await page.getByLabel('Workspace label').boundingBox();
+  expect(botBox!.width).toBeGreaterThan(nameBox!.width * 0.9);
 
   // The pair the other way round: refused here, named, never sent.
   await page.getByLabel('Bot token').fill(SLACK_APP);
   await page.getByLabel('App-level token').fill(SLACK_BOT);
-  await page.getByRole('button', { name: 'Connect' }).click();
+  await connectBtn(page).click();
   await expect(page.getByTestId('slack-token-problem')).toContainText('other way round');
   await page.screenshot({ path: info.outputPath('83-slack-token-swapped.png') });
 
@@ -318,21 +330,28 @@ test('Slack: the token form refuses a bad pair locally, then connects', async ({
   await page.getByLabel('Bot token').fill(SLACK_BOT);
   await page.getByLabel('App-level token').fill(SLACK_APP);
   await page.getByLabel('Workspace label').fill('Acme Slack 2');
-  await page.getByRole('button', { name: 'Connect' }).click();
+  await connectBtn(page).click();
+  // The dialog STAYS OPEN on success, showing which workspace (review 4).
   await expect(page.getByTestId('slack-connected')).toContainText('Connected to Acme');
   // The hard rule, in a real browser: neither token is anywhere on the page.
   expect(await page.content()).not.toContain(SLACK_BOT);
   expect(await page.content()).not.toContain(SLACK_APP);
-  expect(await page.inputValue('input[aria-label="Bot token"]')).toBe('');
   await page.screenshot({ path: info.outputPath('84-slack-connected.png') });
+  // …and Done is what closes it.
+  await page.getByTestId('slack-done').click();
+  await expect(page.getByTestId('bridge-slack-tokens')).toBeHidden();
 });
 
 test('Slack: a refused token says what to do about it', async ({ page }, info) => {
   await openSlackTokenDialog(page);
   await page.getByLabel('Bot token').fill('xoxb-0-0-invalid');
   await page.getByLabel('App-level token').fill(SLACK_APP);
-  await page.getByRole('button', { name: 'Connect' }).click();
+  await connectBtn(page).click();
   await expect(page.getByTestId('slack-refused')).toContainText('revoked, rotated or copied');
+  // review 1: our own "Paste both tokens" must NOT be stacked on top of it,
+  // and the retry must be live.
+  await expect(page.getByTestId('slack-token-problem')).toHaveCount(0);
+  await expect(tokenDialog(page).getByRole('button', { name: 'Paste again' })).toBeEnabled();
   await page.screenshot({ path: info.outputPath('85-slack-refused.png') });
 });
 
@@ -340,8 +359,9 @@ test('Slack: a thin install names the scopes it is missing', async ({ page }, in
   await openSlackTokenDialog(page);
   await page.getByLabel('Bot token').fill('xoxb-0-0-noscope');
   await page.getByLabel('App-level token').fill(SLACK_APP);
-  await page.getByRole('button', { name: 'Connect' }).click();
+  await connectBtn(page).click();
   await expect(page.getByTestId('slack-missing-scopes')).toContainText('chat:write.customize');
+  await expect(page.getByTestId('slack-connected')).toBeVisible();
   await page.screenshot({ path: info.outputPath('86-slack-missing-scopes.png'), fullPage: true });
 });
 
@@ -368,7 +388,7 @@ test('Slack: the channel picker, thread mode, and the every-message confirm', as
   await expect(page.getByText('How replies are signed')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('89-wizard-3-thread-mode.png'), fullPage: true });
 
-  await page.getByLabel(/^Every message/).first().check();
+  await page.getByTestId('bridge-thread-mode').getByRole('radio', { name: /Every message/ }).check();
   await page.getByRole('button', { name: 'Create bridge' }).click();
   await expect(page.getByTestId('bridge-consequences')).toContainText('EVERY top-level message');
   await page.screenshot({ path: info.outputPath('90-wizard-thread-confirm.png') });
