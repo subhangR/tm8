@@ -215,7 +215,8 @@ Slack (`direct`, or `via proxy http://proxy.example.com:3128` behind a proxy) an
    the space you are in. Click **Connect** (it reads **Checking…** while tm8 asks Slack).
 4. tm8 checks the tokens with Slack and shows **✓ Connected to *Acme* (*acme.slack.com*) as @tm8**. An org-wide
    Enterprise Grid install also names the org: **Connected to *Acme* - *Acme Corp* (*acme.enterprise.slack.com*)
-   as @tm8**. The same line stays on the connection's row under **Accounts & secrets**.
+   as @tm8**. Click **Done** (Escape or clicking outside also counts as Done once it has connected). The same line
+   stays on the connection's row under **Accounts & secrets**.
 
 If a warning **Missing N scopes the bridge uses: …** follows, the install granted fewer scopes than the manifest
 asks for; it says what stops working. Fix it as in the `missing_scope` row of [Troubleshooting](#troubleshooting).
@@ -236,11 +237,12 @@ button becomes **Paste again**; the connection's status reads **needs sign-in**.
    filters). The list shows the channels the bot is in. A channel showing *tm8 is not in this channel: /invite @tm8
    there first* needs exactly that. Empty list, or invited a moment ago and it is not there? Close and reopen the list.
 5. **Where it lands and how it behaves**: pick the **target**, the tm8 chat, work session or channel that answers
-   this Slack channel. Then **Thread mode**:
+   this Slack channel. Then **Thread mode** (offered for a work-session or chat target; a **tm8 channel** target
+   mirrors the Slack channel, so thread mode is always off there and the choice is not shown):
    - **Mention (default)**: every top-level message that mentions `@tm8` starts its own tm8 session, which lives
-     in that Slack thread. Replies in the thread go to that session. A thread's session is a child of the bridge's
-     target session, goes idle after 2 hours with no replies, and the next reply in that thread wakes it with its
-     history.
+     in that Slack thread. Replies in the thread go to that session. With a **work session** target, each thread's
+     session is a child of it; with a **chat** target, each thread gets its own session. A thread's session goes
+     idle after 2 hours with no replies, and the next reply in that thread wakes it with its history.
    - **Every message**: every top-level message starts a session. Only for a quiet intake channel (tm8 asks you to
      click twice to confirm).
    - **Off**: the channel behaves like one conversation; `@tm8` gets an answer from the target.
