@@ -16,6 +16,12 @@ export class FakeTm8 {
   readonly media = new Map<string, Buffer>()
   /** Requests refused for a missing or wrong bearer. */
   refused = 0
+  /**
+   * How long the "server" takes to apply a frame before it is recorded (ms): a slow POST, as a busy database makes
+   * one. `posted` is in APPLY order, which is what decides a connection's state on the real server. Infinity never
+   * answers (and never applies).
+   */
+  applyDelay: (route: RuntimeRoute, frame: any) => number = () => 0
   private server: http.Server
   private wss: WebSocketServer
   private sockets: WebSocket[] = []
@@ -63,6 +69,11 @@ export class FakeTm8 {
     const ws = [...this.sockets].reverse().find((s) => s.readyState === s.OPEN)
     if (!ws) throw new Error('the runtime has no push socket open')
     ws.send(JSON.stringify(frame))
+  }
+
+  /** The state the server would show for a connection: the last state frame it applied. */
+  lastState(connectionId: string): any {
+    return this.of('state').filter((f) => f.connectionId === connectionId).at(-1)
   }
 
   of(route: RuntimeRoute): any[] {
@@ -120,6 +131,10 @@ export class FakeTm8 {
       res.end(bytes)
       return
     }
+    const delay = this.applyDelay(route as RuntimeRoute, frame)
+    // Infinity: the server never answers this request (it is dropped when the fake closes).
+    if (delay === Infinity) return void (await new Promise(() => {}))
+    if (delay > 0) await new Promise((r) => setTimeout(r, delay))
     this.posted.push({ route: route as RuntimeRoute, frame })
     this.wake()
     if (route === 'hello') {

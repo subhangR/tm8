@@ -29,18 +29,27 @@ export class HttpWsLink implements ServerLink {
       /** Called on each (re)open of the push socket, before any frame is read: the runtime says hello again. */
       onOpen: () => Promise<void>
       onFrame: (f: ServerFrame) => Promise<void>
+      /**
+       * Per-attempt deadline for a POST, ms (default 30 s). A server that never answers must not hold a frame (and the
+       * in-order state chain behind it) for minutes: the attempt is aborted and retried like any network failure.
+       */
+      postTimeoutMs?: number
+      /** Delays between attempts, ms (default 1, 2, 4, 8, 16 s). */
+      retryMs?: number[]
     },
   ) {}
 
   async post<R extends RuntimeRoute>(route: R, frame: RuntimeFrames[R]): Promise<unknown> {
     // Heartbeats are not retried: the next one is 30 s away and a late one says nothing true.
-    const delays = route === 'heartbeat' ? [] : RETRY_MS
+    const delays = route === 'heartbeat' ? [] : (this.o.retryMs ?? RETRY_MS)
     for (let attempt = 0; ; attempt++) {
       try {
         const res = await fetch(new URL(`/v2/bridge-runtime/${route}`, this.o.serverUrl), {
           method: 'POST',
           headers: { 'content-type': 'application/json', authorization: `Bearer ${this.o.token()}` },
           body: JSON.stringify(frame),
+          // Covers the body read below too.
+          signal: AbortSignal.timeout(this.o.postTimeoutMs ?? 30_000),
         })
         const text = await res.text()
         if (!res.ok) throw new HttpError(res.status, text)

@@ -17,7 +17,7 @@ export const CONN2 = '01a1eddf-0000-7000-8000-000000000002'
 
 export type Rig = Awaited<ReturnType<typeof rig>>
 
-export async function rig(o: { stateDir?: string; key?: Buffer; slack?: FakeSlack; tm8?: FakeTm8; egress?: Egress } = {}) {
+export async function rig(o: { stateDir?: string; key?: Buffer; slack?: FakeSlack; tm8?: FakeTm8; egress?: Egress; link?: { postTimeoutMs?: number; retryMs?: number[] } } = {}) {
   const slack = o.slack ?? (await FakeSlack.start())
   const tm8 = o.tm8 ?? (await FakeTm8.start())
   const stateDir = o.stateDir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'slack-rt-'))
@@ -32,6 +32,7 @@ export async function rig(o: { stateDir?: string; key?: Buffer; slack?: FakeSlac
     log,
     onOpen: () => ref.runtime!.hello(),
     onFrame: (f) => ref.runtime!.onFrame(f),
+    ...o.link,
   })
   const runtime = new Runtime({
     runtimeId: 'slack-test',
