@@ -19,6 +19,10 @@ Design background (not needed to follow this guide): `docs/features/bridges/` an
 
 ## Before you start
 
+**Brand-new machine?** Install tm8 and claim the node first: `git clone` the repo, `cd tm8`, `./install.sh` (the
+same as `bun run setup`), then claim it as the guide says. See [`docs/ops/INSTALL.md`](../../docs/ops/INSTALL.md)
+and [`docs/GETTING-STARTED.md`](../../docs/GETTING-STARTED.md) §1. Come back here once you can sign in to tm8.
+
 You need:
 
 | What | Why |
@@ -185,10 +189,11 @@ In the tm8 server's log (the terminal running `bun run dev`, or `~/.local/share/
 
 ```
 [bridges] slack-runtime started; sealed state in /home/you/.tm8-dev/data/bridges/slack-runtime
+[2026-…Z] [runtime] slack-yourlaptop → http://127.0.0.1:4610, Slack API https://slack.com/api/, state in /home/you/.tm8-dev/data/bridges/slack-runtime
 ```
 
-and, from the runtime, a line saying it connected to tm8. `bun run doctor` also reports the runtime and where
-its state lives. If you see `slack-runtime not started: …` instead, the line says what to fix (usually: run
+The first line is the server's; the second is the runtime's own, naming the server it talks to and its state
+directory. `bun run doctor` also reports the runtime and where its state lives. If you see `slack-runtime not started: …` instead, the line says what to fix (usually: run
 `npm ci` in `integrations/slack-bridge`).
 
 ### B4. Paste the tokens into tm8
@@ -219,8 +224,8 @@ button becomes **Paste again**; the connection's status reads **needs sign-in**.
 2. **In tm8**: open the space → **Bridges → Add bridge**.
 3. **Connection**: on the Slack row (it shows your team name), click **Use this workspace**.
 4. **Conversation**: under **CHANNELS**, pick `#your-channel` (a lock marks a private channel; **Search channels**
-   filters). The list shows the channels the bot is in. A channel marked *read-only: tm8 is not in this channel*
-   needs `/invite @tm8` first. Empty list, or invited a moment ago and it is not there? Close and reopen the list.
+   filters). The list shows the channels the bot is in. A channel showing *tm8 is not in this channel: /invite @tm8
+   there first* needs exactly that. Empty list, or invited a moment ago and it is not there? Close and reopen the list.
 5. **Where it lands and how it behaves**: pick the **target**, the tm8 chat, work session or channel that answers
    this Slack channel. Then **Thread mode**:
    - **Mention (default)**: every top-level message that mentions `@tm8` starts its own tm8 session, which lives
@@ -276,7 +281,8 @@ that the tm8 server holds (in its database) and hands to the runtime when it con
 token bytes, and no screen, API or agent can read them back. Neither half is useful alone: the files cannot be
 decrypted without the tm8 database, and the database does not contain the tokens.
 
-**Where it is by default:** `<tm8 data dir>/bridges/slack-runtime/`, one sub-folder per connection. That is:
+**Where it is by default:** `<tm8 data dir>/bridges/slack-runtime/`. Each Slack connection's sealed tokens are in
+`<state dir>/bridges/<connection id>/` inside it. The state dir is:
 
 | How you run tm8 | Default state dir |
 |---|---|
