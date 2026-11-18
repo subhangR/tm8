@@ -373,8 +373,9 @@ describe('Slack end to end: real server + real slack-bridge runtime + fake Slack
     await until('the outbox row to settle sent', async () => (await owner<{ status: string }>(
       `select status from public.bridge_outbox where external_message_id = $1 and kind = 'send'`, [m.ts]))[0]?.status === 'sent' || undefined);
     // ✅ replaces the earlier progress stage once a reply crossed out.
-    await until('the replied reaction', () => slack.reactions.find((x) => x.ts === root && x.name === 'white_check_mark' && !x.removed));
-    expect(slack.reactions.filter((x) => x.ts === root && !x.removed).map((x) => x.name)).toEqual(['white_check_mark']);
+    // The runtime adds ✅ and then takes its 📨 off (one progress reaction at a time).
+    const live = () => slack.reactions.filter((x) => x.ts === root && !x.removed).map((x) => x.name);
+    await until('✅ alone on the mention', () => live().length === 1 && live()[0] === 'white_check_mark');
   });
 
   it('6 + 9. a thread reply routes to that session (📨 on it); its answer survives a 429 (Retry-After honoured, then retried)', async () => {
