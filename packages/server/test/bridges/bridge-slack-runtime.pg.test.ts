@@ -594,6 +594,28 @@ describe('a Slack channel end to end (lane A ac3)', () => {
       { outboxId: send.outboxId, connectionId: slackConnection, externalMessageId: '1790000001.000400', message: null })).body).toMatchObject({ status: 'sent' });
   });
 
+  it('an email-linked (asserted) member is refused admin-tier commands and may use member-tier ones (review finding 2)', async () => {
+    const isSend = (f: ServerFrame): f is Extract<ServerFrame, { type: 'send' }> => f.type === 'send' && f.connectionId === slackConnection;
+    const ask = async (id: string, text: string): Promise<string> => {
+      slackFrames.length = 0;
+      const res = await inbound({ externalMessageId: `cmd:${id}`, body: `/${text}`, slashCommand: { command: '/tm8', text },
+        sender: { externalId: PRIYA, altId: null, name: 'Priya', fromMe: false, email: SLACK_EMAIL, team: OWN_TEAM } });
+      expect(res.body, text).toMatchObject({ status: 'stored', command: true });
+      const answer = await until(() => slackFrames.find(isSend), 15_000);
+      // A slash command has no thread and no message to quote.
+      expect(answer).not.toHaveProperty('threadTs');
+      expect(answer).not.toHaveProperty('replyTo');
+      await call('/v2/bridge-runtime/sent', runtimeToken,
+        { outboxId: answer.outboxId, connectionId: slackConnection, externalMessageId: `1790000002.${id}`, message: null });
+      return answer.text ?? '';
+    };
+    // Priya is the space's OWNER, but her Slack link is an email assertion.
+    expect(await ask('T0MUTE', 'mute 1h')).toContain('a space admin with a verified link');
+    const status = await ask('T0STATUS', 'status');
+    expect(status).not.toContain('link your number first');
+    expect(status).not.toContain('space admin');
+  });
+
   it('a renamed channel renames the bridge\'s conversation', async () => {
     const res = await call('/v2/bridge-runtime/conversation-state', runtimeToken,
       { connectionId: slackConnection, conversationId: CHANNEL, canSend: true, reason: null, name: 'eng-help' });
