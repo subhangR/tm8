@@ -20,6 +20,14 @@ import { createBridgeWorkerPort } from '../../src/facade/execution-handlers.js';
 import type { SpawnWorkerRequest } from '../../src/bridges/commands/ports.js';
 import { FakeGraph } from '../../../execution/test/fake-graph.js';
 
+/** A persona whose own mode is a coordinated worker: what a thread session must NOT launch as. */
+class CoordinatedPersonaGraph extends FakeGraph {
+  override async loadSpawnContext(...args: Parameters<FakeGraph['loadSpawnContext']>) {
+    const context = await super.loadSpawnContext(...args);
+    return { ...context, teamMember: { ...context.teamMember, mode: 'coordinated-worker' } };
+  }
+}
+
 const SPACE_ID = '11111111-1111-4111-8111-111111111111';
 const MEMBER_ID = '22222222-2222-4222-8222-222222222222';
 const TARGET_ID = '55555555-5555-4555-8555-555555555555';
@@ -35,13 +43,10 @@ describe('444: a thread session does not inherit the target session posture', ()
   let results: SpawnResult[];
   let port: ReturnType<typeof createBridgeWorkerPort>;
 
-  beforeEach(async () => {
-    dataDir = await mkdtemp(join(tmpdir(), 'tm8-thread-posture-data-'));
-    projectDir = await mkdtemp(join(tmpdir(), 'tm8-thread-posture-proj-'));
-    graph = new FakeGraph({ workingDir: projectDir, permissionMode: 'interactive' });
+  function wire(g: FakeGraph): void {
+    graph = g;
     // The target session was launched wide open.
     graph.postures.set(TARGET_ID, { accessMode: 'fullAccess', permissionMode: 'bypassPermissions' });
-    pty = new PtyHostService();
     const service = new SpawnService({
       graph, pty, baseUrl: 'http://127.0.0.1:4614', dataDir, nodeId: 'test-node',
       env: { ...process.env, TM8_AGENT_CMD: 'echo-agent' },
@@ -55,6 +60,13 @@ describe('444: a thread session does not inherit the target session posture', ()
       },
     } as unknown as SpawnService;
     port = createBridgeWorkerPort({ db: {} as Db, spawnService: spy });
+  }
+
+  beforeEach(async () => {
+    dataDir = await mkdtemp(join(tmpdir(), 'tm8-thread-posture-data-'));
+    projectDir = await mkdtemp(join(tmpdir(), 'tm8-thread-posture-proj-'));
+    pty = new PtyHostService();
+    wire(new FakeGraph({ workingDir: projectDir, permissionMode: 'interactive' }));
   });
 
   afterEach(async () => {
@@ -91,5 +103,14 @@ describe('444: a thread session does not inherit the target session posture', ()
       expect(thread!.manifest.launch[key]).toBe(work!.manifest.launch[key]);
     }
     expect(thread!.launchFacts?.credentials).toEqual(work!.launchFacts?.credentials);
+  });
+
+  it('runs as a worker even when the persona is a coordinated worker, so it never reports to the target', async () => {
+    wire(new CoordinatedPersonaGraph({ workingDir: projectDir, permissionMode: 'interactive' }));
+    await port.spawnWorker(AUTH, request({ parentSessionId: TARGET_ID }));
+    const [thread] = results;
+    expect(thread!.manifest.mode).toBe('worker');
+    expect(thread!.manifest.coordinator).toBeNull();
+    expect(graph.postureQueries).toEqual([]);
   });
 });
