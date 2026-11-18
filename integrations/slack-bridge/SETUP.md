@@ -35,6 +35,15 @@ You need:
 You do **not** need a public URL, a domain, a webhook or an open inbound port. The bridge uses Slack's
 **Socket Mode**: the tm8 machine opens a WebSocket to Slack and everything arrives over it.
 
+### Upgrading a node that already runs the WhatsApp bridge
+
+The release that brings Slack also applies migration 443, which `bun run local` and the other deploy paths run for
+you. It changes one thing for WhatsApp, for the better: the linked number's **own messages are attributed to its
+owner** and **@-mentions of the number** work, from what the runtime reports, for the first time. Before 443 every
+runtime state report failed on the server (Postgres error 42702), so the number's own ids were never recorded.
+Expect your own WhatsApp messages in bridged groups to show as you instead of as a guest after this upgrade.
+Nothing needs doing.
+
 ---
 
 ## Part A: create the Slack app (in Slack)
@@ -250,11 +259,31 @@ Type these in a connected channel. Answers post in the channel (not a thread), s
 | `/tm8 status` | What is running for this channel |
 | `/tm8 workers` | The workers and their numbers / handles |
 | `/tm8 stop <n or @handle>` | Stop a worker |
-| `/tm8 link <code>` | Link your Slack user to your tm8 member (only needed when your Slack email is not your verified tm8 email) |
+| `/tm8 link <code>` | Link your Slack user to your tm8 member, when you were not linked automatically ([Who tm8 recognises](#who-tm8-recognises)) or need admin-level commands |
 | `/tm8 whoami` | Who tm8 thinks you are |
 | `/tm8 help` | Every command |
 
 `/tm8 split` and `/tm8 invite` are WhatsApp-only and say so.
+
+### Who tm8 recognises
+
+tm8 links a Slack user to a tm8 member **automatically, by email**, only when **all** of these hold:
+
+- the Slack user is a **full member** of the workspace (or Enterprise Grid org) the Slack app is installed in.
+  Never a Slack **guest** (single- or multi-channel), never an external person in a **Slack Connect** shared
+  channel, never a user from another workspace or org;
+- their Slack profile email equals the **verified** email of a tm8 member who is **currently a member of the space
+  this bridge belongs to**;
+- exactly **one** tm8 member matches. Two or more matches link nobody.
+
+An automatic link is *asserted* trust. It names the person in tm8, but it is never enough for admin-level
+commands. Everyone else, including anyone who needs those commands, links themselves once:
+
+1. In tm8, open the space's **Settings → Linked identities** and click **Link Slack**. tm8 shows a code like
+   `TM8-ABC123`, valid for a short time.
+2. In a bridged Slack channel, send **`/tm8 link TM8-ABC123`**.
+
+Until then they are a guest. `/tm8 whoami` shows how tm8 sees you.
 
 ---
 
@@ -352,8 +381,11 @@ Tell your compliance team:
 - **Retention follows tm8, not Slack.** Slack's retention policies do not reach into tm8. Messages stay in tm8
   until tm8's own retention removes them.
 - **Network:** outbound only, HTTPS and WSS to Slack. No public URL, webhook or inbound firewall rule.
-- **People:** a Slack user whose Slack profile email matches a tm8 member's **verified** email is linked to that
-  member automatically. Everyone else is a guest until they run `/tm8 link`.
+- **People:** a full member of your own Slack workspace/org whose Slack email matches exactly one current member of
+  the bridged tm8 space (verified email) is linked to that member automatically, with limited (*asserted*) trust.
+  Slack guests, Slack Connect externals and other workspaces are never auto-linked. Everyone else is a guest until
+  they run `/tm8 link` ([Who tm8 recognises](#who-tm8-recognises)). Slack emails are used for that match only and
+  are not stored.
 - **Who can do what:** only a tm8 space admin can add a bridge; only the connection's owner can change its tokens.
 
 ---
