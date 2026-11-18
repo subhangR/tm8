@@ -16,7 +16,7 @@
  */
 import {
   BridgeConnectionAuthFrameSchema, type AuthFrame, type BridgeConnectionAuthFlow, type BridgeConnectionAuthFrame,
-  type ConversationsFrame, type GroupFrame,
+  type ConnectCredential, type ConversationsFrame, type GroupFrame, type RuntimeProvider,
 } from '@tm8/contract';
 import type { DbClaims } from '../db/types.js';
 import { fanOutToIdentity, type IdentityAddress, type SubscriptionRegistry } from '../events/subscriptions.js';
@@ -29,8 +29,11 @@ export interface BridgeRuntimeLink {
    * connected. The hub records `bridge_connections.runtime_id` itself, under
    * `claims`: the begin caller's OWN claims, never the bridges worker's, so
    * 398's bridge_runtime_connect admits only the connection's human owner.
+   * Never a runtime of another provider. `credential` (Slack's pasted tokens)
+   * rides this one frame only: never stored, returned or logged.
    */
-  connect(input: { provider: 'whatsapp'; connectionId: string; authFlow?: BridgeConnectionAuthFlow }, claims: DbClaims): Promise<{ runtimeId: string } | null>;
+  connect(input: { provider: RuntimeProvider; connectionId: string; authFlow?: BridgeConnectionAuthFlow; credential?: ConnectCredential },
+    claims: DbClaims): Promise<{ runtimeId: string } | null>;
   /** B1b-7: `disconnect {logout}` to the runtime holding the connection; false when no runtime is connected. */
   disconnect(connectionId: string, opts: { logout: boolean; runtimeId?: string | null }): Promise<boolean>;
   /** B1b-7: the runtime's live group list for one connection; never stored. Null when that runtime is not connected. */

@@ -492,12 +492,27 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
     },
     'bridges.connections.begin': requireHumanSession(async (ctx): Promise<BridgeConnectionBeginResult> => {
       const input = BridgeConnectionBeginInputSchema.parse(ctx.body);
+      // Slack's pasted tokens (v4) live in this local and the runtime's `connect`
+      // frame only: never an SQL argument, a stored row, a response or a log line.
+      const { credential } = input;
+      // The Slack app the tokens belong to (xapp-1-<A…>-…): not a secret, and all
+      // of the token SQL sees. One live connection per app on this node.
+      const appId = credential ? /^xapp-\d+-([A-Z0-9]+)-/.exec(credential.appToken)?.[1] ?? null : null;
       const claims = claimsFor(await deps.owner(), ctx, commandEnvelope(ctx));
       const row = await deps.db.tx(claims, q => q.rpc<Record<string, unknown>>('begin_bridge_connection', [
-        input.provider, input.label ?? null, input.connectionId ?? null, input.clientMutationId,
+        input.provider, input.label ?? null, input.connectionId ?? null, input.clientMutationId, appId,
       ]));
       const connection = connectionOf(row);
       const { runtime, connectionAuth } = options;
+      if (connection.provider === 'slack') {
+        // No QR relay: the runtime checks the tokens (auth.test) and answers `state`.
+        if (!runtime || !claims.identityId) return { connection, runtime: 'offline' };
+        const linked = await runtime.connect({
+          provider: 'slack', connectionId: connection.id, ...(credential ? { credential } : {}),
+        }, claims);
+        if (!linked) return { connection, runtime: 'offline' };
+        return { connection: { ...connection, runtimeId: linked.runtimeId }, runtime: 'connecting' };
+      }
       if (!runtime || !connectionAuth || !claims.identityId || connection.provider !== 'whatsapp') {
         return { connection, runtime: 'offline' };
       }

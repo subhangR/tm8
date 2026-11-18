@@ -193,7 +193,7 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'remove_bridge(uuid,integer,uuid,text)': BRIDGES,
   'internal.bridge_set_state(text,uuid,integer,uuid,text)': BRIDGES,
   // 421 (B1b-5): a connection is linked, offered and withdrawn by its human owner (§2.5).
-  'begin_bridge_connection(text,text,uuid,text)': CONNECTIONS,
+  'begin_bridge_connection(text,text,uuid,text,text)': CONNECTIONS,
   'offer_bridge_connection(uuid,uuid,text,text,text)': CONNECTIONS,
   'withdraw_bridge_connection(uuid,uuid,text)': CONNECTIONS,
   // 422 (option B): the hub's connect runs as the number's human owner, or as the bridges worker.

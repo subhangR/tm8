@@ -172,7 +172,7 @@ async function handle(
       const hello = frame as unknown as HelloFrame;
       const raw = await o.db.rpc<{ connections: { connectionId: string; allowlist: HelloReply['connections'][number]['allowlist'] }[] }>(
         claims, 'bridge_runtime_hello', [JSON.stringify(hello)]);
-      o.hub.noteHello(hello.runtimeId, hello.provider, hello.version);
+      o.hub.noteHello(hello.runtimeId, hello.provider, hello.version, hello.capabilities);
       const connections = await Promise.all(raw.connections.map(async (c) => ({
         connectionId: c.connectionId, stateKey: await o.hub.stateKey(c.connectionId), allowlist: c.allowlist,
       })));
@@ -227,10 +227,28 @@ async function inbound(
   frame: InboundFrame,
   claims: DbClaims,
 ): Promise<{ status: number; body: unknown }> {
+  // v4: an edit or a delete at the provider changes the stored copies (443 §5)
+  // and is never a new turn: no command, no routing, no wake, no delivery.
+  if ((frame.edit !== undefined && frame.edit !== null) || frame.deleted === true) {
+    const changed = await o.db.rpc<InboundResult>(claims, 'bridge_runtime_inbound_change', [JSON.stringify(frame)]);
+    return { status: changed.status === 'refused' ? 409 : 200, body: changed };
+  }
+  // v4: the sender's provider email links them to a member (443 §4) in this
+  // transaction, before the message is stored and its author resolved. The
+  // email goes to that check only: it is not in the frame the message is
+  // stored from.
+  // Called for every person (not only when an email came), so a link Slack
+  // definitively no longer backs (a guest, external, another workspace, another
+  // email) is revoked; unknown (no team info, no email) leaves it as it is.
+  const person = typeof frame.sender?.externalId === 'string' && frame.sender.bot !== true;
+  const stored: InboundFrame = frame.sender && 'email' in frame.sender
+    ? { ...frame, sender: { ...frame.sender, email: null } } : frame;
   const hook = o.commands?.();
   const result = await o.db.tx(claims, async (q) => {
+    if (person) await q.rpc('bridge_runtime_sender_email', [JSON.stringify(frame)]);
     let command = false;
-    if (hook && frame.sender?.externalId && typeof frame.body === 'string' && frame.body.length > 0) {
+    // A bot or app (Slack `bot: true`) never runs a command (review #1505, finding 1).
+    if (hook && frame.sender?.externalId && frame.sender.bot !== true && typeof frame.body === 'string' && frame.body.length > 0) {
       const bridgeId = await q.rpc<string | null>('bridge_runtime_bridge_for', [frame.connectionId, frame.conversationId]);
       if (bridgeId) {
         command = await hook.detect(frame.body, {
@@ -241,7 +259,7 @@ async function inbound(
         });
       }
     }
-    return q.rpc<InboundResult>('bridge_runtime_inbound', [JSON.stringify(frame), command]);
+    return q.rpc<InboundResult>('bridge_runtime_inbound', [JSON.stringify(stored), command]);
   });
   if (result.status === 'stored' && result.command && result.messageId && hook) {
     const messageId = result.messageId;

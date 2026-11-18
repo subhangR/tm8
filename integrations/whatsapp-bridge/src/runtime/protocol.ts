@@ -75,6 +75,8 @@ export type SenderRef = {
   avatarUrl?: string | null
   /** v4: the sender is a bot or app (Slack `bot_id`/`subtype: bot_message`). Never a tm8 member. */
   bot?: boolean
+  /** v4, Slack: the sender's home workspace and org, and whether Slack marks them a guest (is_restricted/is_ultra_restricted) or external (Slack Connect, another org). The server auto-links by email only for a full member of the connection's own install. Absent: no auto-link. */
+  team?: { teamId: string | null; enterpriseId: string | null; guest: boolean; external: boolean } | null
 }
 
 export type MediaRef = {

@@ -224,7 +224,7 @@ export interface BridgeParticipant {
   memberId: EntityId | null;
   /** The member's actor chip; null for a guest. */
   member: ActorSummary | null;
-  link: { method: 'code' | 'invite' | 'admin'; verifiedAt: string } | null;
+  link: { method: 'code' | 'invite' | 'admin' | 'email'; verifiedAt: string } | null;
   /** The link names the caller's own identity. */
   you: boolean;
 }
@@ -939,7 +939,7 @@ export interface BridgeIdentityLink {
   externalId: string;
   /** '…0001': the last four characters only. */
   masked: string;
-  method: 'code' | 'invite' | 'admin';
+  method: 'code' | 'invite' | 'admin' | 'email';
   /** linked = identity-scoped (code, invite); asserted = an admin's, for one space (D5). */
   trust: 'linked' | 'asserted';
   spaceId: string | null;
