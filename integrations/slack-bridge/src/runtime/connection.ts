@@ -526,9 +526,10 @@ export class SlackConnection {
     // Only a real message ts names a thread; a `cmd:` pseudo id (a slash command) answers in the channel.
     const threadTs = f.threadTs && TS.test(f.threadTs) ? f.threadTs : undefined
     if (f.media) return this.sendFile(f, threadTs)
-    const parts = splitMessage(toMrkdwn(f.text ?? ''))
-    if (!parts.length || !parts[0]!.trim()) throw new PermanentError('empty_message')
-    const voice = voiceParams(f.voice)
+    const body = toMrkdwn(f.text ?? '')
+    if (!body.trim()) throw new PermanentError('empty_message')
+    const { params: voice, prefix } = this.voice(f.voice)
+    const parts = splitMessage(prefix + body)
     const post = (text: string) => this.bot('chat.postMessage', { channel: f.conversationId, text, thread_ts: threadTs, ...voice, unfurl_links: false }, f.conversationId)
     const first = String((await post(parts[0]!)).body.ts)
     const all = [first]
@@ -589,14 +590,14 @@ export class SlackConnection {
       this.guard(f.conversationId, 'media')
       // A file is always posted as the app (uploads take no username/icon). With a voice, the caption follows as its
       // own voiced message in the same place, so the words still come from their author.
-      const voice = voiceParams(f.voice)
+      const { params: voice, prefix } = this.voice(f.voice)
       const caption = m.caption?.trim() ? toMrkdwn(m.caption) : ''
       const voiced = !!voice.username && !!caption
       const done = (await this.bot('files.completeUploadExternal', {
         files: [{ id: fileId, title: fileName }],
         channel_id: f.conversationId,
         thread_ts: threadTs,
-        initial_comment: caption && !voiced ? caption : undefined,
+        initial_comment: caption && !voiced ? prefix + caption : undefined,
       }, f.conversationId)).body
       const ts = shareTs(done.files?.[0], f.conversationId) ?? (await this.waitForShare(fileId, f.conversationId)) ?? `file:${fileId}`
       let captionTs: string | null = null
@@ -628,6 +629,19 @@ export class SlackConnection {
       }
     }
     return null
+  }
+
+  /**
+   * How a message is signed. With chat:write.customize granted, the author's name and icon replace the app's (no
+   * prefix). Without it Slack would refuse or ignore them, so the message goes as the app with a `*Name:*` prefix, as
+   * a WhatsApp message is signed. When Slack did not say which scopes it granted, customize is assumed.
+   */
+  private voice(v: Extract<ServerFrame, { type: 'send' }>['voice']): { params: Record<string, string>; prefix: string } {
+    const params = voiceParams(v)
+    if (!params.username) return { params: {}, prefix: '' }
+    const scopes = this.account?.scopes ?? []
+    if (!scopes.length || scopes.includes('chat:write.customize')) return { params, prefix: '' }
+    return { params: {}, prefix: `*${params.username.replace(/[*_~`<>&]/g, '')}:* ` }
   }
 
   /**

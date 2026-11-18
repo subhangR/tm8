@@ -52,6 +52,26 @@ describe('send', () => {
     assert.equal(b!.icon_emoji, ':robot_face:')
   })
 
+  test('without chat:write.customize the author signs the text instead (no username/icon sent)', async () => {
+    // A fresh link against an install that was not granted the scope.
+    r.slack.scopes = r.slack.scopes.filter((x) => x !== 'chat:write.customize')
+    r.tm8.push({ type: 'disconnect', connectionId: CONN })
+    await r.tm8.waitFor('state', (f) => f.detail === 'disconnected by the server')
+    const before = r.tm8.of('state').length
+    await r.connect(['C1'])
+    assert.ok(!r.tm8.of('state').slice(before).find((f) => f.status === 'linked').account.scopes.includes('chat:write.customize'))
+    await send({ text: 'Found it', voice: { username: 'brave-otter', iconUrl: 'https://tm8.example/a.png' } })
+    const m = r.slack.messages.at(-1)!
+    assert.equal(m.text, '*brave-otter:* Found it')
+    assert.equal(m.username, undefined)
+    assert.equal(m.icon_url, undefined)
+    // A file's caption carries the signature too, posted with the file.
+    r.tm8.media.set('fe-s', Buffer.from('x'))
+    await send({ voice: { username: 'brave-otter', iconUrl: null }, media: { kind: 'document', mime: 'text/plain', fileName: 'x.txt', caption: 'the log', fileEntityId: 'fe-s' } })
+    assert.equal(r.slack.callsOf('files.completeUploadExternal').at(-1)!.params.initial_comment, '*brave-otter:* the log')
+    assert.equal(r.slack.messages.filter((x) => x.username).length, 0)
+  })
+
   test('a long reply is split near 3,500 chars; sent answers the first part\'s ts', async () => {
     const para = (i: number) => `Paragraph ${i}: ` + 'lorem ipsum dolor sit amet '.repeat(40)
     const text = Array.from({ length: 8 }, (_, i) => para(i)).join('\n\n')
