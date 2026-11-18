@@ -280,10 +280,15 @@ tm8 links a Slack user to a tm8 member **automatically, by email**, only when **
 An automatic link is *asserted* trust. It names the person in tm8, but it is never enough for admin-level
 commands. Everyone else, including anyone who needs those commands, links themselves once:
 
-1. In tm8, open **Settings → Account → Linked identities** and click **Link Slack**. (A linked identity is yours
-   across tm8, not per space.) tm8 shows a code like
-   `TM8-ABC123`, valid for a short time.
-2. In a bridged Slack channel, send **`/tm8 link TM8-ABC123`**.
+1. In tm8, open **Settings → Account → Linked identities**. The section has one button per provider:
+   **Link WhatsApp** and **Link Slack**. Click **Link Slack**. (A linked identity is yours across tm8, not per
+   space.) A panel titled **Link your Slack** shows the command to send, `/tm8 link TM8-XXXXXX`, with a
+   **copy** button that copies the whole command. The code expires after 10 minutes (the panel counts down, then
+   reads *expired: make a new code*).
+2. In any Slack channel that tm8 is bridged to, send that command, e.g. **`/tm8 link TM8-ABC123`**.
+
+The code is shown **once**. Reloading the page loses it, and making a new code (the button then reads **New Slack
+code**) cancels the old one, so send the newest code you were shown.
 
 Until then they are a guest. `/tm8 whoami` shows how tm8 sees you.
 
