@@ -627,6 +627,60 @@ describe('444: Slack thread mode', () => {
     await setPolicy({ threadMode: 'mention' });
   });
 
+  it('a message deleted in Slack leaves no text in its thread sessions: title, manifest, brief', async () => {
+    const holders = (await owner<{ holder_id: string }>(
+      `select distinct holder_id::text from public.session_bridge_origins where bridge_id = $1 and command = '/thread'
+         and message_id = (select root_message_id from public.bridge_threads where bridge_id = $1 and root_external_id = $2)`,
+      [bridge, root])).map((r) => r.holder_id);
+    expect(holders.length).toBeGreaterThanOrEqual(2); // the first session and its replacement
+    const title = 'The login page 500s on Safari since this morning';
+    const brief = [
+      'You were started by a message in the Slack channel #eng-support, and you live in its thread.',
+      '',
+      'The message that started the thread (from Priya):',
+      `<@${BOT}> the login page 500s on Safari since this morning`,
+      '',
+      'The thread so far (oldest first):',
+      `- Priya: <@${BOT}> can you also add a regression test?`,
+      '- Priya: and on iOS?',
+    ].join('\n');
+    for (const sid of holders) {
+      expect((await owner<{ title: string }>('select title from public.work_sessions where entity_id = $1', [sid]))[0]!.title).toBe(title);
+      await owner(`insert into public.session_manifests(work_session_id, manifest) values ($1, $2::jsonb)
+        on conflict (work_session_id) do update set manifest = excluded.manifest`,
+        [sid, JSON.stringify({ session: { title }, promptExtra: brief })]);
+    }
+    const manifest = async (sid: string) => (await owner<{ manifest: { session: { title: string }; promptExtra: string } }>(
+      'select manifest from public.session_manifests where work_session_id = $1', [sid]))[0]!.manifest;
+    const extOf = async (body: string) => (await owner<{ e: string }>(`select o.external_message_id e from public.message_origins o
+      join public.messages m on m.entity_id = o.message_id where o.bridge_id = $1 and m.body = $2 and o.direction = 'in'`, [bridge, body]))[0]!.e;
+    const deleteAt = (ext: string) => db.rpc(runtime(), 'bridge_runtime_inbound_change', [JSON.stringify({
+      connectionId: connection, conversationId: CHANNEL, externalMessageId: ext, deleted: true,
+      sender: { externalId: OWNER_SLACK, altId: null, name: 'Priya', fromMe: false }, body: '', kind: 'text', media: [],
+      replyTo: null, mentions: [], ts: 1_790_400_000 })]);
+
+    // A reply goes: its history line does, the title stays.
+    await deleteAt(await extOf(`<@${BOT}> can you also add a regression test?`));
+    for (const sid of holders) {
+      const m = await manifest(sid);
+      expect(m.promptExtra).not.toContain('regression test');
+      expect(m.promptExtra).toContain('- Priya: [deleted]');
+      expect(m.promptExtra).toContain('the login page 500s'); // the root is still there
+      expect(m.session.title).toBe(title);
+    }
+
+    // The root goes: every session that held the thread is renamed, and its brief loses the root.
+    await deleteAt(root);
+    for (const sid of holders) {
+      expect((await owner<{ title: string }>('select title from public.work_sessions where entity_id = $1', [sid]))[0]!.title).toBe('Thread in #eng-support');
+      const m = await manifest(sid);
+      expect(m.session.title).toBe('Thread in #eng-support');
+      expect(JSON.stringify(m)).not.toMatch(/login page|500s on Safari/i);
+      expect(m.promptExtra).toContain('The message that started the thread (from Priya):\n[deleted]\n\nThe thread so far');
+      expect(m.promptExtra).toContain('- Priya: and on iOS?'); // other replies stay
+    }
+  });
+
   it('titles drop Slack mention markup', () => {
     expect(threadTitle('<@U0TM8BOT|tm8> fix the CSP header', 'eng')).toBe('Fix the CSP header');
     expect(threadTitle('<@U0TM8BOT>', 'eng')).toBe('Thread in #eng');

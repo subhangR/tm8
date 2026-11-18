@@ -28,12 +28,15 @@
 --   §6  bridge_outbox.thread_ts on insert: a Slack reply goes into the thread
 --       of the message it answers, and a thread session's own posts go into
 --       its thread. A slash command ('cmd:<trigger_id>') is never a thread.
+--   §7  A message deleted in Slack leaves no text in its thread's sessions:
+--       the title taken from the root, and stored launch briefs.
 --
 -- WHERE THE SESSION LIVES. A thread session is a child of the bridge's target
--- when the target is a work session. A bridge that targets a chat or a channel
--- has no session to hang it under, so its thread sessions are top-level
--- sessions run as the bridge's teammate (else the chat's), each bridged to its
--- own Slack thread only; the chat or channel keeps the channel's top level.
+-- when the target is a work session. A bridge that targets a chat has no
+-- session to hang it under, so its thread sessions are top-level sessions run
+-- as the bridge's teammate (else the chat's), each bridged to its own Slack
+-- thread only; the chat keeps the channel's top level. A bridge that targets a
+-- tm8 channel mirrors it: its thread mode is always 'off' (§1).
 -- =============================================================================
 
 set local lock_timeout = '5s';
@@ -796,6 +799,109 @@ $$;
 revoke all on function internal.bridge_outbox_thread_ts() from public;
 create trigger bridge_outbox_thread_ts before insert on public.bridge_outbox
 for each row execute function internal.bridge_outbox_thread_ts();
+
+-- -----------------------------------------------------------------------------
+-- §7. A message deleted in Slack leaves no text in its thread's sessions.
+--     443 tombstones the log copy and its routed copies (body '[deleted]',
+--     redacted_at). Lane F kept the text in two more places of its own:
+--       * the thread session's TITLE, made from the root's words, which also
+--         travels into the manifest (session.title), the session's handle,
+--         its outbox voice and its events;
+--       * the launch BRIEF (manifest.promptExtra) of a session started after a
+--         restart or as a replacement: the root under "The message that started
+--         the thread", and history lines "- <who>: <text>".
+--     When the ROOT is deleted, each session that held the thread is renamed
+--     "Thread in #<channel>" (unless someone renamed it to something not taken
+--     from the root), and the root section of its brief becomes '[deleted]'.
+--     When a REPLY is deleted, its history line in a brief becomes
+--     "- <who>: [deleted]". A resume replays the stored manifest, so it never
+--     sees the text again.
+--     THE LIMIT: a session already running has the text in its agent's context;
+--     nothing in the database can take it back. The same holds for 443's edits
+--     (an earlier version in a brief written before the edit is replaced only
+--     when the message is deleted).
+-- -----------------------------------------------------------------------------
+create or replace function internal.bridge_thread_brief_scrub(p_brief text, p_root boolean, p_line_text text)
+returns text language plpgsql immutable set search_path = public, internal, pg_temp as $$
+declare
+  head_at integer; body_at integer; tail_at integer; tail text;
+  lines text[]; i integer; suffix text;
+begin
+  if p_brief is null then return null; end if;
+  if p_root then
+    head_at := position('The message that started the thread' in p_brief);
+    if head_at = 0 then return p_brief; end if;
+    body_at := head_at + position(E'\n' in substr(p_brief, head_at));
+    if body_at = head_at then return p_brief; end if;
+    tail := substr(p_brief, body_at);
+    tail_at := position(E'\n\nThe thread so far (oldest first):' in tail);
+    return left(p_brief, body_at - 1) || '[deleted]' || case when tail_at > 0 then substr(tail, tail_at) else '' end;
+  end if;
+  if coalesce(p_line_text, '') = '' then return p_brief; end if;
+  suffix := ': ' || p_line_text;
+  lines := string_to_array(p_brief, E'\n');
+  for i in 1 .. coalesce(array_length(lines, 1), 0) loop
+    if lines[i] like '- %' and right(lines[i], char_length(suffix)) = suffix then
+      lines[i] := left(lines[i], char_length(lines[i]) - char_length(p_line_text)) || '[deleted]';
+    end if;
+  end loop;
+  return array_to_string(lines, E'\n');
+end
+$$;
+revoke all on function internal.bridge_thread_brief_scrub(text, boolean, text) from public;
+
+create or replace function internal.bridge_thread_scrub() returns trigger
+language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  th public.bridge_threads; b public.bridges; is_root boolean; line_text text;
+  sid uuid; ws public.work_sessions; new_title text; old_tok text; new_tok text; words text;
+begin
+  select * into th from public.bridge_threads where root_message_id = coalesce(old.root_message_id, old.entity_id);
+  if th.bridge_id is null then return null; end if;
+  is_root := old.entity_id = th.root_message_id;
+  select * into b from public.bridges where entity_id = th.bridge_id;
+  -- A history line holds the message cut to 500 and its whitespace collapsed (threads.ts brief()).
+  line_text := regexp_replace(left(coalesce(old.body, ''), 500), '\s+', ' ', 'g');
+  new_title := left('Thread in #' || coalesce(nullif(b.conversation ->> 'title', ''), 'slack'), 500);
+  -- The root's words as threadTitle() reads them: mentions out, whitespace collapsed.
+  words := lower(btrim(regexp_replace(regexp_replace(coalesce(old.body, ''), '<@[A-Za-z0-9]+(\|[^>]*)?>', ' ', 'g'), '\s+', ' ', 'g')));
+
+  for sid in
+    select distinct x.sid from (
+      select o.holder_id as sid from public.session_bridge_origins o
+       where o.bridge_id = th.bridge_id and o.message_id = th.root_message_id and o.command = '/thread'
+      union select th.session_id) x
+     where x.sid is not null
+  loop
+    update public.session_manifests
+       set manifest = jsonb_set(manifest, '{promptExtra}',
+                        to_jsonb(internal.bridge_thread_brief_scrub(manifest ->> 'promptExtra', is_root, line_text)))
+     where work_session_id = sid and jsonb_typeof(manifest -> 'promptExtra') = 'string'
+       and internal.bridge_thread_brief_scrub(manifest ->> 'promptExtra', is_root, line_text) <> manifest ->> 'promptExtra';
+    continue when not is_root;
+    select * into ws from public.work_sessions where entity_id = sid;
+    -- Only a title taken from the root (threadTitle: its first words, maybe cut with '…').
+    continue when ws.entity_id is null or ws.title = new_title
+      or position(lower(rtrim(ws.title, '…')) in words) = 0;
+    old_tok := to_jsonb(ws.title)::text;
+    new_tok := to_jsonb(new_title)::text;
+    update public.work_sessions set title = new_title where entity_id = sid;
+    update public.entities set version = version + 1, updated_at = now() where id = sid;
+    update public.session_manifests set manifest = replace(manifest::text, old_tok, new_tok)::jsonb
+     where work_session_id = sid and strpos(manifest::text, old_tok) > 0;
+    update public.bridge_handles set title = left(new_title, 80) where entity_id = sid and title = left(ws.title, 80);
+    update public.bridge_outbox set payload = replace(payload::text, old_tok, new_tok)::jsonb
+     where bridge_id = th.bridge_id and session_id = sid and strpos(payload::text, old_tok) > 0;
+    update public.workspace_events set payload = replace(payload::text, old_tok, new_tok)::jsonb
+     where space_id = b.space_id and subject_ids && array[sid] and strpos(payload::text, old_tok) > 0;
+  end loop;
+  return null;
+end
+$$;
+revoke all on function internal.bridge_thread_scrub() from public;
+create trigger messages_bridge_thread_scrub after update of redacted_at on public.messages
+for each row when (old.redacted_at is null and new.redacted_at is not null)
+execute function internal.bridge_thread_scrub();
 
 reset role;
 
