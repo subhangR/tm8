@@ -67,6 +67,7 @@ let runtime: Runtime;
 let link: HttpWsLink;
 let stateDir = '';
 let dataDir = '';
+let hellos = 0;
 let runtimeToken = '';
 let browserToken = '';
 const spaceId = randomUUID(), ownerMember = randomUUID(), teammate = randomUUID(), target = randomUUID();
@@ -223,7 +224,8 @@ beforeAll(async () => {
     runtimeId: RUNTIME_ID,
     token: () => runtimeToken,
     log: (m) => runtimeLog.push(m),
-    onOpen: () => ref.runtime!.hello(),
+    // Counted, so the test begins only once the node has taken this runtime's hello.
+    onOpen: async () => { await ref.runtime!.hello(); hellos++; },
     onFrame: (f) => ref.runtime!.onFrame(f),
   });
   runtime = new Runtime({ runtimeId: RUNTIME_ID, stateDir, link, log: (m) => runtimeLog.push(m), api: new SlackApi(slack.apiUrl, new Egress({})) });
@@ -240,6 +242,7 @@ afterAll(async () => {
       '== pg activity', JSON.stringify(await database.query(`select pid, usename, state, wait_event_type, wait_event,
         extract(epoch from now() - query_start)::int as secs, left(query, 160) as query from pg_stat_activity
         where datname = current_database() and pid <> pg_backend_pid() order by query_start`).catch((e) => String(e)), null, 1),
+      '== connections', await dump('select id, status, runtime_id, label, created_at from public.bridge_connections order by created_at'),
       '== threads', await dump('select * from public.bridge_threads'),
       '== origins', await dump('select message_id, direction, external_message_id, command_state from public.message_origins'),
       '== deliveries', await dump('select message_id, target_work_session_id, status, failure_reason from public.session_message_deliveries'),
@@ -270,11 +273,11 @@ describe('Slack end to end: real server + real slack-bridge runtime + fake Slack
   let handle = '';
 
   it('1. begin with pasted tokens: the runtime checks them with auth.test and the connection goes linked with its account', async () => {
-    const begun = await until('a Slack runtime to take the begin', async () => {
-      const r = await call('/v2/me/bridge-connections', browserToken, { clientMutationId: randomUUID(), provider: 'slack',
-        credential: { kind: 'slack_tokens', botToken: slack.botToken, appToken: slack.appToken } });
-      return r.status === 200 && r.body.data.runtime === 'connecting' ? r : undefined;
-    });
+    await until('the runtime hello', () => hellos > 0);
+    const begun = await call('/v2/me/bridge-connections', browserToken, { clientMutationId: randomUUID(), provider: 'slack',
+      credential: { kind: 'slack_tokens', botToken: slack.botToken, appToken: slack.appToken } });
+    expect(begun.status, begun.raw).toBe(200);
+    expect(begun.body.data.runtime).toBe('connecting');
     expect(begun.raw).not.toContain(slack.botToken);
     expect(begun.raw).not.toContain(slack.appToken);
     connectionId = begun.body.data.connection.id;
