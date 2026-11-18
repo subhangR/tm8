@@ -397,6 +397,12 @@ export interface BridgeConnectionView {
   offers: BridgeConnectionOffer[];
   /** Slack (v4): the workspace the tokens belong to, from the runtime's `auth.test`; null until linked, absent on WhatsApp. */
   account?: SlackAccount | null;
+  /**
+   * The runtime's last `state.detail` for this connection. On Slack, the auth.test error code behind `logged_out`
+   * (invalid_auth, not_authed, not_allowed_token_type, missing_scope: <scope>, account_inactive, no_credential).
+   * Display only, never a token.
+   */
+  detail?: string | null;
 }
 export interface BridgeConnectionListResult { items: BridgeConnectionView[] }
 
@@ -819,6 +825,7 @@ export const BridgeConnectionViewSchema: z.ZodType<BridgeConnectionView> = z.obj
     enterpriseName: z.string().nullable(), botUserId: z.string(), botId: z.string().nullable(), botName: z.string(),
     scopes: z.array(z.string()),
   }).strict().nullable().optional(),
+  detail: z.string().max(500).nullable().optional(),
 }).strict();
 /** Exactly one of `qrPng` and `pairingCode`. */
 export const BridgeConnectionAuthFrameSchema: z.ZodType<BridgeConnectionAuthFrame> = z.object({
