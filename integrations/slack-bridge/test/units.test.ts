@@ -28,6 +28,17 @@ describe('toMrkdwn', () => {
     ['escapes', 'a < b && c > d', 'a &lt; b &amp;&amp; c &gt; d'],
     ['inline code is left alone', 'run `a **b** <c>` now', 'run `a **b** &lt;c&gt;` now'],
     ['fenced code drops the language and is left alone', 'x\n```ts\nconst a = **b** < c\n```\ny **z**', 'x\n```\nconst a = **b** &lt; c\n```\ny *z*'],
+    // Link targets that are not web or mail URLs must never become Slack control tokens (they would ping people).
+    ['a link to !channel stays text', 'see [here](!channel)', 'see here (!channel)'],
+    ['a link to !here stays text', '[x](!here)', 'x (!here)'],
+    ['a link to a user group stays text', '[x](!subteam^S123)', 'x (!subteam^S123)'],
+    ['a link to a user id stays text', '[boss](@U0123ABC)', 'boss (@U0123ABC)'],
+    ['a javascript: link stays text', '[x](javascript:alert(1))', 'x (javascript:alert(1))'],
+    ['a bare-target link stays text', '[](!everyone)', '!everyone'],
+    ['raw control tokens are escaped', '<!channel> <@U1> <!subteam^S1>', '&lt;!channel&gt; &lt;@U1&gt; &lt;!subteam^S1&gt;'],
+    ['a pipe or angle bracket in a URL cannot open a token', '[x](https://a.io/|<!channel)', '<https://a.io/%7C%3C!channel|x>'],
+    ['mailto links', '[mail](mailto:a@b.io)', '<mailto:a@b.io|mail>'],
+    ['an autolink with a pipe is encoded', '<https://a.io/x|y>', '<https://a.io/x%7Cy>'],
     ['snake_case words are not italics', 'my_var_name and a*b*c', 'my_var_name and a*b*c'],
   ]
   for (const [name, md, out] of cases) test(name, () => assert.equal(toMrkdwn(md), out))

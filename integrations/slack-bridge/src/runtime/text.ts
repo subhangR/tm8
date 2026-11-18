@@ -5,6 +5,11 @@
 /** A message part's ceiling. Slack truncates `text` past 40,000 chars and renders long blocks badly; 3,500 reads well. */
 export const SPLIT_AT = 3500
 
+/** The only link targets that become Slack links: anything else inside <…> is a Slack control token. */
+const SAFE_TARGET = /^(https?:\/\/|mailto:)/i
+/** A URL inside <…|…>: the characters Slack parses there (`<`, `>`, `|`) percent-encoded. */
+const safeUrl = (u: string) => u.replace(/[<>|]/g, encodeURIComponent)
+
 const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 /** tm8 markdown → Slack mrkdwn: bold, italics, strike, links, code, lists, headings, quotes. */
@@ -26,13 +31,16 @@ function inline(text: string): string {
   let s = text
   // Inline code first: nothing inside it is formatting.
   s = s.replace(/`([^`\n]+)`/g, (_, c: string) => hold('`' + escape(c) + '`'))
-  // Links and images: <url|label>. A label keeps its own formatting out (Slack would show it raw).
+  // Links and images: <url|label>, for web and mail targets ONLY. Slack reads any other <…> as a control token, so a
+  // target like `!channel`, `!here`, `!subteam^S1` or `@U1` would ping people: such a "link" is kept as plain text.
   s = s.replace(/!?\[([^\]\n]*)\]\(\s*<?([^\s)>]+)>?(?:\s+"[^"]*")?\s*\)/g, (_, label: string, url: string) => {
     const l = label.replace(/[*_~`]/g, '').trim()
-    return hold(l && l !== url ? `<${url.replace(/[|>]/g, encodeURIComponent)}|${escape(l)}>` : `<${url.replace(/[|>]/g, encodeURIComponent)}>`)
+    if (!SAFE_TARGET.test(url)) return hold(escape(l ? `${l} (${url})` : url))
+    const target = safeUrl(url)
+    return hold(l && l !== url ? `<${target}|${escape(l)}>` : `<${target}>`)
   })
   // Bare autolinks <https://…>.
-  s = s.replace(/<(https?:\/\/[^\s>]+)>/g, (_, url: string) => hold(`<${url}>`))
+  s = s.replace(/<(https?:\/\/[^\s>]+)>/g, (_, url: string) => hold(`<${safeUrl(url)}>`))
   s = escape(s)
   const lines = s.split('\n').map((line) => {
     // Headings: Slack has none; a bold line reads as one.
