@@ -105,6 +105,17 @@ describe('BridgeRuntimeHub capability sheet', () => {
     expect(got.get('wa')!.map((f) => f.type)).toEqual(['typing']);
   });
 
+  it('a runtime that sent no sheet gets the author as a prefix, never an unattributed reply', async () => {
+    const { hub, got, add } = harness(() => [send('bare', 'c3')]);
+    add('bare', 'slack', null);
+    hub.kick();
+    await settle();
+    const frame = got.get('bare')![0]!;
+    expect(frame).toMatchObject({ type: 'send', text: 'Infra Bot: hi' });
+    expect(frame).not.toHaveProperty('voice');
+    expect(frame).not.toHaveProperty('threadTs');
+  });
+
   it('sends threadTs and voice only where the sheet has native threads and perUserVoice', async () => {
     const { hub, got, add } = harness(() => [send('sl', 'c1'), send('wa', 'c2')]);
     add('wa', 'whatsapp', WHATSAPP_CAPABILITIES);
@@ -113,7 +124,7 @@ describe('BridgeRuntimeHub capability sheet', () => {
     await settle();
     expect(got.get('sl')![0]).toMatchObject({ type: 'send', threadTs: '1.2', voice: { username: 'Infra Bot', iconUrl: null } });
     const wa = got.get('wa')![0]!;
-    expect(wa).toMatchObject({ type: 'send', text: 'hi' });
+    expect(wa).toMatchObject({ type: 'send', text: 'Infra Bot: hi' });
     expect(wa).not.toHaveProperty('threadTs');
     expect(wa).not.toHaveProperty('voice');
   });

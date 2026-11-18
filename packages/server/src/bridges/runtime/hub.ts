@@ -391,7 +391,10 @@ export class BridgeRuntimeHub {
   /**
    * Fit a frame to the runtime's capability sheet (§5): no `typing` or `read`
    * where the sheet says false (Slack bots have neither), `threadTs` only on
-   * native threads, `voice` only where perUserVoice. Null: nothing to send.
+   * native threads, `voice` only where perUserVoice. A runtime whose sheet does
+   * not say perUserVoice (none sent, or false) gets the author back in front of
+   * the text as `Name: ` rather than an unattributed reply (review #1505, 7).
+   * Null: nothing to send.
    */
   private forRuntime(runtimeId: string, frame: ServerFrame): ServerFrame | null {
     const link = this.runtimes.get(runtimeId);
@@ -400,7 +403,12 @@ export class BridgeRuntimeHub {
     if (frame.type !== 'send') return frame;
     const out = { ...frame };
     if (out.threadTs !== undefined && link?.capabilities?.threads !== 'native') delete out.threadTs;
-    if (out.voice !== undefined && link?.capabilities?.perUserVoice !== true) delete out.voice;
+    if (out.voice !== undefined && link?.capabilities?.perUserVoice !== true) {
+      const signed = (t: string) => `${out.voice!.username}: ${t}`;
+      if (out.text !== undefined) out.text = signed(out.text);
+      else if (out.media) out.media = { ...out.media, caption: signed(out.media.caption) };
+      delete out.voice;
+    }
     return out;
   }
 
