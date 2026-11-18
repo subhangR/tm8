@@ -6,11 +6,12 @@
 //   Slack (v4): a conversation id is a channel id (`C…`/`G…`), a message id is the message `ts` ("1700000000.123456"),
 //   a person is a user id (`U…`/`W…`, org-wide on Enterprise Grid). A thread is named by its root message's ts.
 //
-// TWO BYTE-IDENTICAL COPIES (coordinator ruling, B1b, 2026-10-30). The canonical one is
-// packages/contract/src/bridge-runtime-protocol.ts, exported from @tm8/contract for tm8-server. The mirror is
-// integrations/whatsapp-bridge/src/runtime/protocol.ts, because the runtime's Docker context is that directory alone
-// and the server's rootDir cannot reach it. Edit both together: packages/contract/test/bridge-runtime-protocol.test.ts
-// fails when they differ. The module stays dependency-free.
+// BYTE-IDENTICAL COPIES (coordinator ruling, B1b, 2026-10-30; a third copy in v4). The canonical one is
+// packages/contract/src/bridge-runtime-protocol.ts, exported from @tm8/contract for tm8-server. The mirrors are
+// integrations/whatsapp-bridge/src/runtime/protocol.ts and integrations/slack-bridge/src/runtime/protocol.ts, because
+// each runtime's Docker context is its own directory alone and the server's rootDir cannot reach it. Edit all copies
+// together: packages/contract/test/bridge-runtime-protocol.test.ts fails when they differ. The module stays
+// dependency-free.
 
 // v2: group.create follows sourceConversationId's community. Servers refuse source-based creates on v1 runtimes.
 // v3: outbound attachments are authenticated HTTP streams, never whole-file WS frames.
