@@ -3,6 +3,7 @@
 #   /app/state    TM8_SLACK_STATE_DIR: each connection's sealed tokens. Persistent volume; back it up (SETUP.md).
 #   /app/secrets  the bridge_runtime bearer the tm8 node writes (TM8_SLACK_RUNTIME_TOKEN_FILE on the node), ro.
 # Network: outbound HTTPS to slack.com / *.slack.com and WSS to wss-*.slack.com, plus the tm8 server. Nothing inbound.
+# Behind a proxy: -e TM8_SLACK_PROXY_URL=http://proxy:3128 (or HTTPS_PROXY / NO_PROXY); SETUP.md › Behind a proxy.
 #
 #   docker build -t tm8-slack-runtime integrations/slack-bridge
 #   docker run -d --name slack-runtime --restart unless-stopped --user "$(id -u):$(id -g)" \

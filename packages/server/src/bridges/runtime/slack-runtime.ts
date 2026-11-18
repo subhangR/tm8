@@ -23,9 +23,11 @@ export const SLACK_RUNTIME_LABEL = 'slack-runtime';
 /**
  * Read by the runtime itself, not the server: set on the node, they reach the
  * supervised runtime. TM8_SLACK_API_URL is the Web API base (the fake-Slack
- * seam); TM8_SLACK_RUNTIME_ID names the runtime (default slack-<hostname>).
+ * seam); TM8_SLACK_RUNTIME_ID names the runtime (default slack-<hostname>);
+ * TM8_SLACK_PROXY_URL is the proxy for all Slack traffic. HTTPS_PROXY and
+ * NO_PROXY reach it as part of the inherited environment.
  */
-const PASSED_THROUGH = ['TM8_SLACK_API_URL', 'TM8_SLACK_RUNTIME_ID'] as const;
+const PASSED_THROUGH = ['TM8_SLACK_API_URL', 'TM8_SLACK_RUNTIME_ID', 'TM8_SLACK_PROXY_URL'] as const;
 
 export interface SlackRuntimePlan {
   readonly label: string;

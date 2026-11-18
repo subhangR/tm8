@@ -48,6 +48,7 @@ describe('slackRuntimePlan', () => {
       TM8_SLACK_RUNTIME_CWD: '/opt/slack-bridge',
       TM8_SLACK_API_URL: 'http://127.0.0.1:9999/api/',
       TM8_SLACK_RUNTIME_ID: 'slack-test',
+      TM8_SLACK_PROXY_URL: 'http://proxy:3128',
     }, host(['/opt/slack-bridge/src/runtime-main.ts', '/opt/slack-bridge/node_modules']));
     expect(plan?.tokenFile).toBe('/run/slack.token');
     expect(plan?.stateDir).toBe('/vol/slack');
@@ -56,6 +57,7 @@ describe('slackRuntimePlan', () => {
       TM8_SLACK_STATE_DIR: '/vol/slack',
       TM8_SLACK_API_URL: 'http://127.0.0.1:9999/api/',
       TM8_SLACK_RUNTIME_ID: 'slack-test',
+      TM8_SLACK_PROXY_URL: 'http://proxy:3128',
     });
   });
 

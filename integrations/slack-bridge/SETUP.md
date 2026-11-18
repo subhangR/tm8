@@ -26,7 +26,7 @@ You need:
 | A Slack account that may **create apps** in your workspace, or an **Org Owner / Org Admin** on Enterprise Grid (or one who will approve the app for you) | Slack only lets these people install apps |
 | A tm8 node you are the **owner** of (you claimed it) and a **space admin** role in the space you will bridge into | Only the node owner's server can start the Slack runtime; only a space admin can add a bridge |
 | On the tm8 machine: **node 22**, **npm** (comes with node), **bun**, **git**, and the tm8 checkout | The Slack runtime is a small Node program the tm8 server starts |
-| Outbound internet from the tm8 machine to `slack.com` and `*.slack.com` on port 443 (HTTPS and WSS) | The runtime connects **out** to Slack. Nothing connects in |
+| Outbound internet from the tm8 machine to `slack.com` and `*.slack.com` on port 443 (HTTPS and WSS), directly or through your HTTP(S) proxy | The runtime connects **out** to Slack. Nothing connects in. Proxy: see [Behind a proxy](#behind-a-proxy) |
 
 You do **not** need a public URL, a domain, a webhook or an open inbound port. The bridge uses Slack's
 **Socket Mode**: the tm8 machine opens a WebSocket to Slack and everything arrives over it.
@@ -365,10 +365,36 @@ Tell your compliance team:
 | `not_in_channel` or `channel_not_found` when tm8 replies | The bot was removed from the channel, or it is a private channel it was never invited to | `/invite @tm8` again |
 | Nothing happens on `@tm8`, connection shows disconnected | The runtime is not running or cannot reach Slack | Check the server log for `slack-runtime` lines (B3); run `bun run doctor` |
 | `slack-runtime not started: … npm ci` in the log | The runtime's dependencies are not installed | `(cd integrations/slack-bridge && npm ci)`, restart tm8 |
-| Socket never connects; Web API errors like `ECONNREFUSED`, `ETIMEDOUT`, `getaddrinfo` | A firewall or proxy blocks Slack | Allow **outbound** TCP 443 from the tm8 machine to `slack.com`, `*.slack.com` (Web API, `files.slack.com`) and `wss-*.slack.com` (Socket Mode). The runtime connects directly; it does not use an HTTP proxy (`HTTPS_PROXY` is not read), so these hosts must be reachable without one. TLS interception (a corporate MITM certificate) also breaks it: exempt these hosts |
+| Socket never connects; Web API errors like `ECONNREFUSED`, `ETIMEDOUT`, `getaddrinfo` | A firewall or proxy blocks Slack, or the network needs a proxy and none is set | Allow **outbound** TCP 443 to `slack.com`, `*.slack.com` (Web API, `files.slack.com`) and `wss-*.slack.com` (Socket Mode), or set a proxy ([Behind a proxy](#behind-a-proxy)). TLS interception (a corporate MITM certificate) breaks it: exempt these hosts from inspection |
+| Errors naming the proxy (`407`, `CONNECT` refused, proxy timeout) | The proxy refuses the runtime, or needs a login | Put the login in the URL (`http://user:password@proxy:3128`); ask the proxy's admins to allow `CONNECT` to `slack.com`, `*.slack.com` and `files.slack.com` on 443 |
 | Replies arrive slowly in a busy channel; log shows `ratelimited` / 429 | Slack allows about one message per second per channel | Nothing to do: tm8 queues and retries after Slack's `Retry-After`. Use **Mention** rather than **Every message** in busy channels |
 | `/tm8` says the app did not respond | The runtime is down, or the command reached a workspace where the app is not installed | Check B3; on Grid, add the app to that workspace (A3 step 4) |
 | After a restart the connection asks for tokens again | The sealed state directory was lost or moved | See [Where the tokens live](#where-the-tokens-live-and-keeping-them); paste the tokens again and keep the directory on persistent storage |
+
+---
+
+## Behind a proxy
+
+If the tm8 machine reaches the internet only through an HTTP(S) proxy, tell the Slack runtime about it, in the same
+place you set `TM8_SLACK_RUNTIME=1` (B2):
+
+```bash
+TM8_SLACK_PROXY_URL=http://proxy.example.com:3128
+# with a login:  TM8_SLACK_PROXY_URL=http://user:password@proxy.example.com:3128
+```
+
+- `TM8_SLACK_PROXY_URL` carries **all** Slack traffic: the Web API, the Socket Mode WebSocket, and file uploads and
+  downloads. A `user:password@` in it is sent to the proxy as `Proxy-Authorization`. tm8 treats it as a secret and
+  never shows its value.
+- Without it, the runtime uses the standard variables: `HTTPS_PROXY` / `https_proxy` (`HTTP_PROXY` for plain
+  http), skipping hosts in `NO_PROXY` / `no_proxy` (`*`, `host`, `.domain`, `*.domain`, `host:port`). If your
+  shell or service already sets these for everything else, the runtime picks them up and you need nothing more.
+  `TM8_SLACK_PROXY_URL` wins over them. Note that tm8's own settings files (`.env.<slot>.local`,
+  `~/.config/tm8/bridges.env`) carry only `TM8_*` settings: put `HTTPS_PROXY` in the real environment tm8 starts
+  in, or use `TM8_SLACK_PROXY_URL` there instead.
+- The runtime's own link to the tm8 server (loopback) never goes through the proxy.
+- The proxy must allow `CONNECT` to `slack.com`, `*.slack.com` and `files.slack.com` on port 443. It must not
+  inspect (MITM) that TLS.
 
 ---
 
@@ -415,6 +441,7 @@ Set these where you set `TM8_SLACK_RUNTIME` (B2). Only the first is needed on a 
 | `TM8_SLACK_RUNTIME_TOKEN_FILE` | `<TM8_DATA_DIR>/bridges/slack-runtime.token` | Where the server writes the runtime's login. Set alone: the server mints, you run the runtime |
 | `TM8_SLACK_RUNTIME_COMMAND` | unset | JSON argv to run instead of the default, e.g. `["docker","start","-a","slack-runtime"]` |
 | `TM8_SLACK_RUNTIME_CWD` | `<checkout>/integrations/slack-bridge` | Folder the runtime starts in |
+| `TM8_SLACK_PROXY_URL` | unset | HTTP(S) proxy for all Slack traffic ([Behind a proxy](#behind-a-proxy)); `HTTPS_PROXY` / `NO_PROXY` are used when it is unset |
 | `TM8_SLACK_RUNTIME_ID` | `slack-<hostname>` | The runtime's name in tm8 |
 | `TM8_SLACK_API_URL` | `https://slack.com/api/` | Slack Web API base. Only for tests against a fake Slack |
 
