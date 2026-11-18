@@ -13,6 +13,7 @@
  *   prefix; a 429 with retryAfterSec waits; the retry settles sent.
  * - each connection reaches its own runtime only.
  */
+import { readFileSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -30,7 +31,7 @@ import { loadConfig } from '../../src/http/config.js';
 import { formatToken, generateSecret, hashToken } from '../../src/identity/crypto.js';
 import { issueBridgeRuntimeSession } from '../../src/identity/pg-auth.js';
 import { bootstrap, type BootstrappedServer } from '../../src/main.js';
-import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from '../db/w1-pg.js';
+import { MIGRATIONS_DIR, createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from '../db/w1-pg.js';
 
 vi.setConfig({ testTimeout: 180_000, hookTimeout: 300_000 });
 
@@ -115,6 +116,10 @@ const inbound = (frame: Record<string, unknown>) => call('/v2/bridge-runtime/inb
 
 /** A full member of the connection's own workspace, as the runtime reports it (SenderRef.team). */
 const OWN_TEAM = { teamId: 'T0ACME', enterpriseId: null, guest: false, external: false };
+/** 443's internal.bridge_outbox_voice, as written (a test restates it to poison one row, then restores it). */
+const MIGRATION_443 = readFileSync(join(MIGRATIONS_DIR, '443_bridge_slack_provider.sql'), 'utf8');
+const VOICE_FN = MIGRATION_443.slice(MIGRATION_443.indexOf('create or replace function internal.bridge_outbox_voice'),
+  MIGRATION_443.indexOf('$$;', MIGRATION_443.indexOf('create or replace function internal.bridge_outbox_voice')) + 3);
 const linksOf = (sender: string) => database.query<{ method: string; revoked: boolean }>(
   `select method, revoked_at is not null as revoked from public.bridge_identity_links
     where provider = 'slack' and external_id = $1 order by verified_at`, [sender]);
@@ -489,6 +494,32 @@ describe('a Slack channel end to end (lane A ac3)', () => {
     const origins = await database.query<{ external_message_id: string }>(
       `select external_message_id from public.message_origins where message_id = $1 and direction = 'out'`, [answer]);
     expect(origins).toEqual([{ external_message_id: '1790000001.000300' }]);
+  });
+
+  it('a member with an https avatar posts: voice carries it; one bad row fails alone and the queue goes on (lane G)', async () => {
+    const AVATAR = 'https://avatars.example/owner.png';
+    const poison = randomUUID();
+    await database.transaction(async (c) => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`update public.user_profiles set avatar = $2 where identity_id = $1`, [ownerIdentity, AVATAR]);
+      // An older row whose frame cannot be built: 443's voice function, made to raise for this one message.
+      await c.query(VOICE_FN.replace(/\bbegin\n/, `begin\n  if p_message = '${poison}'::uuid then raise exception 'poisoned row'; end if;\n`));
+      await c.query(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'message',$3)`, [poison, spaceId, ownerMember]);
+      await c.query(`insert into public.messages(entity_id, anchor_id, author_id, body) values ($1,$2,$3,'poisoned')`, [poison, slackBridge, ownerMember]);
+    });
+    slackFrames.length = 0;
+    const posted = await call('/v2/messages', browserToken, { anchorIds: [slackBridge], body: 'deploying now', clientMutationId: randomUUID() });
+    expect(posted.status, posted.raw).toBe(200);
+    const isSend = (f: ServerFrame): f is Extract<ServerFrame, { type: 'send' }> => f.type === 'send' && f.connectionId === slackConnection;
+    const send = await until(() => slackFrames.find(isSend));
+    expect(send).toMatchObject({ text: 'deploying now', voice: { username: 'Owner', iconUrl: AVATAR } });
+    const [bad] = await database.query<{ status: string; last_error: string }>(
+      'select status, last_error from public.bridge_outbox where message_id = $1', [poison]);
+    expect(bad!.status).toBe('failed_permanent');
+    expect(bad!.last_error).toBe('take_failed: P0001: poisoned row');
+    await database.transaction(async (c) => { await c.query('set local role tm8_graph_owner'); await c.query(VOICE_FN); });
+    expect((await call('/v2/bridge-runtime/sent', runtimeToken,
+      { outboxId: send.outboxId, connectionId: slackConnection, externalMessageId: '1790000001.000400', message: null })).body).toMatchObject({ status: 'sent' });
   });
 
   it('a renamed channel renames the bridge\'s conversation', async () => {

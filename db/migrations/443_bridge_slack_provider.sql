@@ -587,7 +587,8 @@ begin
   end if;
   return jsonb_build_object(
     'username', left(coalesce(nullif(btrim(who), ''), 'tm8'), 80),
-    'iconUrl', case when icon ~ '^https://[^\s]{1,2000}$' then icon end);
+    -- (Postgres caps a regex bound at 255: no {1,2000} here, it would not compile.)
+    'iconUrl', case when length(icon) <= 2000 and icon ~ '^https://\S+$' then icon end);
 end
 $$;
 revoke all on function internal.bridge_outbox_voice(uuid, text, uuid, uuid, uuid) from public;
@@ -597,7 +598,7 @@ revoke all on function internal.bridge_outbox_voice(uuid, text, uuid, uuid, uuid
 -- and a reaction on one is never sent (it is not a message the provider holds).
 create or replace function internal.bridge_outbox_take(p_runtime_ids text[], p_limit integer) returns jsonb
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
-declare r record; frames jsonb := '[]'::jsonb; reason text;
+declare r record; frames jsonb := '[]'::jsonb; reason text; frame jsonb;
 begin
   perform internal.require_bridges_worker();
   for r in
@@ -643,8 +644,11 @@ begin
       update public.bridge_outbox set status = 'failed_permanent', settled_at = now(), last_error = reason where id = r.id;
       continue;
     end if;
-    update public.bridge_outbox set status = 'dispatching', attempts = attempts + 1, dispatched_at = now() where id = r.id;
-    frames := frames || jsonb_build_array(jsonb_build_object('runtimeId', r.runtime_id, 'frame',
+    -- One bad row never stalls the queue for every connection (lane G's e2e):
+    -- a row whose frame cannot be built fails alone, with the error, and the
+    -- loop goes on.
+    begin
+    frame :=
       case r.kind
         when 'send' then jsonb_strip_nulls(jsonb_build_object('type', 'send', 'outboxId', r.id,
           'connectionId', r.connection_id, 'conversationId', r.conv, 'text', r.payload ->> 'text',
@@ -665,7 +669,15 @@ begin
                       internal.bridge_outbox_voice(r.bridge_id, r.poster, r.teammate_id, r.session_id, r.message_id))
                else '{}'::jsonb end
         else jsonb_build_object('type', 'react', 'outboxId', r.id, 'connectionId', r.connection_id,
-          'conversationId', r.conv, 'target', r.payload -> 'target', 'emoji', r.payload ->> 'emoji') end));
+          'conversationId', r.conv, 'target', r.payload -> 'target', 'emoji', r.payload ->> 'emoji') end;
+    update public.bridge_outbox set status = 'dispatching', attempts = attempts + 1, dispatched_at = now() where id = r.id;
+    frames := frames || jsonb_build_array(jsonb_build_object('runtimeId', r.runtime_id, 'frame', frame));
+    exception when others then
+      update public.bridge_outbox
+         set status = 'failed_permanent', settled_at = now(),
+             last_error = left('take_failed: ' || sqlstate || ': ' || sqlerrm, 300)
+       where id = r.id;
+    end;
   end loop;
   return frames;
 end
