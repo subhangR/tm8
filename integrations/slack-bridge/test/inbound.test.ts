@@ -167,6 +167,18 @@ describe('reactions, edits, deletes', () => {
     assert.equal(fs[2].reaction.emoji, '👍🏼')
   })
 
+  test('reaction_removed is forwarded deliberately: the same reaction shape with an empty emoji (WhatsApp\'s removal)', async () => {
+    const target = r.slack.ts()
+    await deliver({ type: 'reaction_removed', user: 'U1', reaction: 'eyes', item: { type: 'message', channel: 'C1', ts: target } })
+    await deliver({ type: 'reaction_removed', user: 'U0BOT', reaction: 'eyes', item: { type: 'message', channel: 'C1', ts: target } })
+    await deliver({ type: 'reaction_removed', user: 'U1', reaction: 'eyes', item: { type: 'message', channel: 'C2', ts: target } })
+    const fs = await got(1)
+    assert.equal(fs.length, 1)
+    assert.deepEqual(fs[0].reaction, { externalMessageId: target, emoji: '' })
+    assert.equal(fs[0].body, '')
+    assert.equal(fs[0].sender.externalId, 'U1')
+  })
+
   test('message_changed with an edit is an edit of that message; Slack\'s own bookkeeping changes are not', async () => {
     const ts = r.slack.ts()
     await deliver({ type: 'message', subtype: 'message_changed', channel: 'C1', hidden: true, ts: r.slack.ts(),
@@ -247,6 +259,27 @@ describe('channel state', () => {
     r.tm8.push({ type: 'send', outboxId: 'o-arch', connectionId: CONN, conversationId: 'C1', text: 'hello?' })
     assert.deepEqual((await r.tm8.waitFor('sent')).failed, { reason: 'not_a_member', retryable: false })
     assert.equal(r.slack.callsOf('chat.postMessage').length, 0)
+  })
+
+  test('unarchive (channel_ and group_) gives canSend back; group_rename and group_archive act like channel_', async () => {
+    await deliver({ type: 'channel_archive', channel: 'C1', user: 'U1' })
+    r.slack.channels.get('C1')!.archived = false
+    await deliver({ type: 'channel_unarchive', channel: 'C1', user: 'U1' })
+    await deliver({ type: 'group_rename', channel: { id: 'G1', name: 'secret-2', created: 1 } })
+    await deliver({ type: 'group_archive', channel: 'G1' })
+    r.slack.channels.get('G1')!.archived = false
+    await deliver({ type: 'group_unarchive', channel: 'G1' })
+    await sleep(60)
+    assert.deepEqual(states().map((s) => [s.conversationId, s.canSend, s.reason, s.archived ?? null, s.name ?? null]), [
+      ['C1', false, 'not_a_member', true, null],
+      ['C1', true, null, false, 'eng'],
+      ['G1', true, null, null, 'secret-2'],
+      ['G1', false, 'not_a_member', true, null],
+      ['G1', true, null, false, 'secret'],
+    ])
+    // Posting works again after the unarchive.
+    r.tm8.push({ type: 'send', outboxId: 'o-unarch', connectionId: CONN, conversationId: 'C1', text: 'back' })
+    assert.equal((await r.tm8.waitFor('sent', (f) => f.outboxId === 'o-unarch')).failed, undefined)
   })
 
   test('the bot removed (member_left_channel) and re-invited (member_joined_channel)', async () => {
