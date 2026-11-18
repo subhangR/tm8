@@ -39,7 +39,7 @@ export async function rig(o: { stateDir?: string; key?: Buffer; slack?: FakeSlac
     link,
     log,
     api: new SlackApi(slack.apiUrl, o.egress),
-    tuning: { pingMs: 250, backoffMs: () => 30, sharePollMs: 20 },
+    tuning: { pingMs: 250, helloTimeoutMs: 400, backoffMs: () => 30, sharePollMs: 20 },
   })
   ref.runtime = runtime
   const r = {

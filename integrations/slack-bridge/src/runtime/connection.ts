@@ -60,6 +60,8 @@ export type ConnectionOptions = {
   openMedia?: OpenMedia
   /** Socket liveness ping, ms (default 30 s). */
   pingMs?: number
+  /** How long a new socket may take to say hello, ms (default 15 s). */
+  helloTimeoutMs?: number
   /** Reconnect backoff after the n-th failure, ms. */
   backoffMs?: (failures: number) => number
   /** How long a users.info answer is trusted (default 1 h). */
@@ -188,10 +190,13 @@ export class SlackConnection {
       appToken: () => this.tokens?.appToken ?? '',
       log: (m) => this.o.log(`[slack ${this.connectionId}] ${m}`),
       pingMs: this.o.pingMs,
+      helloTimeoutMs: this.o.helloTimeoutMs,
       backoffMs: this.o.backoffMs,
       ackPayload: (env) => this.ackPayload(env),
       onEnvelope: (env) => this.onEnvelope(env),
       onOpen: () => {
+        // A routine refresh (a new socket replacing a live one) is not news to the server.
+        if (this.status === 'linked') return
         this.setStatus('linked')
         this.o.log(`[slack ${this.connectionId}] linked to ${account.teamName} as @${account.botName}`)
         for (const id of this.allowlist.conversationIds()) void this.refreshCanSend(id)

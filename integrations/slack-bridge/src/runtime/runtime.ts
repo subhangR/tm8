@@ -26,7 +26,7 @@ export type RuntimeOptions = {
   log: (m: string) => void
   api?: SlackApi
   /** Per-connection tuning, for tests. */
-  tuning?: { pingMs?: number; backoffMs?: (n: number) => number; userTtlMs?: number; sharePollMs?: number }
+  tuning?: { pingMs?: number; helloTimeoutMs?: number; backoffMs?: (n: number) => number; userTtlMs?: number; sharePollMs?: number }
 }
 
 type Failed = { reason: string; retryable: boolean; retryAfterSec?: number }

@@ -197,14 +197,34 @@ describe('Socket Mode lifecycle', () => {
     assert.deepEqual(ack, { envelope_id: id })
   })
 
-  test('disconnect refresh_requested opens a fresh socket at once, and events flow on it', async () => {
+  test('disconnect refresh_requested: the new socket says hello BEFORE the old one closes; no offline in between (review #7)', async () => {
     const r = await linked()
     const opened = r.slack.sockets.length
+    const statesBefore = r.tm8.of('state').length
     r.slack.disconnect('refresh_requested')
     await r.slack.waitForSocket(opened + 1)
+    await waitUntil(() => r.slack.socketTimes[opened - 1]!.closedAt !== null, 3000, 'the old socket to close')
+    const oldT = r.slack.socketTimes[opened - 1]!
+    const newT = r.slack.socketTimes[opened]!
+    assert.ok(newT.helloAt !== null && oldT.closedAt! >= newT.helloAt, `old closed ${oldT.closedAt}, new hello ${newT.helloAt}`)
+    // A routine refresh is invisible to the server: no offline, no second linked.
+    assert.deepEqual(r.tm8.of('state').slice(statesBefore), [])
     const ts = r.slack.ts()
     await r.slack.waitForAck(r.slack.event({ type: 'message', channel: 'C1', user: 'U1', text: 'after refresh', ts }))
     await r.tm8.waitFor('inbound', (f) => f.externalMessageId === ts)
+  })
+
+  test('a socket that never says hello is given up after the timeout and a new one opened (review #7)', async () => {
+    const r = await linked()
+    const opened = r.slack.sockets.length
+    r.slack.sayHello = false
+    r.slack.dropSocket()
+    await r.tm8.waitFor('state', (f) => f.status === 'offline')
+    // The silent socket is closed by the runtime (no hello within 400 ms), and another is tried.
+    await waitUntil(() => r.slack.socketTimes.length > opened && r.slack.socketTimes[opened]!.closedAt !== null, 3000, 'the silent socket to be given up')
+    r.slack.sayHello = true
+    await waitUntil(() => r.tm8.of('state').filter((s) => s.status === 'linked').length >= 2, 5000, 'linked again')
+    assert.equal(r.slack.socketTimes[opened]!.helloAt, null)
   })
 
   test('a dropped socket goes offline and comes back linked', async () => {

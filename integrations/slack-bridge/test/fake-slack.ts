@@ -142,8 +142,14 @@ export class FakeSlack {
 
   // -- Socket Mode --------------------------------------------------------------------------------------------------
 
+  /** When each socket opened, said hello and closed (ms timestamps), by index in `sockets`. */
+  readonly socketTimes: { openedAt: number; helloAt: number | null; closedAt: number | null }[] = []
+
   private onSocket(ws: WebSocket) {
     this.sockets.push(ws)
+    const times = { openedAt: Date.now(), helloAt: null as number | null, closedAt: null as number | null }
+    this.socketTimes.push(times)
+    ws.on('close', () => { times.closedAt = Date.now() })
     ws.on('message', (data) => {
       const m = JSON.parse(String(data))
       if (m.envelope_id) {
@@ -151,6 +157,7 @@ export class FakeSlack {
         for (const w of this.ackWaiters.splice(0)) w()
       }
     })
+    if (this.sayHello) times.helloAt = Date.now()
     if (this.sayHello) ws.send(JSON.stringify({ type: 'hello', num_connections: 1, debug_info: { host: 'fake', approximate_connection_time: 18060 }, connection_info: { app_id: 'A0FAKEAPP' } }))
     for (const w of this.socketWaiters.splice(0)) w()
   }
