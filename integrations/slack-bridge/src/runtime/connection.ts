@@ -669,21 +669,50 @@ export class SlackConnection {
   // channels: the live picker list and posting rights
   // ------------------------------------------------------------------------------------------------------------
 
-  /** The picker's list: the channels the bot is in (public and private), fetched live and never cached (D28). */
+  /**
+   * The picker's list: the channels the bot is in (public and private), fetched live and never cached (D28).
+   * On an org-wide Enterprise Grid install the token spans workspaces and Slack's listing methods need a team_id:
+   * the list is gathered per approved workspace (auth.teams.list). A channel shared between workspaces is listed once,
+   * and a name used in more than one workspace (every one has a #general) is told apart by its workspace's name.
+   */
   async listConversations(): Promise<ConversationItem[]> {
     if (!this.tokens) throw new Error('Slack is not connected')
-    const items: ConversationItem[] = []
+    const workspaces = this.account?.isEnterpriseInstall ? await this.workspaces() : [null]
+    const seen = new Map<string, { item: ConversationItem; workspace: string | null }>()
+    let pages = 0
+    for (const ws of workspaces) {
+      let cursor: string | undefined
+      do {
+        if (++pages > 100) break // a runaway cursor; 20,000 channels is past any picker
+        const { body } = await this.bot('users.conversations', { types: 'public_channel,private_channel', exclude_archived: true, limit: 200, cursor, team_id: ws?.id })
+        for (const c of body.channels ?? []) {
+          if (!c?.id || c.is_archived || seen.has(c.id)) continue
+          seen.set(c.id, {
+            item: { conversationId: c.id, kind: c.is_private ? 'private_channel' : 'channel', name: c.name ?? c.id, size: typeof c.num_members === 'number' ? c.num_members : null, canSend: true, reason: null },
+            workspace: ws?.name ?? null,
+          })
+        }
+        cursor = body.response_metadata?.next_cursor || undefined
+      } while (cursor)
+    }
+    const count = new Map<string, number>()
+    for (const { item } of seen.values()) count.set(item.name, (count.get(item.name) ?? 0) + 1)
+    return [...seen.values()]
+      .map(({ item, workspace }) => ((count.get(item.name) ?? 0) > 1 && workspace ? { ...item, name: `${item.name} (${workspace})` } : item))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  /** The workspaces an org-wide install was approved into (auth.teams.list, every page). */
+  private async workspaces(): Promise<{ id: string; name: string }[]> {
+    const out: { id: string; name: string }[] = []
     let cursor: string | undefined
     for (let page = 0; page < 50; page++) {
-      const { body } = await this.bot('users.conversations', { types: 'public_channel,private_channel', exclude_archived: true, limit: 200, cursor })
-      for (const c of body.channels ?? []) {
-        if (!c?.id || c.is_archived) continue
-        items.push({ conversationId: c.id, kind: c.is_private ? 'private_channel' : 'channel', name: c.name ?? c.id, size: typeof c.num_members === 'number' ? c.num_members : null, canSend: true, reason: null })
-      }
+      const { body } = await this.bot('auth.teams.list', { limit: 100, cursor })
+      for (const t of body.teams ?? []) if (t?.id) out.push({ id: String(t.id), name: String(t.name ?? t.id) })
       cursor = body.response_metadata?.next_cursor || undefined
       if (!cursor) break
     }
-    return items.sort((a, b) => a.name.localeCompare(b.name))
+    return out
   }
 
   /** Learns whether the bot may post in a connected channel and tells the server when that changes. */

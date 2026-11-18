@@ -45,7 +45,9 @@ Setting up a Slack app and pasting its tokens into tm8 is covered in `SETUP.md`.
     on that message earlier is removed.
   - `media.fetch`: `files.info`, then `url_private` with the bot token, limited to `maxBytes`, and only for a file
     shared in that channel.
-  - `conversation.list`: `users.conversations`.
+  - `conversation.list`: `users.conversations`. On an org-wide Enterprise Grid install, the runtime calls it once
+    per workspace from `auth.teams.list`, passing `team_id`. A shared channel is listed once, and a name used in two
+    workspaces gets its workspace in brackets, e.g. `general (Acme EU)`.
   - A 429 is reported as `failed {retryable: true, retryAfterSec}`.
   - `typing` and `read` are ignored. `group.*` frames are answered with an error.
 
@@ -85,7 +87,8 @@ fakes. Nothing inside the process is stubbed:
     records acks;
   - upload and `url_private` endpoints;
   - fault injection (`rateLimit(method, times, retryAfter)`, `fail(method, error)`);
-  - the org-wide Enterprise Grid `auth.test` shape (`team.isEnterpriseInstall = true`).
+  - org-wide Enterprise Grid installs (`team.isEnterpriseInstall = true`, `workspaces`, channels in several
+    workspaces): `auth.test` answers with the org, and listing without a `team_id` is refused as Slack does.
 
   An end-to-end test of tm8-server plus this runtime can import it.
 - `test/fake-tm8.ts`, a fake tm8-server: the `/v2/bridge-runtime/<route>` POSTs (recorded), `outbound-media`, and
@@ -97,6 +100,7 @@ fakes. Nothing inside the process is stubbed:
 | `connect.test.ts` | linking, sealing, Grid, bad tokens, restart, logout, Socket Mode lifecycle, heartbeat |
 | `inbound.test.ts` | the allowlist drop, messages, mentions, threads, files, reactions, edits, deletes, slash commands, channel state |
 | `outbound.test.ts` | send (mrkdwn, split, thread, voice), 429 and error mapping, reactions, files out and in, the channel list |
+| `grid.test.ts` | org-wide Enterprise Grid installs (per-workspace listing, W… users, posting, files) and workspace installs on Grid |
 | `units.test.ts` | mrkdwn, splitting, Slack text, emoji, failure mapping, sealing, the allowlist |
 
 CI runs the suites in `.github/workflows/slack-bridge.yml` (until installed, `ci/slack-bridge.workflow.yml`) whenever this directory or the canonical protocol module

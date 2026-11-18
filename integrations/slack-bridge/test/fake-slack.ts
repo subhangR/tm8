@@ -18,7 +18,8 @@ import type { AddressInfo } from 'node:net'
 import { WebSocketServer, type WebSocket } from 'ws'
 
 export type FakeUser = { id: string; name: string; realName?: string; email?: string | null; avatar?: string | null; bot?: boolean }
-export type FakeChannel = { id: string; name: string; private?: boolean; member?: boolean; archived?: boolean; members?: number }
+/** `teams`: the workspaces the channel is in (Grid: a shared channel is in several); default the main workspace. */
+export type FakeChannel = { id: string; name: string; private?: boolean; member?: boolean; archived?: boolean; members?: number; teams?: string[] }
 export type FakeFile = { id: string; name: string; mimetype: string; bytes: Buffer; channels: string[]; title?: string }
 export type PostedMessage = { channel: string; ts: string; text: string; thread_ts?: string; username?: string; icon_url?: string; icon_emoji?: string; params: Record<string, string> }
 export type ApiCall = { method: string; token: string | null; params: Record<string, string> }
@@ -30,6 +31,11 @@ export class FakeSlack {
   readonly appToken = ['xapp', '1', 'A0FAKEAPP', '3000000003', 'fake0app0token'].join('-')
   team = { id: 'T0FAKE', name: 'Acme', url: 'https://acme.enterprise.slack.com/', enterpriseId: 'E0FAKE' as string | null, enterpriseName: 'Acme Corp' as string | null, isEnterpriseInstall: false }
   bot = { userId: 'U0BOT', botId: 'B0BOT', name: 'tm8' }
+  /**
+   * The workspaces an org-wide Grid install (team.isEnterpriseInstall) was approved into: auth.teams.list answers
+   * them, and on such an install users.conversations / conversations.list refuse to run without a team_id.
+   */
+  workspaces: { id: string; name: string }[] = [{ id: 'T0FAKE', name: 'Acme' }]
   scopes = ['app_mentions:read', 'channels:history', 'channels:read', 'chat:write', 'chat:write.customize', 'files:read', 'files:write', 'groups:history', 'groups:read', 'reactions:read', 'reactions:write', 'users:read', 'users:read.email', 'commands']
 
   readonly users = new Map<string, FakeUser>()
@@ -100,7 +106,7 @@ export class FakeSlack {
   }
 
   channel(c: FakeChannel) {
-    this.channels.set(c.id, { member: true, ...c })
+    this.channels.set(c.id, { member: true, teams: [this.team.id], ...c })
     return this.channels.get(c.id)!
   }
 
@@ -291,9 +297,22 @@ export class FakeSlack {
         if (!u) return json(200, { ok: false, error: 'user_not_found' })
         return ok({ user: { id: u.id, name: u.name.toLowerCase(), real_name: u.realName ?? u.name, is_bot: !!u.bot, profile: { display_name: u.name, real_name: u.realName ?? u.name, email: u.email ?? undefined, image_72: u.avatar ?? undefined, image_192: u.avatar ?? undefined } } })
       }
-      case 'users.conversations': {
+      case 'auth.teams.list': {
+        // One per page, to exercise the cursor.
+        const start = Number(params.cursor || 0)
+        const page = this.team.isEnterpriseInstall ? this.workspaces.slice(start, start + 1) : start ? [] : [{ id: this.team.id, name: this.team.name }]
+        const next = this.team.isEnterpriseInstall && start + 1 < this.workspaces.length ? String(start + 1) : ''
+        return ok({ teams: page.map((t) => ({ id: t.id, name: t.name })), response_metadata: { next_cursor: next } })
+      }
+      case 'users.conversations':
+      case 'conversations.list': {
+        // An org-wide token must name the workspace (Slack: missing_argument); a workspace token may not name another.
+        if (this.team.isEnterpriseInstall && !params.team_id) return json(200, { ok: false, error: 'missing_argument' })
+        const team = params.team_id || this.team.id
+        if (!this.team.isEnterpriseInstall && team !== this.team.id) return json(200, { ok: false, error: 'team_access_not_granted' })
+        if (this.team.isEnterpriseInstall && !this.workspaces.some((w) => w.id === team)) return json(200, { ok: false, error: 'team_access_not_granted' })
         const types = (params.types ?? 'public_channel').split(',')
-        const all = [...this.channels.values()].filter((c) => c.member && (params.exclude_archived !== 'true' || !c.archived) && types.includes(c.private ? 'private_channel' : 'public_channel'))
+        const all = [...this.channels.values()].filter((c) => (method === 'conversations.list' || c.member) && (c.teams ?? [this.team.id]).includes(team) && (params.exclude_archived !== 'true' || !c.archived) && types.includes(c.private ? 'private_channel' : 'public_channel'))
         // Two per page, to exercise the cursor.
         const start = Number(params.cursor || 0)
         const page = all.slice(start, start + 2)
