@@ -10,7 +10,7 @@
  */
 import { z } from 'zod';
 import type { ActorSummary, EntityId, SpaceId } from './contract.js';
-import type { ConversationItem, GroupMemberResult } from './bridge-runtime-protocol.js';
+import type { ConversationItem, GroupMemberResult, SlackAccount } from './bridge-runtime-protocol.js';
 
 export const BRIDGE_PROVIDERS = ['whatsapp', 'telegram', 'slack', 'discord', 'instagram', 'messenger'] as const;
 export type BridgeProvider = typeof BRIDGE_PROVIDERS[number];
@@ -62,7 +62,16 @@ export interface BridgePolicy {
   voice: 'named' | 'plain';
   /** One line, at most 300 characters, riding every inbound envelope. */
   style: string | null;
+  /**
+   * Slack only (protocol v4, native threads). `mention` (the default for a new Slack bridge): every top-level message
+   * that @mentions the bot starts its own session, a child of the bridge's target session, living in that Slack
+   * thread; replies in the thread route to it and resume it. `every`: every top-level message does. `off`: the channel
+   * behaves like a WhatsApp group (trigger/target as usual). Absent on providers without native threads.
+   */
+  threadMode?: BridgeThreadMode;
 }
+export type BridgeThreadMode = 'off' | 'mention' | 'every';
+export const BRIDGE_THREAD_MODES = ['off', 'mention', 'every'] as const;
 
 export interface BridgeFacts {
   provider: BridgeProvider;
@@ -386,6 +395,14 @@ export interface BridgeConnectionView {
   createdAt: string;
   lastSeenAt: string | null;
   offers: BridgeConnectionOffer[];
+  /** Slack (v4): the workspace the tokens belong to, from the runtime's `auth.test`; null until linked, absent on WhatsApp. */
+  account?: SlackAccount | null;
+  /**
+   * The runtime's last `state.detail` for this connection. On Slack, the auth.test error code behind `logged_out`
+   * (invalid_auth, not_authed, not_allowed_token_type, missing_scope: <scope>, account_inactive, no_credential).
+   * Display only, never a token.
+   */
+  detail?: string | null;
 }
 export interface BridgeConnectionListResult { items: BridgeConnectionView[] }
 
@@ -395,7 +412,13 @@ export interface BridgeConnectionBeginInput extends BridgeCommand {
   /** Relink one of the caller's own connections instead of linking a new number. */
   connectionId?: string;
   authFlow?: BridgeConnectionAuthFlow;
+  /**
+   * Slack (v4): the pasted tokens. Required for a new Slack connection, optional on a relink (rotation). Forwarded to
+   * the runtime on `connect` only, sealed there, never stored by the server, never returned, never logged.
+   */
+  credential?: BridgeConnectionCredential;
 }
+export type BridgeConnectionCredential = { kind: 'slack_tokens'; botToken: string; appToken: string };
 /**
  * `runtime: 'connecting'`: the runtime was asked to connect and its QR or
  * pairing code arrives as `bridge.connection.auth` on the caller's own event
@@ -643,6 +666,7 @@ export const BridgePolicySchema: z.ZodType<BridgePolicy> = z.object({
   whoMayTrigger: z.enum(['linked', 'anyone']),
   voice: z.enum(['named', 'plain']),
   style: OneLine(BRIDGE_STYLE_MAX).nullable(),
+  threadMode: z.enum(BRIDGE_THREAD_MODES).optional(),
 }).strict();
 const BridgePolicyPatchSchema = z.object({
   trigger: z.enum(['mention', 'every', 'none']).optional(),
@@ -651,6 +675,7 @@ const BridgePolicyPatchSchema = z.object({
   whoMayTrigger: z.enum(['linked', 'anyone']).optional(),
   voice: z.enum(['named', 'plain']).optional(),
   style: OneLine(BRIDGE_STYLE_MAX).nullable().optional(),
+  threadMode: z.enum(BRIDGE_THREAD_MODES).optional(),
 }).strict();
 const QuietHoursSchema = z.object({ start: Hhmm, end: Hhmm }).strict()
   .refine(q => q.start !== q.end, 'start and end must differ');
@@ -744,13 +769,27 @@ export const BridgeConnectionAuthFlowSchema: z.ZodType<BridgeConnectionAuthFlow>
   z.object({ kind: z.literal('qr') }).strict(),
   z.object({ kind: z.literal('pairing'), phone: z.string().regex(/^\+?[0-9]{6,20}$/, 'a phone number in international form, digits only') }).strict(),
 ]);
+/** Slack token shapes (contract only: the runtime's auth.test is the real check). */
+export const SLACK_BOT_TOKEN_RE = /^xoxb-\d+-\d+-[A-Za-z0-9]+$/;
+export const SLACK_APP_TOKEN_RE = /^xapp-\d+-[A-Z0-9]+-\d+-[A-Za-z0-9]+$/;
 export const BridgeConnectionBeginInputSchema: z.ZodType<BridgeConnectionBeginInput> = z.object({
   ...Command,
   provider: BridgeProviderSchema,
   label: ConnectionLabel.optional(),
   connectionId: Id.optional(),
   authFlow: BridgeConnectionAuthFlowSchema.optional(),
-}).strict();
+  credential: z.object({
+    kind: z.literal('slack_tokens'),
+    botToken: z.string().trim().max(300)
+      .regex(SLACK_BOT_TOKEN_RE, 'a Slack bot token looks like xoxb-<digits>-<digits>-<letters and digits> (OAuth & Permissions)'),
+    appToken: z.string().trim().max(300)
+      .regex(SLACK_APP_TOKEN_RE, 'a Slack app-level token looks like xapp-<digit>-<id>-<digits>-<hex> (Basic Information → App-Level Tokens)'),
+  }).strict().optional(),
+}).strict()
+  .refine(i => !i.credential || i.provider === 'slack', { message: 'credential is for provider slack', path: ['credential'] })
+  .refine(i => !i.authFlow || i.provider === 'whatsapp', { message: 'authFlow is for provider whatsapp', path: ['authFlow'] })
+  .refine(i => i.provider !== 'slack' || i.credential !== undefined || i.connectionId !== undefined,
+    { message: 'a new Slack connection needs credential (the bot and app-level tokens)', path: ['credential'] });
 export const BridgeConnectionOfferInputSchema: z.ZodType<BridgeConnectionOfferInput> = z.object({
   ...Command,
   connectionId: Id.optional(),
@@ -788,6 +827,12 @@ export const BridgeConnectionViewSchema: z.ZodType<BridgeConnectionView> = z.obj
   status: z.enum(['linked', 'connecting', 'logged_out', 'offline', 'removed']),
   runtimeId: z.string().nullable(), createdAt: z.string(), lastSeenAt: z.string().nullable(),
   offers: z.array(BridgeConnectionOfferSchema),
+  account: z.object({
+    teamId: z.string(), teamName: z.string(), url: z.string(), enterpriseId: z.string().nullable(),
+    enterpriseName: z.string().nullable(), isEnterpriseInstall: z.boolean(), botUserId: z.string(), botId: z.string().nullable(), botName: z.string(),
+    scopes: z.array(z.string()),
+  }).strict().nullable().optional(),
+  detail: z.string().max(500).nullable().optional(),
 }).strict();
 /** Exactly one of `qrPng` and `pairingCode`. */
 export const BridgeConnectionAuthFrameSchema: z.ZodType<BridgeConnectionAuthFrame> = z.object({
