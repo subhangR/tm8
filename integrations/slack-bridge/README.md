@@ -10,14 +10,19 @@ Setting up a Slack app and pasting its tokens into tm8 is covered in `SETUP.md`.
 ## What it does
 
 - **One Socket Mode socket per connection** (`src/runtime/socket-mode.ts`). It calls `apps.connections.open` with the
-  app-level token (`xapp-…`), acks every envelope with its `envelope_id` before doing any work, opens a new socket when
-  Slack sends `disconnect`, and reopens with backoff when the socket drops or stops answering pings. There is no
-  public URL and no inbound port.
+  app-level token (`xapp-…`) and acks every envelope with its `envelope_id` before doing any work. When Slack sends
+  `disconnect`, it opens a new socket and closes the old one only after the new one says `hello`. It gives up on a
+  socket that never says hello, and reopens with backoff when a socket drops or stops answering pings. There is no
+  public URL and no inbound port. One Slack app runs on one connection only: Socket Mode spreads an app's events
+  over all of its sockets, so a second connection on the same app is refused with `logged_out`
+  `app_already_connected`.
 - **Tokens.** A `connect` with `credential: {kind: 'slack_tokens', botToken, appToken}` is checked with `auth.test`.
   The `x-oauth-scopes` header gives the scopes. On success the tokens are sealed with AES-256-GCM under the
   connection's `stateKey` in `<TM8_SLACK_STATE_DIR>/bridges/<connectionId>/tokens.seal` (directory 0700, file 0600),
   and the runtime sends `state linked` with the `account`. Bad tokens produce `state logged_out` whose detail is
   Slack's error code (`app_token: <code>` for the xapp token). No token appears in any frame, log line or error.
+  Only a dead token (`invalid_auth`, `not_authed`, `account_inactive`, `token_revoked`, `token_expired`,
+  `app_uninstalled`) logs the connection out and deletes the seal. Any other refusal fails only that request.
   A `connect` with no credential, or a `hello` reply, unseals the stored tokens. If nothing is stored, the runtime
   sends `no_credential`. `disconnect {logout: true}` deletes the sealed tokens.
 - **The allowlist guard (D28)** (`src/runtime/allowlist.ts`). An event from a channel that is not connected is acked,
@@ -37,19 +42,33 @@ Setting up a Slack app and pasting its tokens into tm8 is covered in `SETUP.md`.
   joining a channel become `conversation-state` frames.
 - **Outbound.**
   - `send`: tm8 markdown is converted to Slack mrkdwn and split at about 3,500 characters. Each part goes out with
-    `chat.postMessage`, using `thread_ts`, plus `username`/`icon_url` when the frame has a `voice`.
+    `chat.postMessage`, using `thread_ts`, plus `username`/`icon_url` when the frame has a `voice`. Without the
+    `chat:write.customize` scope, the message is signed `*Name:* ` instead. Only `http(s)` and `mailto` link
+    targets become Slack links. Any other target stays plain text, because Slack would read it as a control token
+    such as `<!channel>`.
   - Files: the bytes stream from the server's authenticated `outbound-media` route, then go through
     `files.getUploadURLExternal`, the upload, and `files.completeUploadExternal`. A file is always posted as the app.
     With a voice, the caption follows as a separate voiced message.
   - `react`: `reactions.add`. The emoji is converted from unicode to Slack's name, and the reaction the runtime put
     on that message earlier is removed.
   - `media.fetch`: `files.info`, then `url_private` with the bot token, limited to `maxBytes`, and only for a file
-    shared in that channel.
+    shared in that channel. The token goes only to `https://files.slack.com`, and every redirect is checked before
+    it is followed.
   - `conversation.list`: `users.conversations`. On an org-wide Enterprise Grid install, the runtime calls it once
     per workspace from `auth.teams.list`, passing `team_id`. A shared channel is listed once, and a name used in two
-    workspaces gets its workspace in brackets, e.g. `general (Acme EU)`.
+    workspaces gets its workspace in brackets, e.g. `general (Acme EU)`. A workspace that fails is skipped and
+    logged, and the 10,000-channel cap applies per workspace.
   - A 429 is reported as `failed {retryable: true, retryAfterSec}`.
   - `typing` and `read` are ignored. `group.*` frames are answered with an error.
+
+## Known limits
+
+- **Inbound is lost while tm8-server is down for more than about 31 s.** An envelope is acked to Slack before it is
+  forwarded, because Slack requires the ack within 3 s. If the server cannot take the `inbound` POST through the
+  link's retries (1+2+4+8+16 s), the message is dropped and logged by route only. whatsapp-bridge behaves the same
+  way. Slack's own history still has the message.
+- No typing indicator, read receipts, polls or channel creation: Slack bots have none of these
+  (`SLACK_CAPABILITIES`).
 
 ## Run it by hand
 
