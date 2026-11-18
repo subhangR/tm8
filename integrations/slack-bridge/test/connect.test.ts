@@ -235,29 +235,50 @@ describe('Socket Mode lifecycle', () => {
     await r.slack.waitForSocket(opened + 1, 3000)
   })
 
-  test('two connections run side by side in one process, each on its own socket and allowlist', async () => {
+  test('a second connection on the same Slack app is refused app_already_connected; the first keeps every event', async () => {
     r = await rig()
     seed(r.slack)
     await r.start()
     await r.connect(['C1'])
     const CONN2 = '01a1eddf-0000-7000-8000-000000000002'
-    {
-      // A second app install on the same (fake) workspace: its own tokens' socket, its own allowlist.
-      r.slack.channel({ id: 'C9', name: 'ops' })
-      r.tm8.push({ type: 'connect', connectionId: CONN2, stateKey: Buffer.alloc(32, 2).toString('base64'), credential: { kind: 'slack_tokens', botToken: r.slack.botToken, appToken: r.slack.appToken }, allowlist: { type: 'allowlist', connectionId: CONN2, version: 1, conversationIds: ['C9'] } })
-      await r.tm8.waitFor('state', (f) => f.connectionId === CONN2 && f.status === 'linked')
-      await r.slack.waitForSocket(2)
-      assert.equal(r.runtime.connections.size, 2)
-      const hb = r.runtime.heartbeatFrame()
-      assert.deepEqual(hb.connections.map((c) => c.connectionId).sort(), [CONN, CONN2].sort())
-      // C9 traffic reaches CONN2 only: the newest socket belongs to CONN2.
-      const ts = r.slack.ts()
-      r.slack.event({ type: 'message', channel: 'C9', user: 'U1', text: 'ops', ts })
-      const f = await r.tm8.waitFor('inbound', (x) => x.externalMessageId === ts)
-      assert.equal(f.connectionId, CONN2)
-      await sleep(50)
-      assert.equal(r.tm8.of('inbound').filter((x) => x.externalMessageId === ts).length, 1)
-    }
+    const key2 = Buffer.alloc(32, 2).toString('base64')
+    const connect2 = () => r!.tm8.push({ type: 'connect', connectionId: CONN2, stateKey: key2, credential: { kind: 'slack_tokens', botToken: r!.slack.botToken, appToken: r!.slack.appToken }, allowlist: { type: 'allowlist', connectionId: CONN2, version: 1, conversationIds: ['C2'] } })
+    connect2()
+    const refused = await r.tm8.waitFor('state', (f) => f.connectionId === CONN2 && f.status === 'logged_out')
+    assert.equal(refused.detail, 'app_already_connected')
+    assert.equal(fs.existsSync(r.sealedFile(CONN2)), false)
+    // Still one socket for the app, so the fake (round-robin over the app's sockets, like Slack) cannot split events.
+    assert.equal(r.slack.sockets.filter((s) => s.readyState === s.OPEN).length, 1)
+    const tss = [r.slack.ts(), r.slack.ts(), r.slack.ts(), r.slack.ts()]
+    for (const ts of tss) await r.slack.waitForAck(r.slack.event({ type: 'message', channel: 'C1', user: 'U1', text: 'x', ts }))
+    for (const ts of tss) assert.equal((await r.tm8.waitFor('inbound', (f) => f.externalMessageId === ts)).connectionId, CONN)
+    // Once the first is removed, the app is free and the second links.
+    r.tm8.push({ type: 'disconnect', connectionId: CONN, logout: true })
+    await r.tm8.waitFor('state', (f) => f.connectionId === CONN && f.detail === 'removed')
+    connect2()
+    await r.tm8.waitFor('state', (f) => f.connectionId === CONN2 && f.status === 'linked')
+  })
+
+  test('the fake is honest: two sockets for one app split its events (what the refusal prevents)', async () => {
+    r = await rig()
+    seed(r.slack)
+    await r.start()
+    await r.connect(['C1'])
+    // A second process (or a foreign client) opening a socket on the same app steals every other envelope.
+    const { WebSocket } = await import('ws')
+    const open = (await (await fetch(new URL('apps.connections.open', r.slack.apiUrl), { method: 'POST', headers: { authorization: `Bearer ${r.slack.appToken}` } })).json()) as { url: string }
+    const thief = new WebSocket(open.url)
+    await new Promise((res) => thief.once('open', res))
+    let stolen = 0
+    thief.on('message', (d) => {
+      const env = JSON.parse(String(d))
+      if (!env.envelope_id) return
+      stolen++
+      thief.send(JSON.stringify({ envelope_id: env.envelope_id }))
+    })
+    for (let i = 0; i < 4; i++) await r.slack.waitForAck(r.slack.event({ type: 'message', channel: 'C1', user: 'U1', text: 'x', ts: r.slack.ts() }))
+    thief.close()
+    assert.ok(stolen >= 2, `stolen ${stolen}`)
   })
 
   test('the heartbeat reports status, allowlist version and drop counters, never content', async () => {

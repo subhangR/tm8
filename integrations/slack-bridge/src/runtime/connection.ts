@@ -2,6 +2,7 @@
 // Inbound: every envelope is acked at once; one from a channel off the allowlist is counted and dropped on its channel
 // id alone, before a single other field is read (D28). Outbound: every frame that touches a channel goes through
 // `allowlist.check` first. The tokens are used to call Slack and for nothing else: never in a frame, log or error.
+import crypto from 'node:crypto'
 import type { Readable } from 'node:stream'
 import { Allowlist, OutboundRefused, type OutboundKind } from './allowlist.js'
 import { Egress, httpRequest, type HttpResponse } from './egress.js'
@@ -63,6 +64,19 @@ export type ConnectionOptions = {
   userTtlMs?: number
   /** How long to wait between files.info looks for an upload's message ts (default 1 s, 5 looks). */
   sharePollMs?: number
+  /**
+   * One live connection per Slack app on this runtime. Socket Mode spreads an APP's events over all of its open
+   * sockets, so a second connection on the same app would get, ack and drop the first one's events. Answers false when
+   * another connection holds the app.
+   */
+  claimApp?: (appKey: string, connectionId: string) => boolean
+  releaseApp?: (appKey: string, connectionId: string) => void
+}
+
+/** The app an app-level token belongs to (`xapp-1-A0123ABC-…`), or a hash of the token when it has another shape. */
+export function appKeyOf(appToken: string): string {
+  const m = /^xapp-\d+-(A[A-Z0-9]+)-/.exec(appToken)
+  return m ? `app:${m[1]}` : `token:${crypto.createHash('sha256').update(appToken).digest('hex').slice(0, 16)}`
 }
 
 export class SlackConnection {
@@ -71,6 +85,7 @@ export class SlackConnection {
   account: SlackAccount | null = null
   private tokens: SlackTokens | null = null
   private sealed: SealedTokens
+  private appKey: string | null = null
   private socket: SocketModeClient | null = null
   private stopped = false
   private retryTimer: NodeJS.Timeout | null = null
@@ -155,6 +170,12 @@ export class SlackConnection {
     }
     if (this.stopped) return
     this.failures = 0
+    const appKey = appKeyOf(tokens.appToken)
+    if (this.o.claimApp && !this.o.claimApp(appKey, this.connectionId)) {
+      // Another connection runs this app here: refuse, and leave its seal (and any held here) alone.
+      return this.setStatus('logged_out', 'app_already_connected')
+    }
+    this.appKey = appKey
     if (pasted) await this.sealed.write(tokens)
     if (this.stopped) return
     this.tokens = tokens
@@ -201,11 +222,17 @@ export class SlackConnection {
   }
 
   /** Slack refused a held token (revoked, app uninstalled): stop, wipe the sealed bytes, say why. */
+  private releaseApp() {
+    if (this.appKey) this.o.releaseApp?.(this.appKey, this.connectionId)
+    this.appKey = null
+  }
+
   private async loggedOut(detail: string) {
     if (this.stopped) return
     this.socket?.stop()
     this.socket = null
     this.tokens = null
+    this.releaseApp()
     await this.sealed.wipe()
     this.setStatus('logged_out', detail)
     this.o.log(`[slack ${this.connectionId}] logged out: ${detail}`)
@@ -217,6 +244,7 @@ export class SlackConnection {
     this.retryTimer = null
     this.socket?.stop()
     this.socket = null
+    this.releaseApp()
     if (o.logout) {
       // Removed: the tokens go even if the socket is down, so nothing of the install outlives it (D38).
       this.tokens = null

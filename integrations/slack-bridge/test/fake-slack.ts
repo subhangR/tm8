@@ -171,10 +171,16 @@ export class FakeSlack {
     return this.socket!
   }
 
-  /** Pushes an envelope on the live socket; returns its envelope_id. */
+  private rr = 0
+
+  /**
+   * Pushes an envelope; returns its envelope_id. Like real Socket Mode, an app's envelopes are spread round-robin over
+   * ALL of its open sockets, so a runtime that opens two sockets for one app sees each event on only one of them.
+   */
   push(type: string, payload: unknown, extra: Record<string, unknown> = {}): string {
-    const ws = this.socket
-    if (!ws) throw new Error('no live Socket Mode socket')
+    const open = this.sockets.filter((s) => s.readyState === s.OPEN)
+    if (!open.length) throw new Error('no live Socket Mode socket')
+    const ws = open[this.rr++ % open.length]!
     const envelope_id = crypto.randomUUID()
     ws.send(JSON.stringify({ envelope_id, type, payload, accepts_response_payload: type !== 'events_api', retry_attempt: 0, retry_reason: '', ...extra }))
     return envelope_id

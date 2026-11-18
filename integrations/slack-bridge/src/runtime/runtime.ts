@@ -38,6 +38,8 @@ export class Runtime {
   private outbound = new Map<string, Promise<void>>()
   /** The newest allowlist pushed for a connection not running yet; applied when it is made (allowlists jump the queue). */
   private pendingAllowlists = new Map<string, AllowlistFrame>()
+  /** Which connection runs each Slack app (one per app: Socket Mode splits an app's events across its sockets). */
+  private apps = new Map<string, string>()
 
   constructor(private o: RuntimeOptions) {
     this.api = o.api ?? new SlackApi()
@@ -56,6 +58,15 @@ export class Runtime {
         emit: this.emit,
         log: this.o.log,
         ...this.o.tuning,
+        claimApp: (app, id) => {
+          const holder = this.apps.get(app)
+          if (holder && holder !== id && this.connections.has(holder)) return false
+          this.apps.set(app, id)
+          return true
+        },
+        releaseApp: (app, id) => {
+          if (this.apps.get(app) === id) this.apps.delete(app)
+        },
         openMedia: (input) => {
           if (!this.o.link.openMedia) throw new Error('runtime attachment streaming is unavailable')
           return this.o.link.openMedia(input)
