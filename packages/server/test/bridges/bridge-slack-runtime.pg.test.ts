@@ -338,6 +338,23 @@ describe('a Slack channel end to end (lane A ac3)', () => {
     expect(res.body).toMatchObject({ status: 'stored', routed: false, author: { kind: 'bridge', trust: 'guest' } });
   });
 
+  it('the bot is never the owner: its own post comes back a guest, unrouted, never a command (review finding 1)', async () => {
+    // The reviewer's probe: the bot user id is in self_ids (for mentions).
+    for (const [i, sender] of [
+      { externalId: BOT_USER, altId: null, name: 'tm8', fromMe: false, bot: true },
+      { externalId: BOT_USER, altId: null, name: 'tm8', fromMe: false },
+    ].entries()) {
+      const res = await inbound({ externalMessageId: `1790000000.00011${i}`, body: `<@${BOT_USER}> hello`, mentions: [BOT_USER], sender });
+      expect(res.status, res.raw).toBe(200);
+      expect(res.body).toMatchObject({ status: 'stored', routed: false, command: false,
+        author: { kind: 'bridge', actorId: slackBridge, trust: 'guest' } });
+      expect(res.body.author).not.toHaveProperty('ownNumber');
+    }
+    const cmd = await inbound({ externalMessageId: '1790000000.000119', body: '/mute 1h',
+      sender: { externalId: BOT_USER, altId: null, name: 'tm8', fromMe: false, bot: true } });
+    expect(cmd.body).toMatchObject({ status: 'stored', command: false, routed: false });
+  });
+
   it('a thread reply threads under its root in the log', async () => {
     reply = '1790000000.000200';
     const res = await inbound({ externalMessageId: reply, body: 'can you also add a regression test?',

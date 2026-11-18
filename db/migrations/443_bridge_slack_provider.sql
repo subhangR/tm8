@@ -45,6 +45,7 @@
 --   internal.bridge_signed (413)
 --   internal.bridge_outbox_take (434)
 --   internal.bridge_progress_advance (427)
+--   internal.bridge_resolve_author (429)
 -- NEW: internal.bridge_provider_reacts, internal.bridge_provider_voices,
 --   internal.bridge_outbox_voice, public.bridge_runtime_sender_email,
 --   public.bridge_runtime_inbound_change.
@@ -354,7 +355,7 @@ begin
   if conn.id is null or conn.status = 'removed' or conn.provider <> 'slack' then
     return jsonb_build_object('status', 'ignored', 'reason', 'provider');
   end if;
-  if sender !~ '^[UW][A-Z0-9]{2,}$' then
+  if sender !~ '^[UW][A-Z0-9]{2,}$' or sender = any(conn.self_ids) then
     return jsonb_build_object('status', 'ignored', 'reason', 'not_a_person');
   end if;
   select br.* into b from public.bridges br join public.entities e on e.id = br.entity_id and e.deleted_at is null
@@ -757,5 +758,88 @@ begin
 end
 $$;
 revoke all on function internal.bridge_progress_advance(uuid, text) from public;
+
+-- -----------------------------------------------------------------------------
+-- §8. The bot is never the owner (review #1505, finding 1).
+-- 429's resolver, plus: off WhatsApp a sender in self_ids (the Slack bot user)
+-- is a guest, and 429's own-number branch is WhatsApp's only. Its JSON shape is
+-- unchanged (kind/actorId/trust/linkId; a guest is authored as the bridge).
+-- -----------------------------------------------------------------------------
+create or replace function internal.bridge_resolve_author(p_bridge_id uuid, p_sender_external_id text)
+returns jsonb language plpgsql stable security definer set search_path = public, internal, pg_temp as $$
+declare
+  b public.bridges;
+  ids text[];
+  link public.bridge_identity_links;
+  member_id uuid;
+  participant public.bridge_participants;
+  owner_identity public.accounts.identity_id%type;
+begin
+  select * into b from public.bridges where entity_id = p_bridge_id;
+  if b.entity_id is null then
+    raise exception 'bridge not found' using errcode = 'P0002';
+  end if;
+  select * into participant from public.bridge_participants
+   where bridge_id = p_bridge_id and external_id = p_sender_external_id;
+  ids := array[p_sender_external_id] || coalesce(participant.alt_external_ids, '{}');
+
+  -- 443: off WhatsApp, self_ids name the connection's BOT (a Slack bot user),
+  -- held for mention matching only. The bot is never a member and never the
+  -- owner, whatever links exist: a guest, authored as the bridge.
+  if b.provider <> 'whatsapp' and exists (
+       select 1 from public.bridge_connections c where c.id = b.connection_id and c.self_ids && ids) then
+    return jsonb_build_object('kind', 'bridge', 'actorId', p_bridge_id, 'trust', 'guest',
+      'participant', jsonb_build_object('displayName', coalesce(participant.display_name, 'Bot')));
+  end if;
+
+  select * into link from public.bridge_identity_links l
+   where l.provider = b.provider and l.external_id = any(ids) and l.revoked_at is null
+     and l.space_id is null
+   order by l.verified_at limit 1;
+  if link.id is null then
+    select * into link from public.bridge_identity_links l
+     where l.provider = b.provider and l.external_id = any(ids) and l.revoked_at is null
+       and l.space_id = b.space_id
+     order by l.verified_at limit 1;
+  end if;
+
+  if link.id is not null then
+    select m.entity_id into member_id
+      from public.members m join public.entities e on e.id = m.entity_id
+     where m.space_id = b.space_id and m.identity_id = link.identity_id
+       and m.status = 'active' and e.deleted_at is null
+     limit 1;
+  else
+    -- 429: the linked number itself speaks for the account that linked it.
+    -- 443: WhatsApp only (a phone number is its owner; a Slack bot is not).
+    select a.identity_id into owner_identity
+      from public.bridge_connections c join public.accounts a on a.id = c.owner_account_id
+     where c.id = b.connection_id and c.self_ids && ids and b.provider = 'whatsapp';
+    if owner_identity is not null then
+      select m.entity_id into member_id
+        from public.members m join public.entities e on e.id = m.entity_id
+       where m.space_id = b.space_id and m.identity_id = owner_identity
+         and m.status = 'active' and e.deleted_at is null
+       limit 1;
+    end if;
+  end if;
+
+  if member_id is null then
+    return jsonb_build_object('kind', 'bridge', 'actorId', p_bridge_id, 'trust', 'guest',
+      'participant', jsonb_build_object('displayName', coalesce(participant.display_name, 'Guest')));
+  end if;
+  if link.id is null then
+    return jsonb_build_object('kind', 'member', 'actorId', member_id, 'trust', 'linked',
+      'identityId', owner_identity, 'linkId', null, 'ownNumber', true,
+      'participant', jsonb_build_object('displayName', coalesce(participant.display_name, '')));
+  end if;
+  return jsonb_build_object('kind', 'member', 'actorId', member_id,
+    'trust', case when link.space_id is null then 'linked' else 'asserted' end,
+    'identityId', link.identity_id, 'linkId', link.id,
+    'participant', jsonb_build_object('displayName', coalesce(participant.display_name, '')));
+end
+$$;
+revoke all on function internal.bridge_resolve_author(uuid, text) from public;
+grant execute on function internal.bridge_resolve_author(uuid, text) to tm8_graph_owner;
 
 reset role;

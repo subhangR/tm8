@@ -244,7 +244,8 @@ async function inbound(
   const result = await o.db.tx(claims, async (q) => {
     if (email) await q.rpc('bridge_runtime_sender_email', [JSON.stringify(frame)]);
     let command = false;
-    if (hook && frame.sender?.externalId && typeof frame.body === 'string' && frame.body.length > 0) {
+    // A bot or app (Slack `bot: true`) never runs a command (review #1505, finding 1).
+    if (hook && frame.sender?.externalId && frame.sender.bot !== true && typeof frame.body === 'string' && frame.body.length > 0) {
       const bridgeId = await q.rpc<string | null>('bridge_runtime_bridge_for', [frame.connectionId, frame.conversationId]);
       if (bridgeId) {
         command = await hook.detect(frame.body, {
