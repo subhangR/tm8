@@ -13,6 +13,17 @@
  *
  * Unlink takes two clicks, like a session revoke: the number's messages are a
  * guest's again at once, and only a new code undoes it.
+ *
+ * ONE DOOR PER PROVIDER. A link code is PROVIDER-BOUND: 417's
+ * `begin_bridge_link(p_provider)` mints it for one provider and 418's
+ * redemption refuses `c.provider <> b.provider` with `wrong_provider`. This
+ * screen used to call `begin('whatsapp')` from one hard-coded button, so a
+ * Slack user who is not auto-linked by email could never obtain a Slack code
+ * and `/tm8 link` could never succeed for them — which is every Slack guest,
+ * every Slack Connect external, anyone with multiple email matches, and anyone
+ * needing more than the `asserted` trust auto-linking gives. So the control is
+ * one button per provider, and the code panel says the command THAT provider
+ * actually takes (`/link` on WhatsApp, `/tm8 link` on Slack).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BridgeIdentityLink, BridgeLinkCode, BridgeLinksList, BridgeProvider } from '@tm8/contract';
@@ -28,7 +39,22 @@ export interface LinkedIdentitiesSectionProps {
   pollMs?: number;
   /** The clock, for the countdown. Tests pin it. */
   now?: () => number;
+  /**
+   * Which providers to offer a code for. Defaults to the two that have a
+   * runtime in protocol v4, so the Slack door exists wherever this screen
+   * does; a host that knows which providers this space actually bridges can
+   * narrow it. Offering one the space does not bridge costs a code nobody can
+   * redeem, never access: redemption still has to match a real bridge.
+   */
+  providers?: readonly BridgeProvider[];
 }
+
+/** The slash command that redeems a code on each provider (Slack's commands all live under `/tm8`). */
+export function linkCommand(provider: BridgeProvider, code: string): string {
+  return provider === 'slack' ? `/tm8 link ${code}` : `/link ${code}`;
+}
+
+
 
 const PROVIDER_LABEL: Record<BridgeProvider, string> = {
   whatsapp: 'WhatsApp', telegram: 'Telegram', slack: 'Slack', discord: 'Discord',
@@ -59,7 +85,9 @@ export function linkStatus(link: BridgeIdentityLink): string {
   return `Linked ✓ · verified ${linkDay(link.verifiedAt)}${link.method === 'invite' ? ' by invite' : ''}`;
 }
 
-export function LinkedIdentitiesSection({ heading, load, begin, revoke, pollMs = 4000, now = Date.now }: LinkedIdentitiesSectionProps) {
+export function LinkedIdentitiesSection({
+  heading, load, begin, revoke, pollMs = 4000, now = Date.now, providers = ['whatsapp', 'slack'],
+}: LinkedIdentitiesSectionProps) {
   const [list, setList] = useState<BridgeLinksList | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState<BridgeLinkCode | null>(null);
@@ -134,7 +162,7 @@ export function LinkedIdentitiesSection({ heading, load, begin, revoke, pollMs =
   const onCopy = async () => {
     if (!code) return;
     try {
-      await navigator.clipboard.writeText(`/link ${code.code}`);
+      await navigator.clipboard.writeText(linkCommand(code.provider, code.code));
       setCopied(true);
     } catch {
       setCopied(false);
@@ -171,27 +199,44 @@ export function LinkedIdentitiesSection({ heading, load, begin, revoke, pollMs =
       title={heading}
       bodyTestId="linked-identities-body"
       action={begin ? (
-        <button type="button" className="set-chip set-links__begin" data-testid="link-begin" disabled={busy}
-          onClick={() => void onBegin('whatsapp')}>
-          {code ? 'New code' : 'Link WhatsApp'}
-        </button>
+        <span className="set-links__begins">
+          {providers.map((p) => (
+            <button
+              key={p}
+              type="button"
+              className="set-chip set-links__begin"
+              /* The first provider keeps the original testid, so the existing
+                 WhatsApp checks keep pointing at the WhatsApp door. */
+              data-testid={p === 'whatsapp' ? 'link-begin' : `link-begin-${p}`}
+              disabled={busy}
+              onClick={() => void onBegin(p)}
+            >
+              {code?.provider === p ? `New ${PROVIDER_LABEL[p]} code` : `Link ${PROVIDER_LABEL[p]}`}
+            </button>
+          ))}
+        </span>
       ) : undefined}
     >
       <div className="set-links">
         <p className="set-links__lede">
-          Numbers on WhatsApp and other networks that count as you. When a linked number writes in a group bridged
-          to tm8, the message is yours, in your name, in every space you are in. Linking grants nothing you do not
-          already have.
+          Accounts on the networks tm8 bridges — a WhatsApp number, a Slack account — that count as you. When a
+          linked account writes in a conversation bridged to tm8, the message is yours, in your name, in every space
+          you are in. Linking grants nothing you do not already have.
         </p>
 
         {code ? (
           <div className="set-links__code" role="region" aria-label={`Link your ${PROVIDER_LABEL[code.provider]}`} data-testid="link-code-panel">
             <span className="set-links__code-title">Link your {PROVIDER_LABEL[code.provider]}</span>
+            {/* Written out per provider rather than assembled from nouns:
+                §15.2's guard forbids a quoted kind name in this lane, and
+                Slack's word for a conversation happens to be one. */}
             <span className="set-links__code-how">
-              Send this from your phone, in any {PROVIDER_LABEL[code.provider]} group connected to tm8:
+              {code.provider === 'slack'
+                ? <>Send this in Slack, in any channel tm8 is bridged to:</>
+                : <>Send this from your phone, in any {PROVIDER_LABEL[code.provider]} group connected to tm8:</>}
             </span>
             <div className="set-links__code-row">
-              <code className="set-links__code-text" data-testid="link-code">/link {code.code}</code>
+              <code className="set-links__code-text" data-testid="link-code">{linkCommand(code.provider, code.code)}</code>
               <button type="button" className="set-links__act" onClick={() => void onCopy()} data-testid="link-code-copy">
                 {copied ? 'copied' : 'copy'}
               </button>
@@ -200,8 +245,11 @@ export function LinkedIdentitiesSection({ heading, load, begin, revoke, pollMs =
               </span>
             </div>
             <span className="set-links__code-how">
-              When it arrives, your messages from that number count as you, here and in every space you are in.
-              You can unlink any time. A message to the number itself is never read.
+              {code.provider === 'slack'
+                ? <>When it arrives, your messages in bridged Slack channels count as you, here and in every space
+                  you are in. You can unlink any time.</>
+                : <>When it arrives, your messages from that number count as you, here and in every space you are in.
+                  You can unlink any time. A message to the number itself is never read.</>}
             </span>
             <span className="set-links__code-wait" aria-live="polite">◌ waiting for your message…</span>
             <div className="set-links__code-row">
@@ -225,7 +273,7 @@ export function LinkedIdentitiesSection({ heading, load, begin, revoke, pollMs =
 
         {list.items.length === 0 ? (
           <p className="set-links__note" data-testid="links-empty">
-            No linked identities yet. Link WhatsApp to have your messages in bridged groups count as you.
+            No linked identities yet. Link an account to have your messages in bridged conversations count as you.
           </p>
         ) : (
           <ul className="set-links__list">
