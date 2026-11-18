@@ -9,6 +9,8 @@ import { consequencesOf, retargetConsequences } from '../consequences';
 import { TARGET_GLYPH, TARGET_WORD, bridgeFailureOf } from '../format';
 import { pendingReason } from '../reasons';
 import { draftOf, draftProblem, patchOf, type RoutingDraft } from '../routing-draft';
+import { ThreadModeChoice } from '../AddBridgeWizard';
+import { DEFAULT_SLACK_THREAD_MODE, capabilitiesOf, hasNativeThreads } from '../slack';
 
 /**
  * ROUTING (§4.4, BRIDGES-V2-DESIGN §1.1, §1.2, §1.7): where the bridge lands
@@ -64,6 +66,10 @@ export function RoutingTab({
 
   const ended = view.status === 'ended';
   const provider = bridgeProviderLabel(view.provider);
+  const caps = capabilitiesOf(view.provider);
+  /* What the far side calls one conversation, so the form never says "group"
+     about a Slack channel. */
+  const convWord = view.provider === 'slack' ? 'channel' : view.conversation.kind === 'dm' ? 'conversation' : 'group';
   const patch = patchOf(view, draft);
   const problem = draftProblem(draft);
   const set = (change: (d: RoutingDraft) => RoutingDraft) => { setDraft((d) => change(d)); setSaved(null); };
@@ -157,21 +163,41 @@ export function RoutingTab({
               value={draft.policy.whoMayTrigger}
               onChange={(v) => setPolicy('whoMayTrigger', v)}
               options={[
-                ['linked', 'Only people who have verified their number in tm8'],
-                ['anyone', 'Anyone in the group', 'you\'ll confirm'],
+                ['linked', view.provider === 'slack'
+                  ? 'Only people whose Slack account is linked to a tm8 member'
+                  : 'Only people who have verified their number in tm8'],
+                ['anyone', `Anyone in the ${convWord}`, 'you\'ll confirm'],
               ]}
             />
           ) : null}
-          <Choice
-            legend="How replies are signed"
-            name="voice"
-            value={draft.policy.voice}
-            onChange={(v) => setPolicy('voice', v)}
-            options={[
-              ['named', '"tm8:" / "Release notes (keen-otter):"'],
-              ['plain', 'No prefix'],
-            ]}
-          />
+          {/* `perUserVoice` (Slack, chat:write.customize): every reply already
+              carries the answering session's own name and icon, so there is no
+              prefix to choose. */}
+          {caps.perUserVoice ? (
+            <p className="brg-hint" data-testid="routing-voice-note">
+              Each reply arrives in {provider} under the answering session's own name and icon, with no prefix.
+            </p>
+          ) : (
+            <Choice
+              legend="How replies are signed"
+              name="voice"
+              value={draft.policy.voice}
+              onChange={(v) => setPolicy('voice', v)}
+              options={[
+                ['named', '"tm8:" / "Release notes (keen-otter):"'],
+                ['plain', 'No prefix'],
+              ]}
+            />
+          )}
+          {/* Thread mode (§1.2): Slack only, and not for a channel mirror. */}
+          {hasNativeThreads(view.provider) && view.target.kind !== 'channel' ? (
+            <ThreadModeChoice
+              name="threadMode"
+              targetKind={view.target.kind}
+              value={draft.policy.threadMode ?? DEFAULT_SLACK_THREAD_MODE}
+              onChange={(v) => setPolicy('threadMode', v)}
+            />
+          ) : null}
           <label className="brg-form__line">
             <span className="set-eyebrow">Style</span>
             <input
@@ -234,8 +260,8 @@ export function RoutingTab({
               </label>
             ) : null}
             <p className="brg-hint">
-              Applies to messages, voice transcripts and media from this group. Tasks, docs and memories made from
-              them are not deleted.
+              Applies to messages, voice transcripts and media from this {convWord}. Tasks, docs and memories made
+              from them are not deleted.
             </p>
             <div className="brg-form__line">
               <button type="button" className="pn-btn" disabled title={pendingReason(port, 'bridges.history.import', 'Importing earlier messages')}>
@@ -496,7 +522,7 @@ function Handles({
   return (
     <section className="brg-group" aria-label="Handles" data-testid="bridge-handles">
       <h3 className="set-eyebrow brg-subhead">Handles</h3>
-      <p className="brg-hint">The sessions and chats that have spoken here, by the handle the group sees (D23).</p>
+      <p className="brg-hint">The sessions and chats that have spoken here, by the handle the conversation sees (D23).</p>
       {error ? <p className="brg-error" role="alert">{error}</p> : rows === null ? (
         <p className="brg-hint" role="status">Loading handles…</p>
       ) : rows.length === 0 ? (

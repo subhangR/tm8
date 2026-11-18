@@ -11,7 +11,7 @@ import type { BridgeIdentityLink, BridgeLinksList, CreateInviteInput, SpaceInvit
 import { createFixtureSeam } from '../data';
 import { settingsPortFromSeam } from './port';
 import { SettingsShell } from './SettingsShell';
-import { LinkedIdentitiesSection, countdown, linkStatus } from './LinkedIdentitiesSection';
+import { LinkedIdentitiesSection, countdown, linkCommand, linkStatus } from './LinkedIdentitiesSection';
 import { SETTINGS_SECTIONS } from './types';
 import { InviteToSpace, maskedNumber } from '../bridges/invite';
 
@@ -67,6 +67,76 @@ describe('Linked identities (§4.6)', () => {
     fireEvent.click(screen.getByTestId('link-revoke-confirm-l1'));
     await waitFor(() => expect(screen.getByTestId('links-empty')).toBeTruthy());
     expect(revoke).toHaveBeenCalledWith('l1');
+  });
+
+  /*
+   * A LINK CODE IS PROVIDER-BOUND (417 begin_bridge_link(p_provider), 418
+   * refuses c.provider <> b.provider with 'wrong_provider'). This screen had
+   * one button hard-coded to begin('whatsapp'), so a Slack user who is not
+   * auto-linked by email could never get a Slack code and `/tm8 link` could
+   * never succeed for them.
+   */
+  describe('one door per provider', () => {
+    const code = (provider: 'whatsapp' | 'slack') => vi.fn(async (p: string) => ({
+      code: 'TM8-4F7KQ2', provider: p as typeof provider,
+      expiresAt: new Date(Date.now() + 600_000).toISOString(), createdAt: new Date().toISOString(),
+    }));
+    const load = async (): Promise<BridgeLinksList> => ({ items: [], pending: [] });
+
+    it('offers WhatsApp and Slack, and asks the server for the one that was clicked', async () => {
+      const begin = code('slack');
+      render(<LinkedIdentitiesSection heading="Linked identities" load={load} begin={begin} />);
+      expect(await screen.findByRole('button', { name: 'Link WhatsApp' })).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Link Slack' }));
+      await waitFor(() => expect(begin).toHaveBeenCalledWith('slack'));
+    });
+
+    it('shows the command SLACK takes, not WhatsApp’s', async () => {
+      render(<LinkedIdentitiesSection heading="Linked identities" load={load} begin={code('slack')} />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Link Slack' }));
+      const shown = await screen.findByTestId('link-code');
+      expect(shown.textContent).toBe('/tm8 link TM8-4F7KQ2');
+      // …and says where to send it, in Slack's nouns
+      expect(screen.getByTestId('link-code-panel').textContent).toMatch(/Send this in Slack, in any channel tm8 is bridged to/);
+    });
+
+    it('keeps WhatsApp’s command and words unchanged', async () => {
+      render(<LinkedIdentitiesSection heading="Linked identities" load={load} begin={code('whatsapp')} />);
+      fireEvent.click(await screen.findByTestId('link-begin'));
+      expect((await screen.findByTestId('link-code')).textContent).toBe('/link TM8-4F7KQ2');
+      expect(screen.getByTestId('link-code-panel').textContent).toMatch(/from your phone, in any WhatsApp group/);
+    });
+
+    it('copies the provider’s own command', async () => {
+      const writeText = vi.fn(async () => {});
+      Object.assign(navigator, { clipboard: { writeText } });
+      render(<LinkedIdentitiesSection heading="Linked identities" load={load} begin={code('slack')} />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Link Slack' }));
+      await screen.findByTestId('link-code');
+      fireEvent.click(screen.getByTestId('link-code-copy'));
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('/tm8 link TM8-4F7KQ2'));
+    });
+
+    it('names which provider a new code would replace', async () => {
+      render(<LinkedIdentitiesSection heading="Linked identities" load={load} begin={code('slack')} />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Link Slack' }));
+      await screen.findByTestId('link-code');
+      // the clicked door offers a fresh code; the other still offers its own
+      expect(screen.getByRole('button', { name: 'New Slack code' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Link WhatsApp' })).toBeTruthy();
+    });
+
+    it('a host that knows the space’s providers can narrow the list', async () => {
+      render(<LinkedIdentitiesSection heading="Linked identities" load={load} begin={code('whatsapp')} providers={['whatsapp']} />);
+      expect(await screen.findByRole('button', { name: 'Link WhatsApp' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Link Slack' })).toBeNull();
+    });
+
+    it('the command per provider is one function, so no screen can disagree', () => {
+      expect(linkCommand('slack', 'TM8-ABC123')).toBe('/tm8 link TM8-ABC123');
+      expect(linkCommand('whatsapp', 'TM8-ABC123')).toBe('/link TM8-ABC123');
+      expect(linkCommand('telegram', 'TM8-ABC123')).toBe('/link TM8-ABC123');
+    });
   });
 
   it('a refused begin is drawn; an unwired host says so', async () => {

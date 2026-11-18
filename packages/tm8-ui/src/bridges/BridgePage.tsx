@@ -22,6 +22,7 @@ import { HandoverBanner } from './HandoverBanner';
 import { HandoverDialog } from './HandoverDialog';
 import { RemoveBridgeDialog } from './RemoveBridgeDialog';
 import { pendingReason, unservedReason } from './reasons';
+import { SlackChannelLink, useSlackWorkspace } from './SlackLink';
 import { ConversationTab } from './tabs/ConversationTab';
 import { HealthTab } from './tabs/HealthTab';
 import { LoopsTab } from './tabs/LoopsTab';
@@ -182,6 +183,9 @@ function BridgeHeader({
 
   const ended = view.status === 'ended';
   const provider = bridgeProviderLabel(view.provider);
+  /* The way back out to Slack (§1.3). Null — and so no link — on WhatsApp, and
+     on a Slack bridge riding a workspace this viewer has no connection to. */
+  const workspaceUrl = useSlackWorkspace(port, view);
   const lifecycle = async (verb: 'pause' | 'resume') => {
     setOpen(null);
     setBusy(true);
@@ -251,6 +255,13 @@ function BridgeHeader({
             </button>
           ) : <span>{TARGET_GLYPH[view.target.kind]} {view.target.title}</span>}
         </span>
+        {/* Only when there is a link: `.brg-head__line` is a flex row with a
+            gap, so an empty span would still take a gap's worth of space. */}
+        {workspaceUrl ? (
+          <span className="brg-head__facts">
+            <SlackChannelLink workspaceUrl={workspaceUrl} channelId={view.conversation.externalId} />
+          </span>
+        ) : null}
         <span className="brg-head__more">
           <button
             type="button"

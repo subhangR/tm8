@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
-  BridgeConnectionView, BridgePolicy, BridgeTargetKind, BridgeView, ConversationItem, EntitySummary,
+  BridgeConnectionView, BridgeConversationKind, BridgePolicy, BridgeProvider, BridgeTargetKind, BridgeThreadMode,
+  BridgeView, ConversationItem, EntitySummary,
 } from '@tm8/contract';
 import { BRIDGE_STYLE_MAX, LAUNCH_MODEL_CATALOG } from '@tm8/contract';
 import { useDismissable } from '../panels/useDismissable';
@@ -10,6 +11,12 @@ import { ConsequenceDialog } from './ConsequenceDialog';
 import { CONNECTION_WORD, TARGET_GLYPH, TARGET_WORD, bridgeFailureOf } from './format';
 import { LinkNumberDialog } from './LinkNumberDialog';
 import { pendingReason } from './reasons';
+import { SlackTokensDialog } from './SlackTokensDialog';
+import {
+  DEFAULT_SLACK_THREAD_MODE, THREAD_MODE_OPTIONS, capabilitiesOf, connectsByTokens, conversationLabel,
+  hasNativeThreads, isPrivateChannel, slackPickerEmptyHint,
+} from './slack';
+import { SlackScopeNote } from './SlackScopeNote';
 
 /**
  * THE ADD-BRIDGE WIZARD (BRIDGE-ENTITY-DESIGN §4.3; BRIDGES-V2-DESIGN §1.1,
@@ -49,16 +56,50 @@ function stoppedSession(t: EntitySummary): boolean {
   return t.state.kind === 'work_session' && !LIVE_SESSION.has(String((t.state as { status?: unknown }).status ?? ''));
 }
 
-/** §2.2's default policy, by target kind and conversation kind. */
-export function defaultPolicy(target: BridgeTargetKind, conversation: 'group' | 'dm'): Omit<BridgePolicy, 'style'> {
-  if (target === 'channel') return { trigger: 'none', direction: 'both', outbound: 'all', whoMayTrigger: 'linked', voice: 'named' };
+/**
+ * §2.2's default policy, by target kind and conversation kind, plus Slack's
+ * `threadMode` on a provider with native threads. A Slack channel behaves as a
+ * group does here: many people, so tm8 answers on @mention and only linked
+ * people may start agents.
+ *
+ * THREAD MODE BY TARGET (coordinator's ruling; lane F enforces it in #1506):
+ *   · `work_session` — `mention`. A thread's session is a child of the target
+ *      session, which is the shape the design describes.
+ *   · `chat` — `mention` too, on lane F's top-level-session behaviour.
+ *   · `channel` — `off`, ALWAYS. A Slack channel bridged to a tm8 channel is a
+ *      mirror; there is no session for a thread to belong to. The UI hides the
+ *      control for a mirror, but hiding it is not enough: it used to keep
+ *      sending `mention`, which lane F now refuses (22023,
+ *      `thread_mode_channel_target`), so a mirror would have failed to create.
+ *   · a provider without native threads — absent, which lane F also refuses to
+ *      be given at all.
+ */
+export function defaultPolicy(
+  target: BridgeTargetKind,
+  conversation: BridgeConversationKind,
+  provider: BridgeProvider | string = 'whatsapp',
+): Omit<BridgePolicy, 'style'> {
+  const threads = hasNativeThreads(provider)
+    ? { threadMode: target === 'channel' ? ('off' as const) : DEFAULT_SLACK_THREAD_MODE }
+    : {};
+  if (target === 'channel') {
+    return { trigger: 'none', direction: 'both', outbound: 'all', whoMayTrigger: 'linked', voice: 'named', ...threads };
+  }
   return {
     trigger: conversation === 'dm' ? 'every' : 'mention',
     direction: 'both',
     outbound: 'replies',
     whoMayTrigger: conversation === 'dm' ? 'anyone' : 'linked',
     voice: 'named',
+    ...threads,
   };
+}
+
+/** What the bridge's `conversation.kind` is for a row the runtime listed (D20's unique key rides the id, not this). */
+export function conversationKindOf(item: Pick<ConversationItem, 'kind'> | null | undefined): BridgeConversationKind {
+  if (item?.kind === 'self') return 'dm';
+  if (item?.kind === 'channel' || item?.kind === 'private_channel') return 'channel';
+  return 'group';
 }
 
 /** A conversation already connected in this space (D20), keyed by its provider id. */
@@ -70,6 +111,13 @@ const CANNOT_SEND: Record<NonNullable<ConversationItem['reason']>, string> = {
   admins_only: 'only admins can post there, and this number is not an admin',
   not_a_member: 'this number is not in the group any more',
 };
+
+/** The same two reasons in Slack's words, naming the real bot: a channel it was never invited to, or was removed from. */
+function slackCannotSend(reason: NonNullable<ConversationItem['reason']>, botName: string): string {
+  return reason === 'admins_only'
+    ? 'this channel only takes posts from people, not apps'
+    : `tm8 is not in this channel: /invite @${botName} there first`;
+}
 
 export function AddBridgeWizard({
   port,
@@ -89,7 +137,8 @@ export function AddBridgeWizard({
   const [step, setStep] = useState<Step>(1);
   const [connections, setConnections] = useState<BridgeConnectionView[] | null>(null);
   const [connection, setConnection] = useState<BridgeConnectionView | null>(null);
-  const [linking, setLinking] = useState<{ relink: BridgeConnectionView | null } | null>(null);
+  const [linking, setLinking] = useState<{ provider: BridgeProvider; relink: BridgeConnectionView | null } | null>(null);
+  const [addingAccount, setAddingAccount] = useState(false);
   const [conversations, setConversations] = useState<ConversationItem[] | null>(null);
   const [existing, setExisting] = useState<Map<string, BridgeView>>(new Map());
   const [search, setSearch] = useState('');
@@ -132,16 +181,22 @@ export function AddBridgeWizard({
     if (t && (t.kind === 'chat' || t.kind === 'work_session' || t.kind === 'channel')) setTargetKind(t.kind);
   }, [targets, initialTargetId]);
 
-  const convKind: 'group' | 'dm' = conversation?.kind === 'self' ? 'dm' : 'group';
+  const convKind = conversationKindOf(conversation);
+  /* The provider of the chosen connection: what every word, affordance and
+     default below follows. Before step 1 is answered there is none, and the
+     screen says nothing provider-specific. */
+  const providerId: BridgeProvider = connection?.provider ?? 'whatsapp';
+  const caps = capabilitiesOf(providerId);
+  const slack = providerId === 'slack';
   /* The policy follows the choice until the person edits it; a read-only
      group (it cannot send) starts as WhatsApp → tm8 only (D28). */
   const [policyTouched, setPolicyTouched] = useState(false);
   useEffect(() => {
     if (policyTouched) return;
-    const base = defaultPolicy(targetKind, convKind);
+    const base = defaultPolicy(targetKind, convKind, providerId);
     setPolicy(conversation && !conversation.canSend ? { ...base, direction: 'in' } : base);
-    setRetention({ forever: convKind === 'group', days: 90 });
-  }, [targetKind, convKind, conversation, policyTouched]);
+    setRetention({ forever: convKind !== 'dm', days: 90 });
+  }, [targetKind, convKind, conversation, policyTouched, providerId]);
 
   const offeredHere = (c: BridgeConnectionView) => c.offers.some((o) => o.spaceId === spaceId && o.status === 'active');
   const run = async (work: () => Promise<void>) => {
@@ -172,13 +227,13 @@ export function AddBridgeWizard({
 
   const create = () => run(async () => {
     if (!connection || !conversation) return;
-    const title = `${conversation.name} (${provider})`.slice(0, 80);
+    const title = `${conversationLabel(conversation)} (${provider})`.slice(0, 80);
     const target = targetId === NEW_SESSION
       ? await port.startSession!(spaceId, { teamMemberId: runsAs, title })
       : targetId === NEW_CHAT
         ? await port.startChat!(spaceId, {
           teammateId: runsAs, model: chatModel, title,
-          body: `This chat answers the ${provider} group "${conversation.name}". Messages there that mention @tm8 arrive here as turns, and your answers go back to the group. Say hello in one line.`,
+          body: `This chat answers the ${provider} ${convWord} "${conversationLabel(conversation)}". Messages there that mention @tm8 arrive here as turns, and your answers go back to it. Say hello in one line.`,
         })
         : targetId;
     const view = await port.create(spaceId, {
@@ -202,11 +257,16 @@ export function AddBridgeWizard({
   /* §1.5 on a new bridge: the widening choices say what they mean before Create. */
   const widening = (): string[] => {
     const out: string[] = [];
-    const who = conversation?.name ?? 'the group';
-    if (policy.whoMayTrigger === 'anyone' && convKind === 'group') {
+    const who = conversation ? conversationLabel(conversation) : `the ${convWord}`;
+    if (policy.whoMayTrigger === 'anyone' && convKind !== 'dm') {
       out.push(`Anyone in ${who}${conversation?.size ? ` (${conversation.size} people)` : ''}, linked or not, will be able to start agents that spend from the space's credits.`);
     }
-    if (policy.trigger === 'every' && convKind === 'group') out.push(`Every message in ${who} will start a turn.`);
+    if (policy.trigger === 'every' && convKind !== 'dm') out.push(`Every message in ${who} will start a turn.`);
+    /* Thread mode is the one Slack-only widening: a session per top-level
+       message is a lot of sessions, and they spend the space's credits. */
+    if (policy.threadMode === 'every') {
+      out.push(`EVERY top-level message in ${who} will start its own session, not only the ones that @mention tm8. Use this only in a low-traffic intake channel.`);
+    }
     if (policy.outbound === 'all' && targetKind !== 'channel') out.push(`Everything posted in the target — including agents' working notes — will appear in ${who}.`);
     if (policy.direction === 'out') out.push(`Nothing from ${who} will reach tm8; you won't see replies.`);
     return out;
@@ -221,7 +281,10 @@ export function AddBridgeWizard({
     const words = search.trim().toLowerCase();
     return (conversations ?? []).filter((c) => !words || c.name.toLowerCase().includes(words));
   }, [conversations, search]);
-  const groups = visible.filter((c) => c.kind === 'group');
+  /* Protocol v4: Slack lists `channel` and `private_channel`, WhatsApp
+     `group` and `self`. The picker filtered to group/self only, so a Slack
+     connection's channels all fell out of it (#1504 review). */
+  const groups = visible.filter((c) => c.kind === 'group' || c.kind === 'channel' || c.kind === 'private_channel');
   const dms = visible.filter((c) => c.kind === 'self');
   const targetChoices = (targets ?? []).filter((t) => t.kind === targetKind);
   /* D25: a target with a bridge cannot take another; say which, instead of refusing at Create. */
@@ -232,7 +295,12 @@ export function AddBridgeWizard({
   /* The contract's bound (1–3650 days); Create waits until it holds (review #1447 r1). */
   const retentionProblem = !retention.forever && (!Number.isInteger(retention.days) || retention.days < 1 || retention.days > 3650)
     ? 'Keep messages for 1 to 3650 days.' : null;
-  const provider = bridgeProviderLabel(connection?.provider ?? 'whatsapp');
+  const provider = bridgeProviderLabel(providerId);
+  /* What one conversation is called on this provider: Slack has channels,
+     WhatsApp has groups. Used wherever the wizard names the far side. */
+  const convWord = slack ? 'channel' : convKind === 'dm' ? 'conversation' : 'group';
+  const convWordPlural = slack ? 'channels' : 'groups';
+  const botName = connection?.account?.botName ?? 'tm8';
 
   return (
     <div className="brg-backdrop">
@@ -248,9 +316,9 @@ export function AddBridgeWizard({
 
         {step === 1 ? (
           <section data-testid="wizard-step-connection">
-            <p className="brg-hint">Pick one of your numbers. Only numbers offered to this space can carry a bridge here.</p>
-            {connections === null ? <p className="brg-hint" role="status">Loading your numbers…</p> : connections.length === 0 ? (
-              <p className="brg-hint">You have not linked a number yet.</p>
+            <p className="brg-hint">Pick one of your accounts. Only an account offered to this space can carry a bridge here.</p>
+            {connections === null ? <p className="brg-hint" role="status">Loading your accounts…</p> : connections.length === 0 ? (
+              <p className="brg-hint">You have not added an account yet.</p>
             ) : (
               <ul className="brg-wiz__list">
                 {connections.filter((c) => c.status !== 'removed').map((c) => {
@@ -260,12 +328,24 @@ export function AddBridgeWizard({
                     <li key={c.id} className="brg-wiz__row">
                       <BridgeProviderMark provider={c.provider} />
                       <span className="brg-wiz__name">{c.label}</span>
-                      <span className="brg-mono brg-muted">{c.externalAccountId ?? 'not linked yet'}</span>
+                      <span className="brg-mono brg-muted">
+                        {c.provider === 'slack' && c.account ? c.account.teamName
+                          : c.externalAccountId ?? (connectsByTokens(c.provider) ? 'no tokens yet' : 'not linked yet')}
+                      </span>
                       <span className="brg-muted">{c.status === 'removed' ? 'removed' : CONNECTION_WORD[c.status]}</span>
                       {!linked ? (
-                        <button type="button" className="pn-btn" disabled={busy} onClick={() => setLinking({ relink: c })}>Re-link</button>
+                        <button
+                          type="button"
+                          className="pn-btn"
+                          disabled={busy}
+                          onClick={() => setLinking({ provider: c.provider, relink: c })}
+                        >
+                          {connectsByTokens(c.provider) ? 'Paste new tokens' : 'Re-link'}
+                        </button>
                       ) : here ? (
-                        <button type="button" className="pn-btn pn-btn--primary" disabled={busy} onClick={() => void toStep2(c)} aria-label={`Use ${c.label}`}>Use this number</button>
+                        <button type="button" className="pn-btn pn-btn--primary" disabled={busy} onClick={() => void toStep2(c)} aria-label={`Use ${c.label}`}>
+                          {connectsByTokens(c.provider) ? 'Use this workspace' : 'Use this number'}
+                        </button>
                       ) : (
                         <button
                           type="button"
@@ -277,35 +357,66 @@ export function AddBridgeWizard({
                           Offer to this space
                         </button>
                       )}
+                      {/* A workspace installed with too few scopes is a
+                          standing condition, not just news at connect time:
+                          the wizard showed it nowhere (#1509 review 4).
+                          `.brg-wiz__row` wraps, so a full-width child makes
+                          its own line under the row. */}
+                      <SlackScopeNote connection={c} className="brg-warn brg-wiz__rownote" testId={`wizard-scopes-${c.id}`} />
                     </li>
                   );
                 })}
               </ul>
             )}
-            <button type="button" className="pn-btn" disabled={busy} onClick={() => setLinking({ relink: null })}>+ Link a new number</button>
-            <p className="brg-hint">Slack, Telegram and Discord arrive with their own runtimes; this node links WhatsApp numbers.</p>
+            <div className="brg-wiz__add">
+              <button
+                type="button"
+                className="pn-btn"
+                aria-haspopup="menu"
+                aria-expanded={addingAccount}
+                disabled={busy}
+                onClick={() => setAddingAccount(!addingAccount)}
+              >
+                + Add an account
+              </button>
+              {addingAccount ? (
+                <div className="brg-menu" role="menu" aria-label="Add an account">
+                  <button type="button" role="menuitem" onClick={() => { setAddingAccount(false); setLinking({ provider: 'whatsapp', relink: null }); }}>
+                    WhatsApp number
+                  </button>
+                  <button type="button" role="menuitem" onClick={() => { setAddingAccount(false); setLinking({ provider: 'slack', relink: null }); }}>
+                    Slack workspace
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            <p className="brg-hint">
+              A WhatsApp number links a phone; a Slack workspace takes the two tokens from an app made with tm8's
+              manifest. Telegram and Discord arrive with their own runtimes.
+            </p>
           </section>
         ) : null}
 
         {step === 2 ? (
           <section data-testid="wizard-step-conversation">
             <p className="brg-hint">
-              {connection?.label}'s groups, as WhatsApp lists them right now. Nothing here is stored; only the group you
-              connect is read from now on.
+              {slack
+                ? `The channels @${botName} is in, as Slack lists them right now. Nothing here is stored; only the channel you connect is read from now on.`
+                : `${connection?.label}'s groups, as WhatsApp lists them right now. Nothing here is stored; only the group you connect is read from now on.`}
             </p>
             <input
               type="search"
               className="brg-wiz__search"
-              placeholder="Search groups"
-              aria-label="Search groups"
+              placeholder={`Search ${convWordPlural}`}
+              aria-label={`Search ${convWordPlural}`}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
             {conversations === null ? (
-              <p className="brg-hint" role="status">{error ? '' : 'Asking WhatsApp for the group list…'}</p>
+              <p className="brg-hint" role="status">{error ? '' : `Asking ${provider} for the ${slack ? 'channel' : 'group'} list…`}</p>
             ) : (
               <>
-                {[['GROUPS', groups], ['DIRECT', dms]].map(([label, items]) => (items as ConversationItem[]).length ? (
+                {[[slack ? 'CHANNELS' : 'GROUPS', groups], ['DIRECT', dms]].map(([label, items]) => (items as ConversationItem[]).length ? (
                   <div key={label as string}>
                     <h3 className="set-eyebrow brg-subhead">{label as string}</h3>
                     <ul className="brg-wiz__list" role="listbox" aria-label={`${label as string} conversations`}>
@@ -321,12 +432,19 @@ export function AddBridgeWizard({
                               disabled={!!taken}
                               onClick={() => { setConversation(c); setPolicyTouched(false); }}
                             >
-                              <span className="brg-wiz__name">{c.name}</span>
-                              <span className="brg-muted">{c.kind === 'self' ? 'you' : c.size != null ? `${c.size} people` : 'group'}</span>
+                              <span className="brg-wiz__name">
+                                {isPrivateChannel(c) ? (
+                                  <span className="brg-wiz__lock" role="img" title="Private channel" aria-label="private channel">🔒</span>
+                                ) : null}
+                                {conversationLabel(c)}
+                              </span>
+                              <span className="brg-muted">
+                                {c.kind === 'self' ? 'you' : c.size != null ? `${c.size} people` : convWord}
+                              </span>
                               {taken ? (
                                 <span className="brg-muted">already connected → {taken.target.title}</span>
                               ) : !c.canSend && c.reason ? (
-                                <span className="brg-warn">read-only: {CANNOT_SEND[c.reason]}</span>
+                                <span className="brg-warn">read-only: {slack ? slackCannotSend(c.reason, botName) : CANNOT_SEND[c.reason]}</span>
                               ) : null}
                             </button>
                           </li>
@@ -335,7 +453,13 @@ export function AddBridgeWizard({
                     </ul>
                   </div>
                 ) : null)}
-                {visible.length === 0 ? <p className="brg-hint">No group matches.</p> : null}
+                {visible.length === 0 ? (
+                  <p className="brg-hint" data-testid="wizard-conversations-empty">
+                    {conversations.length === 0 && slack
+                      ? slackPickerEmptyHint(botName)
+                      : `No ${convWord} matches.`}
+                  </p>
+                ) : null}
               </>
             )}
           </section>
@@ -345,8 +469,8 @@ export function AddBridgeWizard({
           <section data-testid="wizard-step-target">
             <div className="brg-wiz__cards" role="radiogroup" aria-label="Lands in">
               {([
-                ['chat', 'A chat: each message to @tm8 is a turn; the chat\'s teammate answers in the group.'],
-                ['work_session', 'A session: messages to @tm8 go to one session, which answers in the group. The bridge keeps it running; /new in the group starts a fresh one.'],
+                ['chat', `A chat: each message to @tm8 is a turn; the chat's teammate answers in the ${convWord}.`],
+                ['work_session', `A session: messages to @tm8 go to one session, which answers in the ${convWord}. The bridge keeps it running; /new in the ${convWord} starts a fresh one.`],
                 ['channel', 'A channel: a mirror. Every message is copied both ways; nothing answers unless someone is @mentioned.'],
               ] as const).map(([kind, words]) => (
                 <label key={kind} className="brg-wiz__card" data-selected={targetKind === kind || undefined}>
@@ -360,9 +484,9 @@ export function AddBridgeWizard({
               <span className="set-eyebrow">Lands in</span>
               <select aria-label="Target" value={targetId} onChange={(e) => setTargetId(e.target.value)}>
                 {targetKind === 'work_session' && canStartSession ? (
-                  <option value={NEW_SESSION}>＋ New session for this group</option>
+                  <option value={NEW_SESSION}>＋ New session for this {convWord}</option>
                 ) : targetKind === 'chat' && canStartChat ? (
-                  <option value={NEW_CHAT}>＋ New chat for this group</option>
+                  <option value={NEW_CHAT}>＋ New chat for this {convWord}</option>
                 ) : (
                   <option value="">{targetChoices.length ? `Choose a ${TARGET_WORD[targetKind]}…` : `No ${TARGET_WORD[targetKind]} in this space yet`}</option>
                 )}
@@ -385,7 +509,7 @@ export function AddBridgeWizard({
                   ) : (teammates ?? []).length === 0 ? <option value="">No teammate in this space yet</option> : null}
                   {(teammates ?? []).map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
                 </select>
-                <span className="brg-hint">Who /work and /start in the group run as. Change it later on the bridge's Routing tab.</span>
+                <span className="brg-hint">Who /work and /start in the {convWord} run as. Change it later on the bridge's Routing tab.</span>
               </label>
             ) : null}
             {targetId === NEW_CHAT ? (
@@ -399,11 +523,11 @@ export function AddBridgeWizard({
             <p className="brg-hint">
               {targetKind === 'chat'
                 ? targetId === NEW_CHAT
-                  ? 'The new chat opens with a note saying it answers this group, and its teammate says hello there in tm8 (not in the group).'
+                  ? `The new chat opens with a note saying it answers this ${convWord}, and its teammate says hello there in tm8 (not in ${provider}).`
                   : 'Each message to @tm8 becomes a turn in this chat.'
                 : targetKind === 'work_session'
-                  ? 'If the session stops, the next message resumes it, or starts a new one and tells the group.'
-                  : 'Pick the channel the group is mirrored into.'}
+                  ? `If the session stops, the next message resumes it, or starts a new one and tells the ${convWord}.`
+                  : `Pick the channel the ${convWord} is mirrored into.`}
             </p>
 
             <fieldset className="brg-form__fields" onChange={() => setPolicyTouched(true)}>
@@ -412,7 +536,7 @@ export function AddBridgeWizard({
                 <>
                   <WizardChoice legend="When does tm8 answer?" name="w-trigger" value={policy.trigger}
                     onChange={(v) => setPolicy((p) => ({ ...p, trigger: v }))}
-                    options={[['mention', 'Only when someone writes @tm8 or replies to tm8'], ['every', 'Every message'], ['none', 'Never — log only']]} />
+                    options={[['mention', `Only when someone writes @${botName} or replies to tm8`], ['every', 'Every message'], ['none', 'Never — log only']]} />
                   <WizardChoice legend={`What from tm8 goes back to ${provider}?`} name="w-outbound" value={policy.outbound}
                     onChange={(v) => setPolicy((p) => ({ ...p, outbound: v }))}
                     options={[['replies', 'Answers, and anything posted on the bridge', 'e.g. tm8\'s reply to "@tm8 is the deploy done?"'], ['all', `Also everything posted in the ${TARGET_WORD[targetKind]}`, 'e.g. your own notes and agents\' updates there']]} />
@@ -424,11 +548,33 @@ export function AddBridgeWizard({
               {targetKind !== 'channel' ? (
                 <WizardChoice legend="Who can start agents?" name="w-who" value={policy.whoMayTrigger}
                   onChange={(v) => setPolicy((p) => ({ ...p, whoMayTrigger: v }))}
-                  options={[['linked', 'Only people who have verified their number in tm8'], ['anyone', 'Anyone in the group', 'you\'ll confirm']]} />
+                  options={[
+                    ['linked', slack ? 'Only people whose Slack account is linked to a tm8 member' : 'Only people who have verified their number in tm8'],
+                    ['anyone', `Anyone in the ${convWord}`, 'you\'ll confirm'],
+                  ]} />
               ) : null}
-              <WizardChoice legend="How replies are signed" name="w-voice" value={policy.voice}
-                onChange={(v) => setPolicy((p) => ({ ...p, voice: v }))}
-                options={[['named', '"tm8:" / "Release notes (keen-otter):"'], ['plain', 'No prefix']]} />
+              {/* `perUserVoice` (Slack, chat:write.customize): each reply already
+                  carries its own session's name and icon, so there is no prefix
+                  to choose between. The switch is WhatsApp's, where one sender
+                  identity is all there is. */}
+              {caps.perUserVoice ? (
+                <p className="brg-hint" data-testid="wizard-voice-note">
+                  Each reply arrives in {provider} under the answering session's own name and icon, with no prefix.
+                </p>
+              ) : (
+                <WizardChoice legend="How replies are signed" name="w-voice" value={policy.voice}
+                  onChange={(v) => setPolicy((p) => ({ ...p, voice: v }))}
+                  options={[['named', '"tm8:" / "Release notes (keen-otter):"'], ['plain', 'No prefix']]} />
+              )}
+              {/* Thread mode (§1.2), only where the runtime has native threads. */}
+              {hasNativeThreads(providerId) && targetKind !== 'channel' ? (
+                <ThreadModeChoice
+                  name="w-threadmode"
+                  targetKind={targetKind}
+                  value={policy.threadMode ?? DEFAULT_SLACK_THREAD_MODE}
+                  onChange={(v) => setPolicy((p) => ({ ...p, threadMode: v }))}
+                />
+              ) : null}
               <label className="brg-form__line">
                 <span className="set-eyebrow">Style</span>
                 <input type="text" value={style} maxLength={BRIDGE_STYLE_MAX} placeholder="short and readable: lead with the answer…" onChange={(e) => setStyle(e.target.value)} />
@@ -456,11 +602,18 @@ export function AddBridgeWizard({
         {step === 4 && created ? (
           <section data-testid="wizard-step-test">
             <ul className="brg-wiz__checks">
-              <li data-ok>✓ Connected to {provider} {connection?.externalAccountId ?? connection?.label}</li>
-              <li data-ok>✓ tm8 can read “{conversation?.name}”{conversation?.size ? ` (${conversation.size} people)` : ''}</li>
+              <li data-ok>
+                ✓ Connected to {provider}{' '}
+                {connection?.provider === 'slack' && connection.account
+                  ? connection.account.teamName
+                  : connection?.externalAccountId ?? connection?.label}
+              </li>
+              <li data-ok>
+                ✓ tm8 can read “{conversation ? conversationLabel(conversation) : ''}”{conversation?.size ? ` (${conversation.size} people)` : ''}
+              </li>
               <li data-ok>✓ The bridge is {created.status}: it lands in {created.target.title}</li>
-              <li>◌ Send a test message to the group — {pendingReason(port, 'bridges.test', 'The test message')}</li>
-              <li>◌ {testLine(created.target.kind, created.target.title, provider)}</li>
+              <li>◌ Send a test message to the {convWord} — {pendingReason(port, 'bridges.test', 'The test message')}</li>
+              <li>◌ {testLine(created.target.kind, created.target.title, provider, created.policy.threadMode ?? null, botName)}</li>
             </ul>
             <p className="brg-hint">Finish is fine either way: if anything fails later, Health on the bridge says why.</p>
           </section>
@@ -486,18 +639,20 @@ export function AddBridgeWizard({
         </div>
       </div>
 
-      {linking ? (
-        <LinkNumberDialog
-          port={port}
-          spaceId={spaceId}
-          relink={linking.relink}
-          onClose={() => setLinking(null)}
-          onLinked={(c) => { setLinking(null); void reloadConnections().then(() => { if (c.offers.some((o) => o.spaceId === spaceId)) void toStep2(c); }); }}
-        />
-      ) : null}
+      {linking ? (() => {
+        const onLinked = (c: BridgeConnectionView) => {
+          setLinking(null);
+          void reloadConnections().then(() => { if (c.offers.some((o) => o.spaceId === spaceId)) void toStep2(c); });
+        };
+        return connectsByTokens(linking.provider) ? (
+          <SlackTokensDialog port={port} spaceId={spaceId} relink={linking.relink} onClose={() => setLinking(null)} onLinked={onLinked} />
+        ) : (
+          <LinkNumberDialog port={port} spaceId={spaceId} relink={linking.relink} onClose={() => setLinking(null)} onLinked={onLinked} />
+        );
+      })() : null}
       {confirm ? (
         <ConsequenceDialog
-          title={`Create the ${conversation?.name ?? ''} bridge like this?`}
+          title={`Create the ${conversation ? conversationLabel(conversation) : ''} bridge like this?`}
           consequences={confirm}
           confirmLabel="Yes, create it"
           onCancel={() => setConfirm(null)}
@@ -508,11 +663,79 @@ export function AddBridgeWizard({
   );
 }
 
-/** Step 4's live check, per kind (R7): where the question lands and where the answer appears. */
-export function testLine(kind: BridgeTargetKind, title: string, provider: string): string {
-  if (kind === 'channel') return `Now send a message from your phone; it appears in #${title}, and a reply there appears in ${provider}.`;
-  if (kind === 'work_session') return `Now send "@tm8 ping" from your phone; ${title} gets it and answers in ${provider}. If nothing comes back, check that your number is verified (Account → Linked identities).`;
-  return `Now send "@tm8 ping" from your phone; ${title} answers in ${provider}. If nothing comes back, check that your number is verified (Account → Linked identities).`;
+/**
+ * Step 4's live check, per kind (R7): where the question lands and where the
+ * answer appears. On Slack the check is done in Slack, not "from your phone",
+ * and in thread mode the answer comes back in a THREAD under the message —
+ * which is the one thing a tester would otherwise report as broken.
+ */
+export function testLine(
+  kind: BridgeTargetKind,
+  title: string,
+  provider: string,
+  threadMode: BridgeThreadMode | null = null,
+  botName = 'tm8',
+): string {
+  const slack = provider === 'Slack';
+  const from = slack ? `in ${provider}` : 'from your phone';
+  const verify = slack
+    ? 'If nothing comes back, check that tm8 is still in the channel and that the runtime is up (Health).'
+    : 'If nothing comes back, check that your number is verified (Account → Linked identities).';
+  if (kind === 'channel') return `Now send a message ${from}; it appears in #${title}, and a reply there appears in ${provider}.`;
+  if (slack && threadMode && threadMode !== 'off') {
+    const when = threadMode === 'every' ? 'any message' : `"@${botName} ping"`;
+    return `Now send ${when} in the channel; a session of its own starts and answers in a THREAD under your message, under its own name and icon. ${verify}`;
+  }
+  if (kind === 'work_session') return `Now send "@${botName} ping" ${from}; ${title} gets it and answers in ${provider}. ${verify}`;
+  return `Now send "@${botName} ping" ${from}; ${title} answers in ${provider}. ${verify}`;
+}
+
+/**
+ * THREAD MODE (§1.2), Slack's own setting: what a top-level message in the
+ * channel does. Its own component because the Routing tab offers exactly the
+ * same three choices with the same words, read from `THREAD_MODE_OPTIONS`.
+ */
+export function ThreadModeChoice({
+  name,
+  value,
+  onChange,
+  disabled,
+  targetKind,
+}: {
+  name: string;
+  value: BridgeThreadMode;
+  onChange(v: BridgeThreadMode): void;
+  disabled?: boolean;
+  /** Where the bridge lands: what a thread's session is a child OF, if anything. */
+  targetKind?: BridgeTargetKind;
+}) {
+  return (
+    <fieldset className="brg-choice" data-testid="bridge-thread-mode">
+      <legend className="set-eyebrow">Thread mode</legend>
+      {THREAD_MODE_OPTIONS.map(([mode, label, words]) => (
+        <label key={mode} className="brg-choice__opt">
+          <input
+            type="radio"
+            name={name}
+            value={mode}
+            checked={value === mode}
+            disabled={disabled}
+            onChange={() => onChange(mode)}
+          />
+          <span>{label}</span>
+          <span className="brg-muted">{words}</span>
+        </label>
+      ))}
+      <p className="brg-hint">
+        {/* "a child of the target session" only holds when the target IS a
+            session; a chat target has no session to parent them on (#1509
+            delta review, nit 1). */}
+        {targetKind === 'work_session'
+          ? "A thread's session is a child of the bridge's target session, goes idle after 2 hours with no replies, and the next reply in that thread wakes it with its history."
+          : "Each thread gets its own session, which goes idle after 2 hours with no replies; the next reply in that thread wakes it with its history."}
+      </p>
+    </fieldset>
+  );
 }
 
 function WizardChoice<V extends string>({

@@ -7,7 +7,7 @@
  *   status that is colour AND word (a degraded row says why)
  * - accounts are read off the bridges, titled Accounts & secrets, with the
  *   secrets slot
- * - Add bridge / Link a new account are disabled WITH the unserved operation's
+ * - Add bridge / Add an account are disabled WITH the unserved operation's
  *   name until `bridges.connections.begin` is served, and live once it is
  * - Pause and Resume call the port and say what pausing means
  * - Remove needs the typed name, then calls `remove`
@@ -80,11 +80,11 @@ describe('Settings → Bridges', () => {
     const add = screen.getByTestId('bridges-add') as HTMLButtonElement;
     expect(add.disabled).toBe(true);
     expect(add.title).toContain('bridges.connections.list');
-    expect((screen.getByRole('button', { name: '+ Link a new account' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId('bridges-add-account') as HTMLButtonElement).disabled).toBe(true);
     cleanup();
     await renderSection({ served: ['bridges.connections.list', 'bridges.conversations.list', 'bridges.connections.begin'] });
     expect((screen.getByTestId('bridges-add') as HTMLButtonElement).disabled).toBe(false);
-    expect((screen.getByRole('button', { name: '+ Link a new account' }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByTestId('bridges-add-account') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('pauses and resumes through the port, and says what pausing means', async () => {

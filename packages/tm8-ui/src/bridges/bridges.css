@@ -16,6 +16,19 @@
 .cv2-root .bridge-mark[data-provider='whatsapp'] { background: var(--pn-run-soft); color: var(--pn-run); }
 .cv2-root .bridge-mark[data-provider='telegram'],
 .cv2-root .bridge-mark[data-provider='messenger'] { background: var(--pn-info-soft); color: var(--pn-info); }
+/* Slack: its own tone, so a Slack row is told apart from a WhatsApp one at a
+   glance — never colour ALONE, the provider's name is always beside it.
+   --pn-brand is defined in all four themes (styles/tokens.css); --pn-accent,
+   which the discord line below reaches for, is defined in none, so that rule
+   has always drawn the default mark. */
+.cv2-root .bridge-mark[data-provider='slack'] { background: var(--pn-brand-soft); color: var(--pn-brand); }
+
+/* *↗ View in Slack* / *↗ In Slack*: a quiet outbound link, never competing
+   with the message it sits beside. */
+.cv2-root .brg-slacklink {
+  font-size: var(--pn-fs-tick);
+  white-space: nowrap;
+}
 
 .cv2-root .bridge-via {
   display: inline-flex;

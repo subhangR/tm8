@@ -37,6 +37,20 @@ export function consequencesOf(view: BridgeView, patch: BridgePatch): string[] {
   if (policy.direction === 'out' && view.policy.direction !== 'out') {
     out.push(`Nothing from ${group} will reach tm8; you won't see replies.`);
   }
+  /* Thread mode (Slack §1.2): widening is anything that starts MORE sessions.
+     off → mention starts one per @mention; → every starts one per message,
+     each spending from the space's credits, so both ask first. */
+  if (policy.threadMode !== undefined && policy.threadMode !== view.policy.threadMode) {
+    const was = view.policy.threadMode ?? 'off';
+    if (policy.threadMode === 'every' && was !== 'every') {
+      out.push(
+        `EVERY top-level message in ${group} will start its own session — not only the ones that @mention tm8 — `
+        + 'each spending from the space\'s credits. This is for a low-traffic intake channel only.',
+      );
+    } else if (policy.threadMode === 'mention' && was === 'off') {
+      out.push(`Every message in ${group} that @mentions tm8 will start its own session, living in that Slack thread.`);
+    }
+  }
   if (patch.workerWake === 'all' && view.workers.wake !== 'all') {
     out.push(`Workers listening on ${group} may wake on every message, not only the ones addressed to them.`);
   }

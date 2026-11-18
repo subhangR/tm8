@@ -4,6 +4,8 @@ import type { BridgeLogEntry, BridgeTrust, BridgeView } from '@tm8/contract';
 import { clockTime } from '../../kit/time';
 import type { BridgesPort } from '../api';
 import { bridgeFailureOf } from '../format';
+import { SlackMessageLink, useSlackWorkspace } from '../SlackLink';
+import { isSlackTs } from '../slack';
 
 const PAGE = 50;
 
@@ -19,7 +21,7 @@ const PAGE = 50;
  * this tab says where a message written there goes, and does not draw a
  * second composer.
  */
-export function ConversationTab({ view, port }: { view: BridgeView; port: Pick<BridgesPort, 'log'> }) {
+export function ConversationTab({ view, port }: { view: BridgeView; port: Pick<BridgesPort, 'log' | 'connections' | 'serves'> }) {
   const [items, setItems] = useState<BridgeLogEntry[] | null>(null);
   /* The id to pass as `before` for the next older page; null at the start of the log. */
   const [older, setOlder] = useState<string | null>(null);
@@ -27,6 +29,9 @@ export function ConversationTab({ view, port }: { view: BridgeView; port: Pick<B
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const provider = bridgeProviderLabel(view.provider);
+  /* §1.3: every bridged message offers the way back to Slack. Null on
+     WhatsApp and where the workspace cannot be known (see SlackLink). */
+  const workspaceUrl = useSlackWorkspace(port, view);
 
   /* Open on the NEWEST page (#1446: latest=true) and scroll back with
      before=olderCursor; rows stay oldest-first within a page, so an older page
@@ -63,7 +68,19 @@ export function ConversationTab({ view, port }: { view: BridgeView; port: Pick<B
         <p className="brg-hint">Nothing has crossed this bridge yet.</p>
       ) : (
         <ol className="brg-conv__list">
-          {items.map((m) => <Bubble key={m.id} entry={m} view={view} />)}
+          {items.map((m) => (
+            <Bubble
+              key={m.id}
+              entry={m}
+              view={view}
+              workspaceUrl={workspaceUrl}
+              /* The thread root's Slack ts, so a reply's link opens the THREAD
+                 rather than the channel. `rootMessageId` is a tm8 id, so it is
+                 resolved against this page; a root on an older page gives no
+                 thread_ts and the link still opens the message. */
+              threadRootTs={rootTsOf(items, m)}
+            />
+          ))}
         </ol>
       )}
       {error ? <p className="brg-error" role="alert">{error}</p> : null}
@@ -84,7 +101,26 @@ export function ConversationTab({ view, port }: { view: BridgeView; port: Pick<B
  * ledger's `BridgeDeliveryTick` under an outbound one — the same words the
  * chat transcript draws, so the two surfaces can never disagree.
  */
-function Bubble({ entry, view }: { entry: BridgeLogEntry; view: BridgeView }) {
+/** The Slack `ts` of this entry's thread root, when the root is on this page and is not the entry itself. */
+export function rootTsOf(items: readonly BridgeLogEntry[], entry: BridgeLogEntry): string | null {
+  const rootId = entry.rootMessageId;
+  if (!rootId || rootId === entry.id) return null;
+  const ts = items.find((m) => m.id === rootId)?.origin?.externalMessageId;
+  /* A thread rooted on a slash command has no linkable root (#1509 review 3). */
+  return isSlackTs(ts) ? ts : null;
+}
+
+function Bubble({
+  entry,
+  view,
+  workspaceUrl,
+  threadRootTs,
+}: {
+  entry: BridgeLogEntry;
+  view: BridgeView;
+  workspaceUrl: string | null;
+  threadRootTs: string | null;
+}) {
   const dir = entry.origin?.direction ?? null;
   const who = dir === 'in'
     ? entry.origin?.participant ?? entry.authorName
@@ -106,6 +142,14 @@ function Bubble({ entry, view }: { entry: BridgeLogEntry; view: BridgeView }) {
         ) : null}
         <span className="brg-muted"> · {clockTime(entry.createdAt)}</span>
         {dir === null ? <span className="brg-bubble__state">here only</span> : null}
+        {dir !== null ? (
+          <SlackMessageLink
+            workspaceUrl={workspaceUrl}
+            channelId={view.conversation.externalId}
+            ts={entry.origin?.externalMessageId}
+            threadRootTs={threadRootTs}
+          />
+        ) : null}
       </div>
       <p className="brg-bubble__body">{entry.body}</p>
       {entry.delivery ? <BridgeDeliveryTick delivery={entry.delivery} provider={view.provider} /> : null}

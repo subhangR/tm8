@@ -5,6 +5,7 @@ import type {
   BridgeConnectionAuthFlow,
   BridgeConnectionAuthFrame,
   BridgeConnectionBeginResult,
+  BridgeConnectionCredential,
   BridgeConnectionListResult,
   BridgeConnectionOfferResult,
   BridgeConnectionRemoveResult,
@@ -16,6 +17,7 @@ import type {
   BridgeHandleAppearance,
   BridgeHandoverResult,
   BridgeLogResult,
+  BridgeProvider,
   BridgeUpdateInput,
   BridgeView,
   AttentionRequest,
@@ -74,8 +76,22 @@ export interface BridgesClient {
   /** The caller's OWN connections (B1b-5, `/v2/me/…`): numbers they linked, and where each is offered. */
   connections: {
     list(): Promise<BridgeConnectionView[]>;
-    /** Link a number (or relink one with `connectionId`); the QR or code arrives on `onConnectionAuth`. */
-    begin(input: { label?: string; connectionId?: string; authFlow?: BridgeConnectionAuthFlow }): Promise<BridgeConnectionBeginResult>;
+    /**
+     * Link an account, or relink one with `connectionId`.
+     *
+     * `provider` picks HOW: WhatsApp (the default, kept so every existing
+     * caller is unchanged) links a device, and the QR or pairing code arrives
+     * on `onConnectionAuth`; Slack takes pasted `credential` tokens, which the
+     * runtime checks with `auth.test` and seals — they are forwarded once, on
+     * `connect`, and never stored, returned or logged by the server.
+     */
+    begin(input: {
+      provider?: BridgeProvider;
+      label?: string;
+      connectionId?: string;
+      authFlow?: BridgeConnectionAuthFlow;
+      credential?: BridgeConnectionCredential;
+    }): Promise<BridgeConnectionBeginResult>;
     offer(connectionId: string, spaceId: string): Promise<BridgeConnectionOfferResult>;
     withdraw(connectionId: string, spaceId: string): Promise<BridgeConnectionWithdrawResult>;
     remove(connectionId: string): Promise<BridgeConnectionRemoveResult>;
@@ -217,8 +233,11 @@ export function createBridgesClient(http: HttpClient): BridgesClient {
     create: (spaceId, input) => http.call<BridgeView>('bridges.create', { params: { spaceId }, body: { ...mutation(), ...input } }),
     connections: {
       list: async () => (await http.call<BridgeConnectionListResult>('bridges.connections.list')).items,
+      /* `provider` defaults to whatsapp and is overridden by the input (Slack
+         passes 'slack'), so the spread order matters: pinning it after the
+         spread is what made every connection a WhatsApp one. */
       begin: (input) => http.call<BridgeConnectionBeginResult>('bridges.connections.begin', {
-        body: { ...mutation(), provider: 'whatsapp', ...input },
+        body: { provider: 'whatsapp', ...mutation(), ...input },
       }),
       offer: (connectionId, spaceId) => http.call<BridgeConnectionOfferResult>('bridges.connections.offer', {
         params: { connectionId }, body: { ...mutation(), spaceId },

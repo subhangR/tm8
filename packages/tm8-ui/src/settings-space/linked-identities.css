@@ -152,11 +152,14 @@
   grid-column: 1;
 }
 
-/* The head's one action on the phone: a 44px touch target drawn as a normal
+/* The head's actions on the phone: each a 44px touch target drawn as a normal
    pill (the `.set-ghost` treatment in settings.css), not a tall slab beside the
-   title. */
-.cv2-root.set-root--stacked .set-links__begin {
+   title. `align-self` now belongs to the wrapper, which is the head's flex
+   child; two chips wrap onto a second line rather than squeezing the title. */
+.cv2-root.set-root--stacked .set-links__begins {
   align-self: center;
+}
+.cv2-root.set-root--stacked .set-links__begin {
   white-space: nowrap;
   border: 0 solid transparent;
   border-block-width: 11px;
@@ -164,4 +167,13 @@
   padding-block: 0;
   background-clip: padding-box;
   box-shadow: inset 0 0 0 1px rgba(var(--pn-brand-rgb), 0.35);
+}
+
+/* One door per provider (a link code is provider-bound): the chips sit in a
+   row in the section's action slot and wrap rather than widen the header. */
+.set-links__begins {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
 }

@@ -36,7 +36,18 @@ const PROVIDER_LABEL = new Map<string, string>([
   ['messenger', 'Messenger'],
 ]);
 
-/** A `Map`, so an inherited key never resolves (connector-logos.tsx, S27). */
+/**
+ * A `Map`, so an inherited key never resolves (connector-logos.tsx, S27).
+ *
+ * Slack's is a plain ASCII `#`. It was briefly `⌗` (U+2317 VIEWDATA SQUARE),
+ * the four-stroke hash Slack's own channel glyph draws, to avoid stuttering
+ * beside a title that already carries one (`# #deploys`) — and the #1509
+ * reviewer found in a real browser that U+2317 is in none of the shipped
+ * fonts and drew tofu. A missing glyph is far worse than a doubled one, and
+ * these marks are bundled TEXT (no `<img>`, no URL, nothing fetched), so the
+ * glyph has to be one every font has. If the doubling ever matters, give the
+ * mark a drawn tile rather than a rarer codepoint.
+ */
 const PROVIDER_GLYPH = new Map<string, string>([
   ['whatsapp', '◍'],
   ['telegram', '➤'],
