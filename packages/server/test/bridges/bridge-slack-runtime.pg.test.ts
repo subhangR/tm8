@@ -262,6 +262,36 @@ describe('begin with pasted tokens (lane A ac1)', () => {
     expect(waFrames.filter((f) => f.type === 'connect')).toEqual([]);
   });
 
+  it('one live connection per Slack app: a second begin on the same app is refused, naming the first (duplicate-app ruling)', async () => {
+    const again = await call('/v2/me/bridge-connections', browserToken, { clientMutationId: randomUUID(), provider: 'slack',
+      credential: { kind: 'slack_tokens', botToken: BOT_TOKEN, appToken: APP_TOKEN } });
+    expect(again.status, again.raw).toBe(409);
+    expect(again.body.error).toMatchObject({ code: 'conflict',
+      details: { reason: 'app_already_connected', label: 'Slack', connectionId: slackConnection } });
+    expect(again.body.error.message).toContain('already connected here as "Slack"');
+    for (const s of SECRETS) expect(again.raw).not.toContain(s);
+    // A relink of the SAME connection with tokens of the same app is fine.
+    const relink = await call('/v2/me/bridge-connections', browserToken, { clientMutationId: randomUUID(), provider: 'slack',
+      connectionId: slackConnection, credential: { kind: 'slack_tokens', botToken: BOT_TOKEN, appToken: APP_TOKEN } });
+    expect(relink.status, relink.raw).toBe(200);
+    expect(relink.body.data.runtime).toBe('connecting');
+    // A double click on Connect with another app's tokens: exactly one connection.
+    const other = ['xap' + 'p', '1', 'A0SECONDAPP', '9876543210123', '00112233445566778899aabbccddeeff'].join('-');
+    const both = await Promise.all([0, 1].map(() => call('/v2/me/bridge-connections', browserToken, { clientMutationId: randomUUID(),
+      provider: 'slack', credential: { kind: 'slack_tokens', botToken: BOT_TOKEN, appToken: other } })));
+    expect(both.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect(both.find((r) => r.status === 409)!.body.error.details.reason).toBe('app_already_connected');
+    const [{ n }] = await database.query<{ n: number }>(
+      `select count(*)::int as n from public.bridge_connections where provider_app_id = 'A0SECONDAPP' and status <> 'removed'`);
+    expect(n).toBe(1);
+    const made = both.find((r) => r.status === 200)!.body.data.connection.id as string;
+    expect((await call(`/v2/me/bridge-connections/${made}/remove`, browserToken, { clientMutationId: randomUUID() })).status).toBe(200);
+    // Removed frees the app.
+    const [{ n: left }] = await database.query<{ n: number }>(
+      `select count(*)::int as n from public.bridge_connections where provider_app_id = 'A0SECONDAPP' and status <> 'removed'`);
+    expect(left).toBe(0);
+  });
+
   it('a WhatsApp begin reaches the WhatsApp runtime only (mixed runtimes)', async () => {
     slackFrames.length = 0;
     const begun = await call('/v2/me/bridge-connections', browserToken, { clientMutationId: randomUUID(), provider: 'whatsapp' });

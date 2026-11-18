@@ -36,7 +36,7 @@
 --
 -- RESTATED HERE (444 must start from these bodies if it touches them):
 --   internal.is_server_only_credential_provider (421)
---   public.begin_bridge_connection (421)
+--   public.begin_bridge_connection (421; now with p_app_id, the 4-argument form dropped)
 --   internal.bridge_connection_json (432)
 --   internal.bridge_valid_external_id (420)
 --   public.bridge_runtime_state (398)
@@ -115,15 +115,33 @@ create or replace function internal.bridge_provider_voices(p_provider text)
 returns boolean language sql immutable as $$ select coalesce(p_provider = 'slack', false) $$;
 revoke all on function internal.bridge_provider_voices(text) from public;
 
--- bridges.connections.begin (human-only): 421's, with Slack. The tokens are not
--- an argument: they ride the runtime's `connect` frame only.
-create or replace function public.begin_bridge_connection(
+-- One Slack app runs on one connection per node (coordinator ruling, lane G's
+-- double-click flake): a second connection on the same app's tokens would be
+-- refused by the runtime ('app_already_connected') and leave a dead twin the
+-- owner may bridge. The app id is the second part of the app-level token
+-- (xapp-1-<A…>-…); it is not a secret. The token itself never reaches SQL.
+alter table public.bridge_connections add column provider_app_id text
+  check (provider_app_id is null or provider_app_id ~ '^[A-Z0-9]{2,40}$');
+create unique index bridge_connections_one_per_app
+  on public.bridge_connections(provider, provider_app_id)
+  where provider_app_id is not null and status <> 'removed';
+comment on column public.bridge_connections.provider_app_id is
+  '443 (Slack): the Slack app the pasted tokens belong to (from the xapp token, not secret). One live connection per app per node.';
+
+-- bridges.connections.begin (human-only): 421's, with Slack and the app id. The
+-- tokens are not an argument: they ride the runtime's `connect` frame only.
+-- p_app_id: a begin with tokens names their app; another live connection on
+-- that app is refused 'app_already_connected' (a relink of the same connection
+-- with new tokens for the same app is fine).
+drop function public.begin_bridge_connection(text, text, uuid, text);
+create function public.begin_bridge_connection(
   p_provider text,
   p_label text default null,
   p_connection_id uuid default null,
-  p_client_mutation_id text default null
+  p_client_mutation_id text default null,
+  p_app_id text default null
 ) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
-declare replay jsonb; account uuid; conn public.bridge_connections;
+declare replay jsonb; account uuid; conn public.bridge_connections; twin public.bridge_connections;
 begin
   perform internal.require_human_auth_kind();
   perform internal.require_replay_principal(p_client_mutation_id);
@@ -137,28 +155,51 @@ begin
     raise exception 'no connector runtime for % yet; whatsapp and slack are the providers today', coalesce(p_provider, 'null')
       using errcode = '22023';
   end if;
-  if p_connection_id is null then
-    insert into public.bridge_connections(provider, owner_account_id, label, status)
-    values (p_provider, account,
-            coalesce(nullif(btrim(p_label), ''), case p_provider when 'slack' then 'Slack' else 'WhatsApp' end),
-            'connecting')
-    returning * into conn;
-  else
-    conn := internal.bridge_own_connection(p_connection_id);
-    if conn.provider <> p_provider then
-      raise exception 'this connection is a % connection', conn.provider using errcode = '22023';
-    end if;
-    update public.bridge_connections
-       set status = 'connecting', label = coalesce(nullif(btrim(p_label), ''), label)
-     where id = conn.id
-    returning * into conn;
+  if p_app_id is not null and (p_provider <> 'slack' or p_app_id !~ '^[A-Z0-9]{2,40}$') then
+    raise exception 'an app id is a Slack app''s id' using errcode = '22023';
   end if;
+  if p_app_id is not null then
+    perform pg_advisory_xact_lock(hashtextextended('bridge-connection-app:' || p_provider || ':' || p_app_id, 0));
+    select * into twin from public.bridge_connections c
+     where c.provider = p_provider and c.provider_app_id = p_app_id and c.status <> 'removed'
+       and c.id is distinct from p_connection_id
+     order by c.created_at limit 1;
+    if twin.id is not null then
+      perform internal.bridge_refuse('app_already_connected',
+        format('this Slack app is already connected here as "%s": relink that connection with the new tokens, or remove it first', twin.label),
+        jsonb_build_object('label', twin.label)
+          || case when twin.owner_account_id = account then jsonb_build_object('connectionId', twin.id) else '{}'::jsonb end);
+    end if;
+  end if;
+  begin
+    if p_connection_id is null then
+      insert into public.bridge_connections(provider, owner_account_id, label, status, provider_app_id)
+      values (p_provider, account,
+              coalesce(nullif(btrim(p_label), ''), case p_provider when 'slack' then 'Slack' else 'WhatsApp' end),
+              'connecting', p_app_id)
+      returning * into conn;
+    else
+      conn := internal.bridge_own_connection(p_connection_id);
+      if conn.provider <> p_provider then
+        raise exception 'this connection is a % connection', conn.provider using errcode = '22023';
+      end if;
+      update public.bridge_connections
+         set status = 'connecting', label = coalesce(nullif(btrim(p_label), ''), label),
+             provider_app_id = coalesce(p_app_id, provider_app_id)
+       where id = conn.id
+      returning * into conn;
+    end if;
+  exception when unique_violation then
+    -- A concurrent begin on the same app (a double click) won.
+    perform internal.bridge_refuse('app_already_connected',
+      'this Slack app is already connected here: relink that connection with the new tokens, or remove it first');
+  end;
   return internal.ledger_record(p_client_mutation_id, 'bridges.connections.begin',
     internal.bridge_connection_json(conn));
 end
 $$;
-revoke all on function public.begin_bridge_connection(text, text, uuid, text) from public;
-grant execute on function public.begin_bridge_connection(text, text, uuid, text) to tm8_app;
+revoke all on function public.begin_bridge_connection(text, text, uuid, text, text) from public;
+grant execute on function public.begin_bridge_connection(text, text, uuid, text, text) to tm8_app;
 
 -- -----------------------------------------------------------------------------
 -- §2. The connected workspace.
