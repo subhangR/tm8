@@ -111,7 +111,8 @@ export class SocketModeClient {
     }
     if (this.stopped) return
     // The URL holds a one-use ticket: it is never logged.
-    const ws = new WebSocket(url, { handshakeTimeout: 15_000 })
+    // Through the proxy when one is configured (a CONNECT tunnel, as for the Web API).
+    const ws = new WebSocket(url, { handshakeTimeout: 15_000, agent: this.o.api.egress.agentFor(url) })
     this.ws = ws
     let alive = true
     let hello = false

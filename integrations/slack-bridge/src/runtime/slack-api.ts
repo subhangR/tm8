@@ -1,3 +1,5 @@
+import { Egress, httpRequest, readText } from './egress.js'
+
 // A minimal Slack Web API client: form-encoded POSTs to <base><method> with the token as a Bearer header. The base is
 // TM8_SLACK_API_URL (default https://slack.com/api/), the seam the fake Slack in test/ plugs into. Errors carry Slack's
 // own error code and, on HTTP 429, the Retry-After seconds. Nothing here logs, and no error message holds a token.
@@ -44,7 +46,7 @@ export type ApiResult = Record<string, any> & { ok: true }
 export class SlackApi {
   readonly base: URL
 
-  constructor(base: string = DEFAULT_SLACK_API_URL, private fetchImpl: typeof fetch = fetch) {
+  constructor(base: string = DEFAULT_SLACK_API_URL, readonly egress: Egress = Egress.direct()) {
     this.base = new URL(base.endsWith('/') ? base : `${base}/`)
   }
 
@@ -55,22 +57,24 @@ export class SlackApi {
       if (v === undefined || v === null) continue
       form.set(k, typeof v === 'object' ? JSON.stringify(v) : String(v))
     }
-    let res: Response
+    let res: Awaited<ReturnType<typeof httpRequest>>
+    let text: string
     try {
-      res = await this.fetchImpl(new URL(method, this.base), {
+      res = await httpRequest(this.egress, new URL(method, this.base), {
         method: 'POST',
         headers: { authorization: `Bearer ${token}`, 'content-type': 'application/x-www-form-urlencoded; charset=utf-8' },
-        body: form,
-        signal: AbortSignal.timeout(30_000),
+        body: form.toString(),
+        timeoutMs: 30_000,
       })
-    } catch {
+      if (res.status === 429) {
+        res.body.resume()
+        throw new SlackApiError('ratelimited', method, { retryAfterSec: retryAfter(res.headers), status: 429 })
+      }
+      text = await readText(res.body)
+    } catch (e) {
+      if (e instanceof SlackApiError) throw e
       throw new SlackApiError('network_error', method)
     }
-    if (res.status === 429) {
-      await res.body?.cancel()
-      throw new SlackApiError('ratelimited', method, { retryAfterSec: retryAfter(res.headers), status: 429 })
-    }
-    const text = await res.text().catch(() => '')
     let body: Record<string, any> | null = null
     try {
       body = JSON.parse(text)

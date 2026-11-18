@@ -7,6 +7,7 @@ import path from 'node:path'
 import { HttpWsLink } from '../src/runtime/link.js'
 import type { AllowlistFrame, ServerFrame } from '../src/runtime/protocol.js'
 import { Runtime } from '../src/runtime/runtime.js'
+import type { Egress } from '../src/runtime/egress.js'
 import { SlackApi } from '../src/runtime/slack-api.js'
 import { FakeSlack } from './fake-slack.js'
 import { FakeTm8 } from './fake-tm8.js'
@@ -16,7 +17,7 @@ export const CONN2 = '01a1eddf-0000-7000-8000-000000000002'
 
 export type Rig = Awaited<ReturnType<typeof rig>>
 
-export async function rig(o: { stateDir?: string; key?: Buffer; slack?: FakeSlack; tm8?: FakeTm8 } = {}) {
+export async function rig(o: { stateDir?: string; key?: Buffer; slack?: FakeSlack; tm8?: FakeTm8; egress?: Egress } = {}) {
   const slack = o.slack ?? (await FakeSlack.start())
   const tm8 = o.tm8 ?? (await FakeTm8.start())
   const stateDir = o.stateDir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'slack-rt-'))
@@ -37,7 +38,7 @@ export async function rig(o: { stateDir?: string; key?: Buffer; slack?: FakeSlac
     stateDir,
     link,
     log,
-    api: new SlackApi(slack.apiUrl),
+    api: new SlackApi(slack.apiUrl, o.egress),
     tuning: { pingMs: 250, backoffMs: () => 30, sharePollMs: 20 },
   })
   ref.runtime = runtime
@@ -68,6 +69,7 @@ export async function rig(o: { stateDir?: string; key?: Buffer; slack?: FakeSlac
     async stop() {
       link.stop()
       await runtime.stop()
+      runtime.api.egress.destroy()
       await slack.close()
       await tm8.close()
     },

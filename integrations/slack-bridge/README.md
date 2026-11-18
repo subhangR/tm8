@@ -66,9 +66,15 @@ TM8_BRIDGE_RUNTIME_TOKEN_FILE=/path/to/bridge-runtime-token npm run runtime
 | `TM8_SLACK_STATE_DIR` | `./data` | where the sealed tokens live |
 | `TM8_SLACK_API_URL` | `https://slack.com/api/` | Slack Web API base; point it at a fake Slack to test |
 | `TM8_SLACK_RUNTIME_ID` | `slack-<hostname>` | this runtime's stable id |
+| `TM8_SLACK_PROXY_URL` | unset | HTTP(S) proxy for all Slack traffic; overrides the standard variables below. `user:password@` is sent as Proxy-Authorization |
+| `HTTPS_PROXY` / `https_proxy` | unset | the standard proxy for `https://` and `wss://` (`HTTP_PROXY` for `http://`) |
+| `NO_PROXY` / `no_proxy` | unset | hosts reached directly: `*`, `host`, `.domain`, `*.domain`, `host:port` |
 
 In a deployment the server's supervisor starts it with the label `slack-runtime`. The runtime needs outbound HTTPS
-and WSS to `slack.com` and `*.slack.com`, and nothing inbound.
+and WSS to `slack.com` and `*.slack.com`, and nothing inbound. Behind a mandatory proxy, set `TM8_SLACK_PROXY_URL`
+(or `HTTPS_PROXY`). Every Slack connection then opens as an HTTP CONNECT tunnel through it: Web API calls, the Socket
+Mode socket, and file uploads and downloads (`src/runtime/egress.ts`, no extra dependency). The link to tm8-server
+is loopback and never goes through the proxy.
 
 ## Tests
 
@@ -101,6 +107,7 @@ fakes. Nothing inside the process is stubbed:
 | `inbound.test.ts` | the allowlist drop, messages, mentions, threads, files, reactions, edits, deletes, slash commands, channel state |
 | `outbound.test.ts` | send (mrkdwn, split, thread, voice), 429 and error mapping, reactions, files out and in, the channel list |
 | `grid.test.ts` | org-wide Enterprise Grid installs (per-workspace listing, W… users, posting, files) and workspace installs on Grid |
+| `proxy.test.ts` | proxy configuration and NO_PROXY; every Slack path tunnelling through a CONNECT proxy (`test/connect-proxy.ts`), with auth and refusal |
 | `units.test.ts` | mrkdwn, splitting, Slack text, emoji, failure mapping, sealing, the allowlist |
 
 CI runs the suites in `.github/workflows/slack-bridge.yml` (until installed, `ci/slack-bridge.workflow.yml`) whenever this directory or the canonical protocol module

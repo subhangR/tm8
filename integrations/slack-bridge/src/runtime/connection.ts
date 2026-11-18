@@ -2,10 +2,9 @@
 // Inbound: every envelope is acked at once; one from a channel off the allowlist is counted and dropped on its channel
 // id alone, before a single other field is read (D28). Outbound: every frame that touches a channel goes through
 // `allowlist.check` first. The tokens are used to call Slack and for nothing else: never in a frame, log or error.
-import http from 'node:http'
-import https from 'node:https'
-import { Readable } from 'node:stream'
+import type { Readable } from 'node:stream'
 import { Allowlist, OutboundRefused, type OutboundKind } from './allowlist.js'
+import { Egress, httpRequest, type HttpResponse } from './egress.js'
 import { slackNameOf, unicodeOf } from './emoji.js'
 import { PermanentError, TooLargeError } from './errors.js'
 import type {
@@ -558,7 +557,7 @@ export class SlackConnection {
       const url = String(up.upload_url ?? '')
       const fileId = String(up.file_id ?? '')
       if (!url || !fileId) throw new SlackApiError('no_upload_url', 'files.getUploadURLExternal')
-      await uploadTo(url, source, length, m.mime)
+      await uploadTo(this.o.api.egress, url, source, length, m.mime)
       this.guard(f.conversationId, 'media')
       // A file is always posted as the app (uploads take no username/icon). With a voice, the caption follows as its
       // own voiced message in the same place, so the words still come from their author.
@@ -650,18 +649,32 @@ export class SlackConnection {
     if (typeof file.size === 'number' && file.size > f.maxBytes) throw new TooLargeError(file.size, f.maxBytes)
     const url = String(file.url_private_download ?? file.url_private ?? '')
     if (!this.o.api.trusts(url)) throw new Error('file url is not a Slack url')
-    const res = await fetch(url, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(120_000) })
-    if (!res.ok || !res.body) {
-      await res.body?.cancel()
-      throw new SlackApiError(`http_${res.status}`, 'url_private')
+    // Slack may redirect a file to another of its hosts; the token follows only to a host it trusts.
+    let res: HttpResponse | null = null
+    let at = url
+    for (let hop = 0; hop < 4; hop++) {
+      try {
+        res = await httpRequest(this.o.api.egress, at, { headers: { authorization: `Bearer ${token}` }, timeoutMs: 120_000 })
+      } catch {
+        throw new SlackApiError('network_error', 'url_private')
+      }
+      const next = res.headers.get('location')
+      if (res.status < 300 || res.status >= 400 || !next) break
+      res.body.resume()
+      at = new URL(next, at).href
+      if (!this.o.api.trusts(at)) throw new Error('file url redirected away from Slack')
+    }
+    if (!res || res.status < 200 || res.status >= 300) {
+      res?.body.resume()
+      throw new SlackApiError(`http_${res?.status ?? 0}`, 'url_private')
     }
     // A bad token gets Slack's sign-in page, not the file.
     const type = res.headers.get('content-type') ?? ''
     if (type.startsWith('text/html') && !String(file.mimetype ?? '').startsWith('text/html')) {
-      await res.body.cancel()
+      res.body.resume()
       throw new SlackApiError('file_access_denied', 'url_private')
     }
-    const data = await collect(Readable.fromWeb(res.body as import('node:stream/web').ReadableStream<Uint8Array>), f.maxBytes)
+    const data = await collect(res.body, f.maxBytes)
     return { mime: file.mimetype ?? (type || null), data }
   }
 
@@ -801,27 +814,14 @@ async function collect(stream: Readable, max: number): Promise<Buffer> {
 }
 
 /** POSTs the bytes to Slack's pre-signed upload URL (no token: the URL is the authority) with an exact length. */
-function uploadTo(url: string, source: Buffer | Readable, length: number, mime: string | undefined): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const u = new URL(url)
-    const req = (u.protocol === 'https:' ? https : http).request(u, {
-      method: 'POST',
-      headers: { 'content-type': mime || 'application/octet-stream', 'content-length': length },
-      timeout: 300_000,
-    }, (res) => {
-      res.resume()
-      res.on('end', () => {
-        const s = res.statusCode ?? 0
-        if (s >= 200 && s < 300) resolve()
-        else reject(new SlackApiError(`http_${s}`, 'file upload'))
-      })
-    })
-    req.on('timeout', () => req.destroy(new Error('upload timed out')))
-    req.on('error', (e) => reject(/attachment download failed/.test(e.message) ? e : new SlackApiError('network_error', 'file upload')))
-    if (Buffer.isBuffer(source)) req.end(source)
-    else {
-      source.on('error', (e) => req.destroy(e))
-      source.pipe(req)
-    }
-  })
+function uploadTo(egress: Egress, url: string, source: Buffer | Readable, length: number, mime: string | undefined): Promise<void> {
+  return httpRequest(egress, url, { method: 'POST', headers: { 'content-type': mime || 'application/octet-stream', 'content-length': length }, body: source, timeoutMs: 300_000 }).then(
+    (res) => {
+      res.body.resume()
+      if (res.status < 200 || res.status >= 300) throw new SlackApiError(`http_${res.status}`, 'file upload')
+    },
+    (e: Error) => {
+      throw /attachment download failed/.test(e.message) ? e : new SlackApiError('network_error', 'file upload')
+    },
+  )
 }
