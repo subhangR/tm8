@@ -237,6 +237,9 @@ afterAll(async () => {
     const { writeFileSync } = await import('node:fs');
     const dump = async (sql: string) => JSON.stringify(await owner(sql).catch((e) => String(e)), null, 1);
     writeFileSync(process.env.E2E_DEBUG, [
+      '== pg activity', JSON.stringify(await database.query(`select pid, usename, state, wait_event_type, wait_event,
+        extract(epoch from now() - query_start)::int as secs, left(query, 160) as query from pg_stat_activity
+        where datname = current_database() and pid <> pg_backend_pid() order by query_start`).catch((e) => String(e)), null, 1),
       '== threads', await dump('select * from public.bridge_threads'),
       '== origins', await dump('select message_id, direction, external_message_id, command_state from public.message_origins'),
       '== deliveries', await dump('select message_id, target_work_session_id, status, failure_reason from public.session_message_deliveries'),
@@ -486,6 +489,25 @@ describe('Slack end to end: real server + real slack-bridge runtime + fake Slack
     expect(m.text).toContain(handle);
     expect(m.text).not.toMatch(/usage:|problem on our side/);
     // The command is not a thread and started no session.
+    expect(spawns).toHaveLength(1);
+  });
+
+  it('a guest and a Slack Connect user with a member\'s verified email are NOT auto-linked; their @mention starts nothing', async () => {
+    slack.user({ id: 'U0GUEST01', name: 'Gus', email: OWNER_EMAIL, guest: 'multi' });
+    slack.user({ id: 'U0EXTERN1', name: 'Ext', email: OWNER_EMAIL, external: true });
+    for (const user of ['U0GUEST01', 'U0EXTERN1']) {
+      const ts = slack.ts();
+      await event({ type: 'message', channel: CHANNEL, user, text: `<@${slack.bot.userId}> please deploy main`, ts });
+      await until(`${user}'s mention stored`, async () => (await inboundCopies(ts)).length > 0);
+      const links = await owner('select 1 from public.bridge_identity_links where provider = $1 and external_id = $2', ['slack', user]);
+      expect(links, user).toEqual([]);
+      const threads = await owner('select 1 from public.bridge_threads where bridge_id = $1 and root_external_id = $2', [bridgeId, ts]);
+      expect(threads, user).toEqual([]);
+      const [author] = await owner<{ kind: string }>(
+        `select e.kind from public.message_origins o join public.messages m on m.entity_id = o.message_id
+           join public.entities e on e.id = m.author_id where o.direction = 'in' and o.external_message_id = $1 limit 1`, [ts]);
+      expect(author!.kind, user).not.toBe('member');
+    }
     expect(spawns).toHaveLength(1);
   });
 
