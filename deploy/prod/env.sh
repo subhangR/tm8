@@ -22,6 +22,26 @@
 TM8_PROD_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export TM8_PROD_ROOT
 
+# --- bridges ----------------------------------------------------------------
+# The connector runtimes are opt-in, per machine, and must survive a restart from
+# any shell, so they come from one small file rather than the ambient env:
+#   ~/.config/tm8/bridges.env        e.g.  TM8_SLACK_RUNTIME=1
+# Only TM8_SLACK_* and TM8_BRIDGE_RUNTIME_* lines are read (KEY=VALUE, # comments);
+# nothing in it can repoint the database or the ports. A variable already in the
+# environment wins. integrations/slack-bridge/SETUP.md is the guide.
+TM8_BRIDGES_ENV_FILE="${TM8_BRIDGES_ENV_FILE:-$HOME/.config/tm8/bridges.env}"
+if [[ -r "$TM8_BRIDGES_ENV_FILE" ]]; then
+  while IFS= read -r _tm8_line || [[ -n "$_tm8_line" ]]; do
+    _tm8_line="${_tm8_line#export }"
+    [[ "$_tm8_line" =~ ^(TM8_SLACK_[A-Z0-9_]*|TM8_BRIDGE_RUNTIME_[A-Z0-9_]*)=(.*)$ ]] || continue
+    _tm8_k="${BASH_REMATCH[1]}"; _tm8_v="${BASH_REMATCH[2]}"
+    [[ "$_tm8_v" =~ ^\"(.*)\"$ || "$_tm8_v" =~ ^\'(.*)\'$ ]] && _tm8_v="${BASH_REMATCH[1]}"
+    [[ -n "${!_tm8_k+x}" ]] || export "$_tm8_k=$_tm8_v"
+  done < "$TM8_BRIDGES_ENV_FILE"
+  unset _tm8_line _tm8_k _tm8_v
+fi
+export TM8_BRIDGES_ENV_FILE
+
 # --- where the frozen build lives -------------------------------------------
 # Overridable so a rehearsal deploy can target a scratch directory.
 export TM8_PROD_DIR="${TM8_PROD_DIR:-$HOME/.local/share/tm8-stable}"

@@ -125,6 +125,8 @@ import { BridgeRuntimeHub, isBridgeRuntimeUpgrade } from './bridges/runtime/hub.
 import { bridgeGroupPort, createBridgeCommands, createBridgeKeeper } from './bridges/commands/index.js';
 import { createBridgeRuntimeRoute } from './bridges/runtime/routes.js';
 import { BridgeRuntimeSupervisor } from './bridges/runtime/supervisor.js';
+import { slackRuntimePlan } from './bridges/runtime/slack-runtime.js';
+import { REPO_ROOT } from './configs/locate.js';
 import { BridgeMediaFetcher } from './bridges/runtime/media.js';
 import { createLocalTranscriber, findTranscriber } from './bridges/runtime/transcribe.js';
 import { createBridgeSessionDelivery } from './bridges/runtime/deliver.js';
@@ -1102,9 +1104,14 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // token file configured, the node mints the runtime's bridge_runtime session
   // (and starts the sidecar, if a command is given) now that it is listening.
   let bridgeSupervisor: BridgeRuntimeSupervisor | undefined;
+  let slackSupervisor: BridgeRuntimeSupervisor | undefined;
   if (bridgeHub) {
     await bridgeHub.start();
-    server.http.once('close', () => { void bridgeHub.stop(); void bridgeSupervisor?.stop(); });
+    server.http.once('close', () => { void bridgeHub.stop(); void bridgeSupervisor?.stop(); void slackSupervisor?.stop(); });
+    const ownerClaims = async () => {
+      const o = await owner!();
+      return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'bridges.runtime-mint' };
+    };
     const tokenFile = process.env.TM8_BRIDGE_RUNTIME_TOKEN_FILE;
     if (tokenFile && db && owner) {
       const command = process.env.TM8_BRIDGE_RUNTIME_COMMAND
@@ -1112,10 +1119,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         : undefined;
       bridgeSupervisor = new BridgeRuntimeSupervisor({
         db,
-        ownerClaims: async () => {
-          const o = await owner();
-          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'bridges.runtime-mint' };
-        },
+        ownerClaims,
         tokenFile,
         label: process.env.TM8_BRIDGE_RUNTIME_LABEL ?? 'whatsapp-runtime',
         ...(command && command.length > 0
@@ -1125,6 +1129,27 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         log: (line) => console.warn(line),
       });
       await bridgeSupervisor.start().catch((err: unknown) => console.warn(`[bridges] runtime supervisor: ${String(err)}`));
+    }
+    // The Slack runtime (integrations/slack-bridge): a second sidecar with its
+    // own label and token file; TM8_SLACK_RUNTIME=1 is the whole laptop setup.
+    const slack = slackRuntimePlan(process.env, { repoRoot: REPO_ROOT, dataDir, execPath: process.execPath });
+    if (slack?.problem) {
+      console.warn(`[bridges] slack-runtime not started: ${slack.problem}`);
+    } else if (slack && db && owner) {
+      slackSupervisor = new BridgeRuntimeSupervisor({
+        db,
+        ownerClaims,
+        tokenFile: slack.tokenFile,
+        label: slack.label,
+        ...(slack.command ? { command: slack.command } : {}),
+        serverUrl: url,
+        log: (line) => console.warn(line.replace('[bridges] runtime', '[bridges] slack-runtime')),
+      });
+      await slackSupervisor.start().then(
+        () => console.warn(`[bridges] slack-runtime ${slack.command ? 'started' : 'token file kept fresh'}; sealed state in ${slack.stateDir}`),
+        (err: unknown) => console.warn(`[bridges] slack-runtime supervisor: ${String(err)}`));
+    } else if (slack) {
+      console.warn('[bridges] slack-runtime not started: the node has no database or owner');
     }
   }
 

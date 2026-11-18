@@ -1,0 +1,66 @@
+# Slack app manifest for the tm8 bridge. Paste this at https://api.slack.com/apps →
+# Create New App → From a manifest. Step by step, Enterprise Grid included: SETUP.md next to this file.
+#
+# Socket Mode: the runtime opens an outbound WebSocket to Slack, so there are no request URLs,
+# no public endpoint and no inbound firewall rule. Events, the /tm8 command and acks all ride it.
+#
+# Scopes are exactly design §4 (docs: tm8 doc "Slack bridge: plugging an enterprise Slack into tm8").
+# Optional and left OUT on purpose (DM the bot to reach a session): im:history, im:read, im:write
+# plus the message.im event. Add them only if you want DMs; see SETUP.md › Optional: direct messages.
+# The app-level token (xapp-) is not declared here: you generate it under Basic Information with
+# the scope connections:write.
+display_information:
+  name: tm8
+  description: Bridge Slack channels and threads to tm8 sessions.
+  background_color: "#1d1c1d"
+  long_description: >-
+    tm8 connects the Slack channels it is invited to with tm8 chats, work sessions and channels.
+    Mention @tm8 in a connected channel and a tm8 session answers in the thread, under its own
+    name and icon. Use /tm8 for commands such as /tm8 work, /tm8 status and /tm8 link.
+    tm8 only sees channels it has been invited to and that a tm8 space admin has connected.
+features:
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: false
+    messages_tab_read_only_enabled: true
+  bot_user:
+    display_name: tm8
+    always_online: true
+  slash_commands:
+    - command: /tm8
+      description: Talk to tm8 from this channel (work, status, link, help)
+      usage_hint: "work <job> | status | link | help"
+      should_escape: false
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read
+      - channels:history
+      - channels:read
+      - groups:history
+      - groups:read
+      - chat:write
+      - chat:write.customize
+      - reactions:read
+      - reactions:write
+      - files:read
+      - files:write
+      - users:read
+      - users:read.email
+      - commands
+settings:
+  event_subscriptions:
+    bot_events:
+      - message.channels
+      - message.groups
+      - app_mention
+      - reaction_added
+      - member_joined_channel
+      - channel_left
+      - channel_archive
+      - channel_rename
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: true
+  socket_mode_enabled: true
+  token_rotation_enabled: false

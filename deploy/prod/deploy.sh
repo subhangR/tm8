@@ -369,6 +369,20 @@ if (( ${#missing[@]} )); then
 fi
 ok "workspace dependencies present"
 
+# The Slack runtime (integrations/slack-bridge) is a standalone npm package,
+# outside the bun workspace like whatsapp-bridge, so `bun install` never fills
+# its node_modules. Installed only when this machine runs it (TM8_SLACK_RUNTIME,
+# from env.sh's bridges.env), and again when its lockfile moves.
+SLACK_PKG="$SRC/integrations/slack-bridge"
+if [[ "${TM8_SLACK_RUNTIME:-}" =~ ^(1|true|TRUE|yes|on)$ && -f "$SLACK_PKG/package-lock.json" ]]; then
+  if [[ ! -f "$SLACK_PKG/node_modules/.package-lock.json" || "$SLACK_PKG/package-lock.json" -nt "$SLACK_PKG/node_modules/.package-lock.json" ]]; then
+    info "npm ci in integrations/slack-bridge (the Slack runtime) …"
+    (cd "$SLACK_PKG" && PATH="$(dirname "$TM8_NODE_BIN"):$PATH" npm ci --no-audit --no-fund >/dev/null) \
+      || die "npm ci failed in $SLACK_PKG — fix it, or unset TM8_SLACK_RUNTIME in $TM8_BRIDGES_ENV_FILE"
+  fi
+  ok "slack runtime dependencies present"
+fi
+
 # node-pty's spawn-helper must be executable or EVERY PTY spawn dies with
 # "posix_spawnp failed", which reaches the user as a bare 503 on
 # /v2/execution/spawn — a symptom that names nothing. bun extracts npm tarballs
@@ -421,6 +435,13 @@ step "Hardlinking dependencies"
 cp -al "$SRC/node_modules" "$NEXT/node_modules"
 linked=1
 for d in "$SRC"/packages/*/ "$SRC"/tools/*/; do
+  [[ -d "$d/node_modules" ]] || continue
+  rel="${d#$SRC/}"; rel="${rel%/}"
+  cp -al "$d/node_modules" "$NEXT/$rel/node_modules"
+  linked=$((linked + 1))
+done
+# The standalone connector packages (npm, not bun): link what is installed.
+for d in "$SRC"/integrations/*/; do
   [[ -d "$d/node_modules" ]] || continue
   rel="${d#$SRC/}"; rel="${rel%/}"
   cp -al "$d/node_modules" "$NEXT/$rel/node_modules"

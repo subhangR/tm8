@@ -102,6 +102,20 @@ if (agentCmd) {
   }
 }
 
+// --- the Slack runtime --------------------------------------------------------
+// Opt-in (TM8_SLACK_RUNTIME=1): the server supervises integrations/slack-bridge,
+// a standalone npm package that `bun install` does not fill. Missing deps would
+// otherwise surface only as one warning line in the server log.
+if (/^(1|true|yes|on)$/i.test(env.TM8_SLACK_RUNTIME ?? "")) {
+  log.info("");
+  const pkg = env.TM8_SLACK_RUNTIME_CWD || join(REPO_ROOT, "integrations", "slack-bridge");
+  const stateDir = env.TM8_SLACK_STATE_DIR || join(dataDir, "bridges", "slack-runtime");
+  if (!existsSync(join(pkg, "src", "runtime-main.ts"))) log.error(`slack runtime: no ${join(pkg, "src", "runtime-main.ts")}`);
+  else if (!existsSync(join(pkg, "node_modules"))) log.error(`slack runtime: dependencies missing — run: (cd ${pkg} && npm ci)`);
+  else log.info(`slack runtime: ${pkg} (dependencies installed)`);
+  log.info(`slack sealed state: ${stateDir} ${existsSync(stateDir) ? "(exists — keep it, and back it up)" : "(created when the first Slack connection connects)"}`);
+}
+
 log.info("");
 const results = await preflight(env, { needUiPort: !prod, needPgPort: true });
 let failed = 0;
