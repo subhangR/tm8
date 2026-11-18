@@ -26,11 +26,14 @@ export class SlackApiError extends Error {
   }
 }
 
-/** Codes that mean the token itself is no good: the connection is logged out and its sealed tokens wiped. */
-export const AUTH_ERRORS: ReadonlySet<string> = new Set([
-  'invalid_auth', 'not_authed', 'account_inactive', 'token_revoked', 'token_expired', 'not_allowed_token_type', 'no_permission',
-  'team_access_not_granted', 'app_uninstalled',
-])
+/**
+ * Codes that mean the token itself is dead: only these log the connection out and delete its sealed tokens. Everything
+ * else (no_permission, team_access_not_granted on one Grid workspace, channel_not_found…) fails that one request.
+ */
+export const DEAD_TOKEN: ReadonlySet<string> = new Set(['invalid_auth', 'not_authed', 'account_inactive', 'token_revoked', 'token_expired', 'app_uninstalled'])
+
+/** Codes that refuse a paste at link time: a dead token, the wrong kind of token, or a missing scope. */
+export const LINK_REFUSED: ReadonlySet<string> = new Set([...DEAD_TOKEN, 'not_allowed_token_type', 'missing_scope'])
 
 /** Codes worth trying again later; anything else is the request's own fault. */
 const RETRYABLE: ReadonlySet<string> = new Set([

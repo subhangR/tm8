@@ -2,8 +2,9 @@
 // listing methods need a team_id per workspace, channel ids and W… user ids are org-wide. A workspace-level install on
 // a Grid workspace behaves like any workspace install. The fake Slack refuses team-less listing on an org token.
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import { afterEach, describe, test } from 'node:test'
-import { CONN, rig, sleep, type Rig } from './harness.js'
+import { CONN, rig, sleep, waitUntil, type Rig } from './harness.js'
 
 let r: Rig
 afterEach(() => r.stop())
@@ -97,6 +98,50 @@ describe('an org-wide Enterprise Grid install', () => {
     const s = await r.tm8.waitFor('conversation-state', (x) => x.conversationId === 'C0USNOT')
     assert.equal(s.canSend, false)
   })
+})
+
+describe('per-request refusals never cost the install its tokens (review #2)', () => {
+  test('one ungranted workspace: the picker skips it, a channel there is cannot-send, the install stays linked and sealed', async () => {
+    await org()
+    r.slack.workspaces.push({ id: 'T0LOCK', name: 'Acme Legal', locked: true })
+    r.slack.channel({ id: 'C0LEGAL', name: 'legal', teams: ['T0LOCK'] })
+    r.tm8.push({ type: 'conversation.list', requestId: 'l1', connectionId: CONN })
+    const f = await r.tm8.waitFor('conversations', (x) => x.requestId === 'l1')
+    assert.equal(f.error, undefined)
+    assert.ok(f.items.length >= 5 && !f.items.some((i: any) => i.conversationId === 'C0LEGAL'))
+    r.tm8.push(r.allowlist(['C0SHARED', 'G0USSEC', 'C0LEGAL'], 2))
+    const s = await r.tm8.waitFor('conversation-state', (x) => x.conversationId === 'C0LEGAL')
+    assert.equal(s.canSend, false)
+    await sleep(50)
+    assert.ok(fs.existsSync(r.sealedFile()))
+    assert.ok(!r.tm8.of('state').some((x) => x.status === 'logged_out'))
+    assert.equal(r.runtime.connections.get(CONN)!.status, 'linked')
+  })
+
+  for (const code of ['no_permission', 'team_access_not_granted', 'channel_not_found', 'not_in_channel', 'restricted_action', 'ekm_access_denied']) {
+    test(`${code} on a send fails that send only`, async () => {
+      await org()
+      r.slack.fail('chat.postMessage', code)
+      r.tm8.push({ type: 'send', outboxId: `x-${code}`, connectionId: CONN, conversationId: 'C0SHARED', text: 'x' })
+      assert.equal((await r.tm8.waitFor('sent', (x) => x.outboxId === `x-${code}`)).failed.retryable, false)
+      await sleep(50)
+      assert.ok(fs.existsSync(r.sealedFile()))
+      assert.ok(!r.tm8.of('state').some((x) => x.status === 'logged_out'))
+      // And the install keeps posting (elsewhere: a lost channel is rightly marked cannot-send).
+      r.tm8.push({ type: 'send', outboxId: `y-${code}`, connectionId: CONN, conversationId: 'G0USSEC', text: 'y' })
+      assert.equal((await r.tm8.waitFor('sent', (x) => x.outboxId === `y-${code}`)).failed, undefined)
+    })
+  }
+
+  for (const code of ['invalid_auth', 'account_inactive', 'token_revoked', 'token_expired', 'not_authed']) {
+    test(`${code} is a dead token: logged out and wiped`, async () => {
+      await org()
+      r.slack.fail('chat.postMessage', code)
+      r.tm8.push({ type: 'send', outboxId: `d-${code}`, connectionId: CONN, conversationId: 'C0SHARED', text: 'x' })
+      assert.equal((await r.tm8.waitFor('state', (x) => x.status === 'logged_out')).detail, code)
+      await waitUntil(() => !fs.existsSync(r.sealedFile()))
+    })
+  }
 })
 
 describe('a workspace install on a Grid workspace', () => {

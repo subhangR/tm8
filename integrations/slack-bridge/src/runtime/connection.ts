@@ -21,7 +21,7 @@ import type {
   SlackAccount,
 } from './protocol.js'
 import { SealedTokens, type SlackTokens } from './sealed-auth.js'
-import { AUTH_ERRORS, SlackApiError, type SlackApi } from './slack-api.js'
+import { DEAD_TOKEN, LINK_REFUSED, SlackApiError, type SlackApi } from './slack-api.js'
 import { SocketModeClient, type Envelope } from './socket-mode.js'
 import { fromSlackText, splitMessage, toMrkdwn } from './text.js'
 
@@ -137,7 +137,7 @@ export class SlackConnection {
     } catch (e) {
       if (this.stopped) return
       const err = e instanceof SlackApiError ? e : new SlackApiError('network_error', 'auth.test')
-      if (AUTH_ERRORS.has(err.code) || err.code === 'missing_scope') {
+      if (LINK_REFUSED.has(err.code)) {
         // A refused paste leaves whatever was sealed before alone; refused sealed tokens are worthless and go.
         if (!pasted) await this.sealed.wipe()
         return this.setStatus('logged_out', err.detail)
@@ -482,8 +482,8 @@ export class SlackConnection {
       return await this.o.api.call(method, token, params)
     } catch (e) {
       if (e instanceof SlackApiError) {
-        if (AUTH_ERRORS.has(e.code)) void this.loggedOut(e.detail)
-        else if (conversationId && ['not_in_channel', 'channel_not_found', 'is_archived'].includes(e.code)) {
+        if (DEAD_TOKEN.has(e.code)) void this.loggedOut(e.detail)
+        else if (conversationId && ['not_in_channel', 'channel_not_found', 'is_archived', 'team_access_not_granted'].includes(e.code)) {
           void this.conversationState(conversationId, 'not_a_member', e.code === 'is_archived' ? { archived: true } : {})
         }
       }
@@ -697,7 +697,17 @@ export class SlackConnection {
       let cursor: string | undefined
       do {
         if (++pages > 100) break // a runaway cursor; 20,000 channels is past any picker
-        const { body } = await this.bot('users.conversations', { types: 'public_channel,private_channel', exclude_archived: true, limit: 200, cursor, team_id: ws?.id })
+        let body: Record<string, any>
+        try {
+          body = (await this.bot('users.conversations', { types: 'public_channel,private_channel', exclude_archived: true, limit: 200, cursor, team_id: ws?.id })).body
+        } catch (e) {
+          // One Grid workspace the token is not granted is that workspace's problem, not the install's: skip it.
+          if (ws && e instanceof SlackApiError && e.code === 'team_access_not_granted') {
+            this.o.log(`[slack ${this.connectionId}] picker: workspace ${ws.id} skipped: ${e.code}`)
+            break
+          }
+          throw e
+        }
         for (const c of body.channels ?? []) {
           if (!c?.id || c.is_archived || seen.has(c.id)) continue
           seen.set(c.id, {
@@ -732,11 +742,11 @@ export class SlackConnection {
   async refreshCanSend(conversationId: string): Promise<void> {
     if (!this.tokens || !this.allowlist.allows(conversationId)) return
     try {
-      const c = (await this.bot('conversations.info', { channel: conversationId })).body.channel ?? {}
+      const c = (await this.bot('conversations.info', { channel: conversationId }, conversationId)).body.channel ?? {}
       const reason: CannotSendReason | null = c.is_archived || c.is_member === false ? 'not_a_member' : null
       await this.conversationState(conversationId, reason, { archived: !!c.is_archived, name: c.name })
     } catch (e) {
-      if (e instanceof SlackApiError && e.code === 'channel_not_found') return // already reported by bot()
+      if (e instanceof SlackApiError && ['channel_not_found', 'team_access_not_granted'].includes(e.code)) return // already reported by bot()
       this.o.log(`[slack ${this.connectionId}] conversations.info for a connected channel failed: ${(e as Error).message}`)
     }
   }

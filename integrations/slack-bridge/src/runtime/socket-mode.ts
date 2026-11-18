@@ -6,7 +6,7 @@
 //   4. {type:'disconnect', reason} (refresh_requested, warning, link_disabled, too_many_websockets…) means: open a
 //      fresh socket. A dropped socket is reopened with backoff; pings detect a socket that died silently.
 import WebSocket from 'ws'
-import { SlackApiError, type SlackApi } from './slack-api.js'
+import { DEAD_TOKEN, SlackApiError, type SlackApi } from './slack-api.js'
 
 export type Envelope = {
   envelope_id?: string
@@ -201,6 +201,7 @@ export class SocketModeClient {
   }
 }
 
+/** The app token is dead, or is not an app-level token at all: reconnecting cannot help. */
 function isAuthCode(code: string) {
-  return ['invalid_auth', 'not_authed', 'account_inactive', 'token_revoked', 'token_expired', 'not_allowed_token_type', 'app_uninstalled'].includes(code)
+  return DEAD_TOKEN.has(code) || code === 'not_allowed_token_type'
 }

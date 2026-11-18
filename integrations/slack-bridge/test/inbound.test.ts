@@ -20,6 +20,13 @@ async function deliver(event: Record<string, unknown>, o: { eventId?: string } =
 }
 
 const inbound = () => r.tm8.of('inbound')
+/** Waits until at least n inbound frames arrived (sender lookups take a moment), then settles briefly for extras. */
+async function got(n: number): Promise<any[]> {
+  const end = Date.now() + 5000
+  while (inbound().length < n && Date.now() < end) await sleep(10)
+  await sleep(40)
+  return inbound()
+}
 
 describe('the allowlist guard (D28)', () => {
   test('a message from an unconnected channel is acked, counted and never forwarded', async () => {
@@ -44,7 +51,7 @@ describe('the allowlist guard (D28)', () => {
     r.tm8.push(r.allowlist(['C1'], 3))
     await sleep(40)
     await deliver({ type: 'message', channel: 'C1', user: 'U1', text: 'back', ts: r.slack.ts() })
-    assert.equal(inbound().length, 1)
+    assert.equal((await got(1)).length, 1)
   })
 
   test('DM ids are never honoured, even when the server lists one', async () => {
@@ -59,7 +66,7 @@ describe('messages', () => {
   test('text with mentions, a channel link, a URL and escapes reads naturally; the ids stay in mentions', async () => {
     const ts = r.slack.ts()
     await deliver({ type: 'message', channel: 'C1', user: 'U1', ts, text: '<@U0BOT> can <@U2> check <#C1|eng> and <https://x.io/a?b=1&amp;c=2|the docs>? 1 &lt; 2 &amp;&amp; <!here>' })
-    const [f] = inbound()
+    const [f] = await got(1)
     assert.deepEqual(f, {
       connectionId: CONN,
       conversationId: 'C1',
@@ -79,21 +86,21 @@ describe('messages', () => {
     const ts = r.slack.ts()
     await deliver({ type: 'app_mention', channel: 'C1', user: 'U1', text: '<@U0BOT> hi', ts })
     await deliver({ type: 'message', channel: 'C1', user: 'U1', text: '<@U0BOT> hi', ts })
-    assert.equal(inbound().length, 1)
+    assert.equal((await got(1)).length, 1)
   })
 
   test('a redelivered envelope (same event_id) is forwarded once', async () => {
     const ev = { type: 'message', channel: 'C1', user: 'U1', text: 'once', ts: r.slack.ts() }
     await deliver(ev, { eventId: 'Ev1' })
     await deliver({ ...ev, ts: r.slack.ts() }, { eventId: 'Ev1' })
-    assert.equal(inbound().length, 1)
+    assert.equal((await got(1)).length, 1)
   })
 
   test('a thread reply names its root in thread and replyTo', async () => {
     const root = r.slack.ts()
     const ts = r.slack.ts()
     await deliver({ type: 'message', channel: 'C1', user: 'U2', text: 'can you add a test?', ts, thread_ts: root, parent_user_id: 'U1' })
-    const [f] = inbound()
+    const [f] = await got(1)
     assert.deepEqual(f.thread, { rootExternalMessageId: root })
     assert.deepEqual(f.replyTo, { externalMessageId: root, senderExternalId: 'U1', media: null })
     assert.equal(f.sender.email, null)
@@ -103,7 +110,7 @@ describe('messages', () => {
     const root = r.slack.ts()
     await deliver({ type: 'message', channel: 'C1', user: 'U1', text: 'root', ts: root, thread_ts: root })
     await deliver({ type: 'message', subtype: 'thread_broadcast', channel: 'C1', user: 'U1', text: 'also to channel', ts: r.slack.ts(), thread_ts: root })
-    const [a, b] = inbound()
+    const [a, b] = await got(2)
     assert.equal(a.thread, null)
     assert.deepEqual(b.thread, { rootExternalMessageId: root })
   })
@@ -113,7 +120,7 @@ describe('messages', () => {
     const pdf = r.slack.file({ name: 'spec.pdf', mimetype: 'application/pdf', bytes: Buffer.from('pdf!'), channels: ['C1'] })
     const ts = r.slack.ts()
     await deliver({ type: 'message', subtype: 'file_share', channel: 'C1', user: 'U1', text: 'see these', ts, files: [r.slack.fileRef(img), r.slack.fileRef(pdf), { id: 'F0GONE', mode: 'tombstone' }] })
-    const [f] = inbound()
+    const [f] = await got(1)
     assert.equal(f.kind, 'media')
     assert.equal(f.body, 'see these')
     assert.deepEqual(f.media, [
@@ -126,7 +133,7 @@ describe('messages', () => {
     await deliver({ type: 'message', channel: 'C1', user: 'U0BOT', bot_id: 'B0BOT', text: 'my own reply', ts: r.slack.ts() })
     await deliver({ type: 'message', subtype: 'bot_message', channel: 'C1', bot_id: 'B0BOT', username: 'brave-otter', text: 'voiced reply', ts: r.slack.ts() })
     await deliver({ type: 'message', subtype: 'bot_message', channel: 'C1', bot_id: 'B0OTHER', username: 'CI', text: 'build green', ts: r.slack.ts() })
-    const fs = inbound()
+    const fs = await got(1)
     assert.equal(fs.length, 1)
     assert.deepEqual(fs[0].sender, { externalId: null, altId: null, name: 'CI', fromMe: false, email: null, avatarUrl: null, bot: true })
   })
@@ -150,7 +157,7 @@ describe('reactions, edits, deletes', () => {
     await deliver({ type: 'reaction_added', user: 'U0BOT', reaction: 'white_check_mark', item: { type: 'message', channel: 'C1', ts: target } })
     await deliver({ type: 'reaction_added', user: 'U2', reaction: 'shipit', item: { type: 'message', channel: 'C1', ts: target } })
     await deliver({ type: 'reaction_added', user: 'U2', reaction: '+1::skin-tone-3', item: { type: 'message', channel: 'C1', ts: target } })
-    const fs = inbound()
+    const fs = await got(3)
     assert.equal(fs.length, 3)
     assert.deepEqual(fs[0].reaction, { externalMessageId: target, emoji: '👀' })
     assert.equal(fs[0].kind, 'other')
@@ -170,7 +177,7 @@ describe('reactions, edits, deletes', () => {
       message: { type: 'message', user: 'U1', text: 'see https://x.io', ts, attachments: [{ title: 'x' }] }, previous_message: { type: 'message', user: 'U1', text: 'see https://x.io', ts } })
     await deliver({ type: 'message', subtype: 'message_changed', channel: 'C1', hidden: true, ts: r.slack.ts(),
       message: { type: 'message', user: 'U1', text: 'root', ts, reply_count: 2 }, previous_message: { type: 'message', user: 'U1', text: 'root', ts, reply_count: 1 } })
-    const fs = inbound()
+    const fs = await got(1)
     assert.equal(fs.length, 1)
     assert.equal(fs[0].externalMessageId, ts)
     assert.equal(fs[0].body, 'fixed @Rahul')
@@ -183,7 +190,7 @@ describe('reactions, edits, deletes', () => {
     const root = r.slack.ts()
     await deliver({ type: 'message', subtype: 'message_deleted', channel: 'C1', hidden: true, ts: r.slack.ts(), deleted_ts: ts,
       previous_message: { type: 'message', user: 'U1', text: 'oops, a secret', ts, thread_ts: root } })
-    const [f] = inbound()
+    const [f] = await got(1)
     assert.equal(f.externalMessageId, ts)
     assert.equal(f.deleted, true)
     assert.equal(f.body, '')
@@ -212,7 +219,7 @@ describe('/tm8 slash commands', () => {
     await r.slack.waitForAck(r.slack.slash({ channel: 'C1', user: 'U1', text: '' }))
     await r.slack.waitForAck(r.slack.slash({ channel: 'C1', user: 'U1', text: 'STATUS Of Thing' }))
     await sleep(40)
-    assert.deepEqual(inbound().map((f) => f.body), ['/help', '/status Of Thing'])
+    assert.deepEqual((await got(2)).map((f) => f.body), ['/help', '/status Of Thing'])
   })
 
   test('from an unconnected channel: an ephemeral note to the invoker in the ack, nothing forwarded', async () => {

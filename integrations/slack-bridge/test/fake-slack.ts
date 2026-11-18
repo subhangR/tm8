@@ -35,7 +35,7 @@ export class FakeSlack {
    * The workspaces an org-wide Grid install (team.isEnterpriseInstall) was approved into: auth.teams.list answers
    * them, and on such an install users.conversations / conversations.list refuse to run without a team_id.
    */
-  workspaces: { id: string; name: string }[] = [{ id: 'T0FAKE', name: 'Acme' }]
+  workspaces: { id: string; name: string; locked?: boolean }[] = [{ id: 'T0FAKE', name: 'Acme' }]
   scopes = ['app_mentions:read', 'channels:history', 'channels:read', 'chat:write', 'chat:write.customize', 'files:read', 'files:write', 'groups:history', 'groups:read', 'reactions:read', 'reactions:write', 'users:read', 'users:read.email', 'commands']
 
   readonly users = new Map<string, FakeUser>()
@@ -310,7 +310,7 @@ export class FakeSlack {
         if (this.team.isEnterpriseInstall && !params.team_id) return json(200, { ok: false, error: 'missing_argument' })
         const team = params.team_id || this.team.id
         if (!this.team.isEnterpriseInstall && team !== this.team.id) return json(200, { ok: false, error: 'team_access_not_granted' })
-        if (this.team.isEnterpriseInstall && !this.workspaces.some((w) => w.id === team)) return json(200, { ok: false, error: 'team_access_not_granted' })
+        if (this.team.isEnterpriseInstall && !this.workspaces.some((w) => w.id === team && !w.locked)) return json(200, { ok: false, error: 'team_access_not_granted' })
         const types = (params.types ?? 'public_channel').split(',')
         const all = [...this.channels.values()].filter((c) => (method === 'conversations.list' || c.member) && (c.teams ?? [this.team.id]).includes(team) && (params.exclude_archived !== 'true' || !c.archived) && types.includes(c.private ? 'private_channel' : 'public_channel'))
         // Two per page, to exercise the cursor.
@@ -322,6 +322,8 @@ export class FakeSlack {
       case 'conversations.info': {
         const c = channel(params.channel)
         if (!c || (c.private && !c.member)) return json(200, { ok: false, error: 'channel_not_found' })
+        // A channel only in workspaces an org install was not granted.
+        if (this.team.isEnterpriseInstall && (c.teams ?? []).every((t) => this.workspaces.find((w) => w.id === t)?.locked)) return json(200, { ok: false, error: 'team_access_not_granted' })
         return ok({ channel: { id: c.id, name: c.name, is_private: !!c.private, is_archived: !!c.archived, is_member: !!c.member } })
       }
       case 'chat.postMessage': {
