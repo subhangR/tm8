@@ -237,12 +237,14 @@ async function inbound(
   // transaction, before the message is stored and its author resolved. The
   // email goes to that check only: it is not in the frame the message is
   // stored from.
-  const email = typeof frame.sender?.email === 'string' && frame.sender.email.length > 0 ? frame.sender.email : null;
+  // Called for every person (not only when an email came), so a link whose
+  // evidence is gone (no email, a guest, another workspace) is revoked.
+  const person = typeof frame.sender?.externalId === 'string' && frame.sender.bot !== true;
   const stored: InboundFrame = frame.sender && 'email' in frame.sender
     ? { ...frame, sender: { ...frame.sender, email: null } } : frame;
   const hook = o.commands?.();
   const result = await o.db.tx(claims, async (q) => {
-    if (email) await q.rpc('bridge_runtime_sender_email', [JSON.stringify(frame)]);
+    if (person) await q.rpc('bridge_runtime_sender_email', [JSON.stringify(frame)]);
     let command = false;
     // A bot or app (Slack `bot: true`) never runs a command (review #1505, finding 1).
     if (hook && frame.sender?.externalId && frame.sender.bot !== true && typeof frame.body === 'string' && frame.body.length > 0) {

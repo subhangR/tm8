@@ -52,28 +52,31 @@
 -- NOT TOUCHED: public.bridge_runtime_inbound (425), bridge_message_audience,
 --   bridge_outbox_enqueue, bridge_outbound_after_message.
 --
--- TRUST (§4). A Slack sender is linked to a tm8 member automatically when the
--- email Slack supplies (users:read.email) equals, case-insensitively, the
--- email on exactly one ACTIVE tm8 ACCOUNT (public.accounts.email) whose
--- identity is an active member of the bridge's space. Chosen level: a
--- SPACE-SCOPED link (method 'email', space_id = the bridge's space), which the
--- resolver reports as trust 'asserted', the same standing as a space admin's
--- assertion, never the identity-scoped 'linked' that a code proves. Why:
---   * accounts.email is written only by account creation (signup, node claim,
---     an admin creating the account); user_profiles.email is self-written via
---     identity.profile.update and is NOT read here, so a member cannot claim
---     someone's Slack address by editing their own profile;
---   * the Slack side is the workspace's directory: Slack confirms an email
---     change, and on Enterprise Grid the IdP owns it. A space admin chose to
---     bridge that workspace, so its directory vouches for people in THIS space
---     only, the way an admin assertion does, and nowhere else (D5);
---   * a code, invite or admin link always wins: an email link is never written
---     beside a live link on the address, and never replaces one;
---   * an admin's revoke sticks: an email link revoked for (address, space,
---     identity) is never written again (the admin can assert by hand);
---   * the email follows Slack: when Slack's email for the user stops matching,
---     the email link is revoked (and, if it now matches someone else, made for
---     them); bots never link; the email is never stored.
+-- TRUST (§4; review #1505 finding 2, coordinator ruling). tm8 account emails
+-- are NOT verified (an invitee chooses theirs at signup), and Slack Connect
+-- externals and Grid guests carry emails another org's admin or IdP sets. So
+-- a Slack sender is linked to a tm8 member automatically ONLY when ALL hold:
+--   (a) Slack says the sender is a full member of the connection's own
+--       install: sender.team.teamId = the connection's account teamId, or, on
+--       an org-wide Grid install (isEnterpriseInstall), sender.team.enterpriseId
+--       = its enterpriseId; and sender.team.guest = false and
+--       sender.team.external = false. No team info: no link (fail closed);
+--   (b) the tm8 account (public.accounts.email; user_profiles.email, which a
+--       member edits freely, is never read) is active and its identity is an
+--       active member of the bridge's space;
+--   (c) the email matches case-insensitively and EXACTLY ONE such account does.
+-- The link is SPACE-SCOPED (method 'email', space_id = the bridge's space); the
+-- resolver reports it as trust 'asserted', the standing of a space admin's
+-- assertion, never the identity-scoped 'linked' a code proves. An asserted
+-- member counts as a member (whoMayTrigger 'linked', member-tier commands) but
+-- never passes an admin-tier command (executor requireAdminTier).
+--   * a code, invite or admin link on the address always wins: an email link is
+--     never written beside one;
+--   * the link follows the evidence: when (a)-(c) stop holding it is revoked
+--     with revoked_reason 'auto', which never blocks a later auto-link; an
+--     admin's revoke (reason null) does block it;
+--   * bots and the connection's own bot user never link; the email is never
+--     stored.
 -- =============================================================================
 
 set local lock_timeout = '5s';
@@ -345,6 +348,9 @@ declare
   who text;
   n integer;
   cur public.bridge_identity_links;
+  team jsonb := p_frame #> '{sender,team}';
+  acct jsonb;
+  own_install boolean := false;
 begin
   perform internal.bridge_runtime_session();
   if sender is null or coalesce((p_frame #>> '{sender,bot}')::boolean, false)
@@ -367,8 +373,17 @@ begin
 
   perform pg_advisory_xact_lock(hashtextextended('bridge-email-link:' || b.space_id || ':' || sender, 0));
 
-  -- The one active account with this email whose identity is an active member here.
-  if v_email <> '' and v_email ~ '^[^@\s]+@[^@\s]+$' then
+  -- (a) A full member of the connection's own install, by Slack's word. Missing: no.
+  acct := conn.provider_account;
+  own_install := acct is not null and jsonb_typeof(team) = 'object'
+    and jsonb_typeof(team -> 'guest') = 'boolean' and not (team ->> 'guest')::boolean
+    and jsonb_typeof(team -> 'external') = 'boolean' and not (team ->> 'external')::boolean
+    and ((nullif(team ->> 'teamId', '') is not null and team ->> 'teamId' = acct ->> 'teamId')
+         or (coalesce((acct ->> 'isEnterpriseInstall')::boolean, false)
+             and nullif(team ->> 'enterpriseId', '') is not null and team ->> 'enterpriseId' = acct ->> 'enterpriseId'));
+
+  -- (b)+(c) The one active account with this email whose identity is an active member here.
+  if own_install and v_email <> '' and v_email ~ '^[^@\s]+@[^@\s]+$' then
     select min(a.identity_id), count(*) into who, n
       from public.accounts a
      where lower(btrim(a.email)) = v_email and a.status = 'active'

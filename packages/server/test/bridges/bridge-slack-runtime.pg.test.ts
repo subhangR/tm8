@@ -113,6 +113,12 @@ const inbound = (frame: Record<string, unknown>) => call('/v2/bridge-runtime/inb
   ts: 1_790_000_000, ...frame,
 });
 
+/** A full member of the connection's own workspace, as the runtime reports it (SenderRef.team). */
+const OWN_TEAM = { teamId: 'T0ACME', enterpriseId: null, guest: false, external: false };
+const linksOf = (sender: string) => database.query<{ method: string; revoked: boolean }>(
+  `select method, revoked_at is not null as revoked from public.bridge_identity_links
+    where provider = 'slack' and external_id = $1 order by verified_at`, [sender]);
+
 const account = {
   teamId: 'T0ACME', teamName: 'Acme', url: 'https://acme.slack.com/', enterpriseId: null, enterpriseName: null,
   isEnterpriseInstall: false, botUserId: BOT_USER, botId: 'B0TM8', botName: 'tm8', scopes: ['chat:write', 'chat:write.customize'],
@@ -323,13 +329,49 @@ describe('a Slack channel end to end (lane A ac3)', () => {
   it('inbound text: the sender is auto-linked by Slack email, and the mention of the bot triggers', async () => {
     root = '1790000000.000100';
     const res = await inbound({ externalMessageId: root, body: `<@${BOT_USER}> the login page 500s`, mentions: [BOT_USER],
-      sender: { externalId: PRIYA, altId: null, name: 'Priya', fromMe: false, email: SLACK_EMAIL, avatarUrl: 'https://avatars.slack-edge.com/p.png', bot: false } });
+      sender: { externalId: PRIYA, altId: null, name: 'Priya', fromMe: false, email: SLACK_EMAIL, avatarUrl: 'https://avatars.slack-edge.com/p.png', bot: false,
+        team: OWN_TEAM } });
     expect(res.status, res.raw).toBe(200);
     expect(res.body).toMatchObject({ status: 'stored', routed: true, author: { kind: 'member', actorId: ownerMember, trust: 'asserted' } });
     rootMessage = res.body.messageId;
     const links = await database.query<{ method: string; space_id: string; identity_id: string }>(
       `select method, space_id, identity_id from public.bridge_identity_links where provider = 'slack' and external_id = $1 and revoked_at is null`, [PRIYA]);
     expect(links).toEqual([{ method: 'email', space_id: spaceId, identity_id: ownerIdentity }]);
+  });
+
+  it('email links only a full member of the connection\'s own install (review finding 2)', async () => {
+    const cases: [string, unknown][] = [
+      ['U0NOTEAM1', undefined],                                              // no team info: fail closed
+      ['U0NULLTM1', null],
+      ['U0GUEST01', { ...OWN_TEAM, guest: true }],                           // a Slack guest
+      ['U0EXTRN01', { ...OWN_TEAM, external: true }],                        // Slack Connect
+      ['U0OTHERT1', { ...OWN_TEAM, teamId: 'T0OTHER' }],                     // another workspace
+      ['U0SIBLNG1', { teamId: 'T0SIB', enterpriseId: 'E0ACME', guest: false, external: false }], // same org, not an org-wide install
+      ['U0PARTIAL', { teamId: 'T0ACME', enterpriseId: null }],               // flags missing
+    ];
+    for (const [i, [id, team]] of cases.entries()) {
+      const res = await inbound({ externalMessageId: `1790000000.0003${String(i).padStart(2, '0')}`, body: `<@${BOT_USER}> hi`, mentions: [BOT_USER],
+        sender: { externalId: id, altId: null, name: id, fromMe: false, email: SLACK_EMAIL, ...(team === undefined ? {} : { team }) } });
+      expect(res.body, id).toMatchObject({ status: 'stored', routed: false, author: { kind: 'bridge', trust: 'guest' } });
+      expect(await linksOf(id), id).toEqual([]);
+    }
+  });
+
+  it('on an org-wide Grid install a sibling workspace of the same org links', async () => {
+    const grid = { ...account, enterpriseId: 'E0ACME', enterpriseName: 'Acme Corp', isEnterpriseInstall: true };
+    await call('/v2/bridge-runtime/state', runtimeToken, { connectionId: slackConnection, status: 'linked', detail: null, account: grid });
+    const res = await inbound({ externalMessageId: '1790000000.000290', body: 'hello',
+      sender: { externalId: 'U0SIBLNG2', altId: null, name: 'Sib', fromMe: false, email: SLACK_EMAIL,
+        team: { teamId: 'T0SIB', enterpriseId: 'E0ACME', guest: false, external: false } } });
+    expect(res.body.author).toMatchObject({ kind: 'member', actorId: ownerMember, trust: 'asserted' });
+    expect(await linksOf('U0SIBLNG2')).toEqual([{ method: 'email', revoked: false }]);
+    await call('/v2/bridge-runtime/state', runtimeToken, { connectionId: slackConnection, status: 'linked', detail: null, account });
+    // Back on a single-workspace install, the sibling no longer qualifies: the link follows the evidence.
+    const again = await inbound({ externalMessageId: '1790000000.000291', body: 'hello again',
+      sender: { externalId: 'U0SIBLNG2', altId: null, name: 'Sib', fromMe: false, email: SLACK_EMAIL,
+        team: { teamId: 'T0SIB', enterpriseId: 'E0ACME', guest: false, external: false } } });
+    expect(again.body.author).toMatchObject({ kind: 'bridge', trust: 'guest' });
+    expect((await linksOf('U0SIBLNG2'))[0]!.revoked).toBe(true);
   });
 
   it('a bot never links, and a non-matching email stays a guest', async () => {
@@ -359,7 +401,7 @@ describe('a Slack channel end to end (lane A ac3)', () => {
     reply = '1790000000.000200';
     const res = await inbound({ externalMessageId: reply, body: 'can you also add a regression test?',
       thread: { rootExternalMessageId: root }, replyTo: { externalMessageId: root, senderExternalId: PRIYA, media: null },
-      sender: { externalId: PRIYA, altId: null, name: 'Priya', fromMe: false, email: SLACK_EMAIL } });
+      sender: { externalId: PRIYA, altId: null, name: 'Priya', fromMe: false, email: SLACK_EMAIL, team: OWN_TEAM } });
     expect(res.status, res.raw).toBe(200);
     expect(res.body.status).toBe('stored');
     const [m] = await database.query<{ parent_id: string; root_message_id: string }>(
