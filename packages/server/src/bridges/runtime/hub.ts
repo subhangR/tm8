@@ -227,14 +227,22 @@ export class BridgeRuntimeHub {
     if (!link) return null;
     const bound = await this.o.db.rpc<{ allowlist: AllowlistFrame }>(claims, 'internal.bridge_runtime_connect',
       [input.connectionId, link.runtimeId]);
-    this.send(link.runtimeId, {
+    const stateKey = await this.stateKey(input.connectionId);
+    // The awaits above yield: the runtime may have reconnected meanwhile, and a
+    // new socket under the same id has not said hello yet (review #1505, delta
+    // 1). Send only if this very link is still the runtime's, still the
+    // provider's, and open; on its own socket, never through an id lookup. The
+    // credential reaches no other socket. Otherwise 'offline': the runtime's
+    // hello picks the connection up.
+    if (this.runtimes.get(link.runtimeId) !== link || link.provider !== input.provider || !link.sink.isOpen) return null;
+    link.sink.send(JSON.stringify({
       type: 'connect',
       connectionId: input.connectionId,
-      stateKey: await this.stateKey(input.connectionId),
+      stateKey,
       ...(input.authFlow ? { authFlow: input.authFlow } : {}),
       ...(input.credential ? { credential: input.credential } : {}),
       allowlist: bound.allowlist,
-    });
+    } satisfies ServerFrame));
     return { runtimeId: link.runtimeId };
   }
 

@@ -74,6 +74,39 @@ describe('BridgeRuntimeHub provider routing', () => {
     expect(await hub.connect({ provider: 'slack', connectionId: 'c1' }, caller)).toEqual({ runtimeId: 'fresh' });
   });
 
+  it('a reconnect while connect awaits: the credential reaches no socket, and begin answers offline (delta review 1)', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const db = {
+      rpc: async (_c: DbClaims, fn: string) => {
+        if (fn === 'internal.bridge_runtime_connect') {
+          await gate;
+          return { allowlist: { type: 'allowlist', connectionId: 'c1', version: 1, conversationIds: [] } };
+        }
+        return [];
+      },
+    } as unknown as Db;
+    const hub = new BridgeRuntimeHub({ db, nodeKey: async () => Buffer.alloc(32), authorize: async () => ({ kind: 'anonymous' }) });
+    const runtimes = (hub as unknown as { runtimes: Map<string, unknown> }).runtimes;
+    const sinkOf = (frames: string[], open = { v: true }): EventSink => ({
+      id: 's', identity: { kind: 'bearer' }, get isOpen() { return open.v; }, send: (t: string) => { frames.push(t); },
+      close: () => { open.v = false; }, onMessage: () => undefined, onClose: () => undefined,
+    } as unknown as EventSink);
+    const oldFrames: string[] = [], newFrames: string[] = [];
+    const oldOpen = { v: true };
+    runtimes.set('sl', { runtimeId: 'sl', sink: sinkOf(oldFrames, oldOpen), provider: null, capabilities: null });
+    hub.noteHello('sl', 'slack', 4, SLACK_CAPABILITIES);
+    const pending = hub.connect({ provider: 'slack', connectionId: 'c1',
+      credential: { kind: 'slack_tokens', botToken: 'xoxb-1-2-a', appToken: 'xapp-1-A-2-b' } }, caller);
+    // The runtime reconnects: the old socket closes, a new one under the same id has not said hello.
+    oldOpen.v = false;
+    runtimes.set('sl', { runtimeId: 'sl', sink: sinkOf(newFrames), provider: null, capabilities: null });
+    release();
+    expect(await pending).toBeNull();
+    expect(oldFrames).toEqual([]);
+    expect(newFrames).toEqual([]);
+  });
+
   it('refuses group.create and group.add on a Slack runtime without asking it', async () => {
     const { hub, got, add } = harness();
     add('sl', 'slack', SLACK_CAPABILITIES);
