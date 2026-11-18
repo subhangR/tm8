@@ -191,13 +191,21 @@ its state lives. If you see `slack-runtime not started: …` instead, the line s
 ### B4. Paste the tokens into tm8
 
 1. Open tm8 in your browser and sign in as the node owner.
-2. **Settings → Bridges → Connections → Add → Slack.**
-3. Paste the **bot token** (`xoxb-…`) and the **app-level token** (`xapp-…`) into their fields. Click **Connect**.
-4. tm8 checks them with Slack and shows **Connected to *Your Company* (*yourcompany.slack.com* or
-   *yourcompany.enterprise.slack.com*) as @tm8**.
+2. **Settings → Bridges.** Under **Accounts & secrets**, click **+ Add an account → Slack workspace**.
+   The dialog **Connect a Slack workspace** opens.
+3. **Bot token**: paste the `xoxb-…` token (A4). **App-level token**: paste the `xapp-…` token (A5).
+   **Name it**: e.g. `Acme Slack`. Tick **Offer it to this space once it is connected** if you want to use it in
+   the space you are in. Click **Connect** (it reads **Checking…** while tm8 asks Slack).
+4. tm8 checks the tokens with Slack and shows **✓ Connected to *Acme* (*acme.slack.com*) as @tm8**. An org-wide
+   Enterprise Grid install also names the org: **Connected to *Acme* - *Acme Corp* (*acme.enterprise.slack.com*)
+   as @tm8**. The same line stays on the connection's row under **Accounts & secrets**.
 
-If it shows an error instead, see [Troubleshooting](#troubleshooting). The connection shows the code Slack
-answered (`invalid_auth`, `missing_scope: …`, …) under its status; the table below is keyed on it.
+If a warning **Missing N scopes the bridge uses: …** follows, the install granted fewer scopes than the manifest
+asks for; it says what stops working. Fix it as in the `missing_scope` row of [Troubleshooting](#troubleshooting).
+
+If the tokens are refused, the dialog says why in plain words (Slack's error code mapped to a sentence) and the
+button becomes **Paste again**; the connection's status reads **needs sign-in**. See
+[Troubleshooting](#troubleshooting).
 
 ---
 
@@ -205,18 +213,24 @@ answered (`invalid_auth`, `missing_scope: …`, …) under its status; the table
 
 1. **In Slack**, in the channel you want, type `/invite @tm8` and send it. Public and private channels both work.
    tm8 cannot see or list a channel until it has been invited.
-2. **In tm8**: open the space → **Bridges → Add bridge → Slack (*Your Company*)**.
-3. **Pick the channel.** The list shows the channels the bot is in. Invited a moment ago and it is not there?
-   Close and reopen the picker.
-4. **Pick the target**: the tm8 chat, work session or channel that answers this Slack channel.
-5. **Thread mode**:
-   - **Mention** (default): every top-level message that mentions `@tm8` starts its own tm8 session, which lives
-     in that Slack thread. Replies in the thread go to that session. A thread session goes idle after about two
-     hours without replies and wakes up, with its history, on the next reply. Thread sessions are grouped under
-     the target session in tm8.
-   - **Every message**: every top-level message starts a session. Only for a quiet intake channel.
+2. **In tm8**: open the space → **Bridges → Add bridge**.
+3. **Connection**: on the Slack row (it shows your team name), click **Use this workspace**.
+4. **Conversation**: under **CHANNELS**, pick `#your-channel` (a lock marks a private channel; **Search channels**
+   filters). The list shows the channels the bot is in. A channel marked *read-only: tm8 is not in this channel*
+   needs `/invite @tm8` first. Empty list, or invited a moment ago and it is not there? Close and reopen the list.
+5. **Where it lands and how it behaves**: pick the **target**, the tm8 chat, work session or channel that answers
+   this Slack channel. Then **Thread mode**:
+   - **Mention (default)**: every top-level message that mentions `@tm8` starts its own tm8 session, which lives
+     in that Slack thread. Replies in the thread go to that session. A thread's session is a child of the bridge's
+     target session, goes idle after 2 hours with no replies, and the next reply in that thread wakes it with its
+     history.
+   - **Every message**: every top-level message starts a session. Only for a quiet intake channel (tm8 asks you to
+     click twice to confirm).
    - **Off**: the channel behaves like one conversation; `@tm8` gets an answer from the target.
-6. Click **Add**.
+
+   You can change thread mode later on the bridge's **Routing** tab. There is no *How replies are signed* choice
+   for Slack: every reply arrives under the answering session's own name and icon, with no prefix.
+6. Finish the wizard.
 
 ### The `/tm8` command
 
@@ -241,7 +255,7 @@ Type these in a connected channel. Answers post in the channel (not a thread), s
 Do these in order; each one proves the step before it.
 
 - [ ] The tm8 server log shows `slack-runtime started` (B3).
-- [ ] **Settings → Bridges → Connections** shows the Slack connection as **Connected to … as @tm8** (B4).
+- [ ] **Settings → Bridges → Accounts & secrets** shows the Slack connection as **Connected to … as @tm8** (B4).
 - [ ] The channel picker lists the channel you invited tm8 to (C3).
 - [ ] In that Slack channel, post `@tm8 hello`. Within a few seconds the message gets 📨, then 👀, and a reply
       appears **in the thread** from a session with its own name and icon (Mention mode).
@@ -281,8 +295,9 @@ directory, not in the checkout, so pulling, rebuilding or redeploying tm8 does n
   every time it is recreated.
 
 **If it is lost or wiped**, nothing in Slack breaks and no messages are lost from tm8, but the Slack connection
-shows as disconnected and the bridge stops. Fix: **Settings → Bridges → Connections → the Slack connection →
-Relink**, and paste both tokens again (A4 and A5 tell you where to find them; you can generate a new
+shows **needs sign-in** (*tm8 holds no tokens for this connection yet*) and the bridge stops. Fix:
+**Settings → Bridges → Accounts & secrets →** the Slack connection's menu **→ Paste new tokens for *name***, and
+paste both tokens again (A4 and A5 tell you where to find them; you can generate a new
 app-level token rather than look for the old one).
 
 ### Rotating the tokens
@@ -294,17 +309,20 @@ Do this when someone who saw a token leaves, or on your security team's schedule
 2. **Bot token** (only if it may have leaked): Slack app → **OAuth & Permissions → Revoke tokens** (bottom of the
    page), then **Reinstall to Workspace / Organization** and copy the new `xoxb-…`. Revoking stops the bridge
    until step 3.
-3. In tm8: **Settings → Bridges → Connections → the Slack connection → Relink**, paste both tokens, Connect.
-   tm8 checks them and replaces the sealed copy.
+3. In tm8: **Settings → Bridges → Accounts & secrets →** the Slack connection's menu **→ Paste new tokens for
+   *name***. The dialog **New tokens for *name*** opens with empty fields (tm8 cannot read the sealed tokens, so it
+   never shows a masked copy). Paste both tokens and click **Use these tokens**. tm8 checks them and replaces the
+   sealed copy.
 4. Back in Slack, **revoke the old app-level token**: Basic Information → App-Level Tokens → click the old token
    → **Revoke**.
 
 The bridges, their channels and their history in tm8 stay as they were.
 
-### Disconnecting
+### Removing the connection
 
-- **In tm8:** Settings → Bridges → Connections → the Slack connection → **Disconnect**. The runtime closes the
-  Slack socket and deletes the sealed tokens. The bridges stop; their history stays in tm8.
+- **In tm8:** Settings → Bridges → Accounts & secrets → the Slack connection's menu → **Remove *name*…**, and
+  confirm. The Socket Mode connection stops and the sealed tokens are deleted. The bridges stop; their history
+  stays in tm8. The Slack app stays installed.
 - **In Slack** (to remove access completely): the app → **OAuth & Permissions → Revoke tokens**, or uninstall
   the app (workspace **Settings & administration → Manage apps**, or for Grid the Admin dashboard →
   **Integrations → Installed apps → tm8 → Uninstall**). Remove `TM8_SLACK_RUNTIME=1` to stop running the runtime.
@@ -333,12 +351,16 @@ Tell your compliance team:
 
 | What you see | What it means | Fix |
 |---|---|---|
-| tm8 refuses the form: *a Slack bot token looks like xoxb-…* or *an app-level token looks like xapp-…* | A token is cut short, has a space or line break in it, or is in the wrong field. tm8 checks the shape before it asks Slack | Copy the token again with Slack's **Copy** button; bot token in the bot field, app-level token in the app-level field |
-| `invalid_auth` / `not_authed` when you click Connect | The bot token is wrong, cut short, or from another app | Copy the **Bot User OAuth Token** again (A4). It starts with `xoxb-`. Check you did not paste the xapp token into the bot field |
-| `not_allowed_token_type` | A token is in the wrong field, or a user token (`xoxp-`) was used | Bot field: `xoxb-…`; app-level field: `xapp-…` |
-| `token_expired`, or the bridge stops working about 12 hours after connecting | Token rotation was turned on for the app | Rotation cannot be turned off again: create a new app from the manifest (Part A) and **Relink** with its tokens |
-| `token_revoked` / `account_inactive` | The token was revoked, or the app was uninstalled | Reinstall the app (A3), copy the new token, **Relink** |
-| `missing_scope` | The app was created from an older or edited manifest | Slack app → **App Manifest**, paste this folder's manifest again, **Save**, then **Reinstall** (A3) and **Relink** |
+| The form refuses the pair before sending: *These two are the other way round…*, *That is a user token (xoxp-)…*, or *…check nothing was cut off when you copied it* | tm8 checks the tokens' shape first | Bot token (`xoxb-`) in **Bot token**, app-level token (`xapp-`) in **App-level token**; copy again with Slack's **Copy** button. A user token (`xoxp-`) never works |
+| *Slack refused the tokens. They may have been revoked, rotated or copied from another app…* (`invalid_auth`) | The bot token is wrong, revoked, or from another Slack app | Copy the **Bot User OAuth Token** again (A4), and **Paste new tokens** |
+| *No token reached Slack…* (`not_authed`) | A field was empty when it reached Slack | Paste both tokens again |
+| *One of these is the wrong KIND of token…* (`not_allowed_token_type`) | A token is in the wrong field, or a user token was used | Bot field: `xoxb-…`; app-level field: `xapp-…` |
+| *The app-level token (xapp-) was refused…* (`invalid_app_token`) | The app-level token was revoked, or lacks `connections:write` | Generate a new one (A5) with `connections:write`, **Paste new tokens** |
+| *The Slack app is missing the … scope…* (`missing_scope`), or the **Missing N scopes** warning | The app was created from an older or edited manifest, or not reinstalled after a change | Slack app → **App Manifest**, paste this folder's manifest again, **Save**, **Reinstall** (A3), then **Paste new tokens** with the new bot token |
+| *This Slack app has been uninstalled or disabled in the workspace…* (`account_inactive`), or `token_revoked` | The app was uninstalled, disabled or its tokens revoked | Install it again (A3; on Grid an Org Admin may have to approve it, A2), then **Paste new tokens** |
+| *tm8 holds no tokens for this connection yet…* (`no_credential`) | The sealed state was lost, moved or never written | **Paste new tokens**; see [Where the tokens live](#where-the-tokens-live-and-keeping-them) |
+| `token_expired`, or the bridge stops about 12 hours after connecting | Token rotation was turned on for the app | Rotation cannot be turned off again: create a new app from the manifest (Part A) and connect its tokens |
+| *Slack refused the tokens: <code>…* (any other code) | Usually the app is not installed in this workspace | Check the app at api.slack.com/apps is installed (A3), then paste both tokens again |
 | Connected, but the channel is not in the picker | The bot is not in the channel | `/invite @tm8` in the channel, reopen the picker |
 | `not_in_channel` or `channel_not_found` when tm8 replies | The bot was removed from the channel, or it is a private channel it was never invited to | `/invite @tm8` again |
 | Nothing happens on `@tm8`, connection shows disconnected | The runtime is not running or cannot reach Slack | Check the server log for `slack-runtime` lines (B3); run `bun run doctor` |

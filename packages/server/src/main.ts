@@ -1108,6 +1108,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   if (bridgeHub) {
     await bridgeHub.start();
     server.http.once('close', () => { void bridgeHub.stop(); void bridgeSupervisor?.stop(); void slackSupervisor?.stop(); });
+    // A supervised runtime is a child process, and process.exit does not take it
+    // along: the shutdown path exits even when the listener never reports
+    // 'close' (a runtime's live connections hold it open), which would leave the
+    // runtime orphaned and reconnecting on a revoked token. stop() kills synchronously.
+    process.once('exit', () => { void bridgeSupervisor?.stop(); void slackSupervisor?.stop(); });
     const ownerClaims = async () => {
       const o = await owner!();
       return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'bridges.runtime-mint' };
