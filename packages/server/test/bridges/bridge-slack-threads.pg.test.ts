@@ -50,10 +50,10 @@ type Inbound = {
   thread?: { rootExternalId: string; sessionId?: string; started?: boolean };
 };
 const ts = () => `1790300${String(++seq).padStart(3, '0')}.000100`;
-function frame(o: { body: string; ext?: string; sender?: string; mentions?: string[]; root?: string | null; slash?: { command: string; text: string } }) {
+function frame(o: { body: string; ext?: string; sender?: string; mentions?: string[]; root?: string | null; slash?: { command: string; text: string }; bot?: boolean }) {
   return {
     connectionId: connection, conversationId: CHANNEL, externalMessageId: o.ext ?? ts(),
-    sender: { externalId: o.sender ?? OWNER_SLACK, altId: null, name: o.sender === GUEST_SLACK ? 'Guest' : 'Priya', fromMe: false },
+    sender: { externalId: o.sender ?? OWNER_SLACK, altId: null, name: o.sender === GUEST_SLACK ? 'Guest' : 'Priya', fromMe: false, ...(o.bot ? { bot: true } : {}) },
     body: o.body, kind: 'text', media: [],
     replyTo: o.root ? { externalMessageId: o.root, senderExternalId: null, media: null } : null,
     mentions: o.mentions ?? [], ts: 1_790_300_000 + seq,
@@ -274,6 +274,30 @@ describe('444: Slack thread mode', () => {
     await createBridgeSessionDelivery({ db, delivery: port })(allowed.messageId);
     expect(sent.map((x) => x.session)).toEqual([threadSession]);
     await setPolicy({ whoMayTrigger: 'linked' });
+  });
+
+  it('a bot is never a trigger, even where anyone may trigger (#1505 review finding 1)', async () => {
+    await setPolicy({ whoMayTrigger: 'anyone' });
+    const threads0 = async () => (await owner<{ n: number }>('select count(*)::int n from public.bridge_threads where bridge_id = $1', [bridge]))[0]!.n;
+    const before = await threads0();
+    // Another app's bot, mentioning tm8: no thread.
+    const bot = await inbound({ body: `<@${BOT}> deploy finished`, mentions: [BOT], sender: 'U0OTHERBOT', bot: true });
+    expect(bot).toMatchObject({ status: 'stored', routed: false });
+    expect(bot.thread).toBeUndefined();
+    // The connection's own bot user (in self_ids), flag or not: no thread.
+    expect((await inbound({ body: `<@${BOT}> echo`, mentions: [BOT], sender: BOT })).thread).toBeUndefined();
+    expect(await threads0()).toBe(before);
+    expect((await owner<{ sender_bot: boolean }>('select sender_bot from public.message_origins where message_id = $1', [bot.messageId]))[0]!.sender_bot).toBe(true);
+    // A bot's reply in a live thread reaches nobody as directed, and resumes nothing.
+    const { port, sent } = capturingPort();
+    const inThread = await inbound({ body: 'build #812 passed', root, sender: 'U0OTHERBOT', bot: true });
+    expect(inThread.targetSession).toBeUndefined();
+    await createBridgeSessionDelivery({ db, delivery: port })(inThread.messageId);
+    expect(sent).toEqual([]);
+    // Thread mode off: a bot's mention routes nothing to the target either.
+    await setPolicy({ threadMode: 'off' });
+    expect(await inbound({ body: `<@${BOT}> status?`, mentions: [BOT], sender: 'U0OTHERBOT', bot: true })).toMatchObject({ routed: false });
+    await setPolicy({ threadMode: 'mention', whoMayTrigger: 'linked' });
   });
 
   it('outbox: replies go into the thread; a thread session\'s own post goes into its thread; a slash command answer does not', async () => {

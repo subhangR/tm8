@@ -43,6 +43,12 @@ set role tm8_graph_owner;
 -- 443 adds this column; restated defensively so this file also stands alone.
 alter table public.bridge_outbox add column if not exists thread_ts text;
 
+-- #1505 review finding 1: a bot is never a trigger. The inbound door records
+-- it (inbound.sender.bot, or off WhatsApp a sender in self_ids, the
+-- connection's own bot user) so that 399's audience, which runs after the
+-- inbound transaction, can read it too.
+alter table public.message_origins add column sender_bot boolean not null default false;
+
 -- -----------------------------------------------------------------------------
 -- §1. policy.threadMode. 395's validator, restated: the one optional field.
 -- -----------------------------------------------------------------------------
@@ -149,7 +155,7 @@ create or replace function public.bridge_message_audience(p_bridge_id uuid, p_me
 returns table(session_id uuid, reason text)
 language plpgsql stable security definer set search_path = public, internal, pg_temp as $$
 declare
-  m public.messages; me public.entities; space uuid; poster uuid; root uuid;
+  m public.messages; me public.entities; space uuid; poster uuid; root uuid; v_bot boolean;
 begin
   select * into m from public.messages where entity_id = p_message_id;
   select * into me from public.entities where id = p_message_id;
@@ -159,6 +165,9 @@ begin
   space := me.space_id;
   poster := internal.bridge_message_session(p_message_id);
   root := coalesce(m.root_message_id, m.entity_id);
+  -- 444: a bot's message is never directed (#1505 review finding 1). Listeners
+  -- at 'thread' or 'all' still hear it.
+  v_bot := coalesce((select o.sender_bot from public.message_origins o where o.message_id = p_message_id and o.direction = 'in'), false);
   return query
   with directed as (
     select h.entity_id as sid from public.bridge_handles h
@@ -185,7 +194,7 @@ begin
       from public.messages t where t.anchor_id = m.anchor_id and (t.root_message_id = root or t.entity_id = root)
   ),
   heard as (
-    select d.sid, 'directed'::text as why, 0 as rank from directed d where d.sid is not null
+    select d.sid, 'directed'::text as why, 0 as rank from directed d where d.sid is not null and not v_bot
     union all
     select l.sid, 'thread', 1 from listening l join thread_posters tp on tp.sid = l.sid where l.wake in ('thread', 'all')
     union all
@@ -242,6 +251,7 @@ declare
   th public.bridge_threads;
   thread_mode text;
   starts boolean := false;
+  is_bot boolean := coalesce(p_frame #> '{sender,bot}' = 'true'::jsonb, false);
 begin
   perform internal.bridge_runtime_session();
   if ext is null or conv is null or char_length(ext) > 256 then
@@ -251,6 +261,10 @@ begin
   if conn.id is null or conn.status = 'removed' then
     return jsonb_build_object('status', 'refused', 'reason', 'unknown_connection');
   end if;
+  -- 444 (#1505 review finding 1): a bot is never a trigger. Off WhatsApp,
+  -- self_ids name the connection's own bot user; on WhatsApp they are the
+  -- number itself, which speaks as its owner (429).
+  is_bot := is_bot or (conn.provider <> 'whatsapp' and sender is not null and sender = any(conn.self_ids));
   select br.* into b from public.bridges br join public.entities e on e.id = br.entity_id and e.deleted_at is null
    where br.connection_id = conn.id and br.external_conversation_id = conv
      and br.ended_at is null and br.paused_at is null
@@ -331,14 +345,15 @@ begin
 
   insert into public.message_origins(message_id, bridge_id, connection_id, direction, external_message_id,
     external_conversation_id, external_sender_id, external_reply_to_id, external_ts, command_state,
-    sender_display, media)
+    sender_display, media, sender_bot)
   values (log_id, b.entity_id, conn.id, 'in', ext, conv, sender, reply_ext, ts,
           case when p_command then 'pending' end, sender_name,
           -- F2: descriptive fields only; the fetch handle (media keys, D39) lives in bridge_media.
           nullif((select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
                     'kind', m ->> 'kind', 'mime', m ->> 'mime', 'fileName', m ->> 'fileName',
                     'caption', m ->> 'caption', 'size', m -> 'size'))), '[]'::jsonb)
-                    from jsonb_array_elements(coalesce(p_frame -> 'media', '[]'::jsonb)) m), '[]'::jsonb));
+                    from jsonb_array_elements(coalesce(p_frame -> 'media', '[]'::jsonb)) m), '[]'::jsonb),
+          is_bot);
   -- §4 (B1b-8): each media item becomes a file attached to this log message,
   -- fetched from the runtime after commit (§2.3 step 3).
   insert into public.bridge_media(message_id, idx, bridge_id, handle, kind, mime, file_name)
@@ -369,7 +384,7 @@ begin
   -- top-level message that mentions the bot ('mention') or any top-level
   -- message ('every') starts a session of its own: stored unrouted, with its
   -- thread row, and the keeper starts the session before delivery.
-  allowed := b.policy ->> 'whoMayTrigger' = 'anyone' or author ->> 'kind' = 'member';
+  allowed := (b.policy ->> 'whoMayTrigger' = 'anyone' or author ->> 'kind' = 'member') and not is_bot;
   if thread_root_ext is not null then
     select * into th from public.bridge_threads
      where bridge_id = b.entity_id and root_external_id = thread_root_ext for update;
@@ -411,7 +426,7 @@ begin
   -- to that session, which becomes its answerer and gains the group as an
   -- origin (D30). Once the session has closed, the chat answers as before.
   if parent_msg is not null
-     and (b.policy ->> 'whoMayTrigger' = 'anyone' or author ->> 'kind' = 'member') then
+     and (b.policy ->> 'whoMayTrigger' = 'anyone' or author ->> 'kind' = 'member') and not is_bot then
     loop_sid := internal.loop_reply_session(parent_msg);
     if loop_sid is not null then
       select * into sess_e from public.entities where id = loop_sid;
@@ -444,7 +459,7 @@ begin
             select 1 from public.message_origins o
              where o.bridge_id = b.entity_id and o.external_message_id = reply_ext and o.direction = 'out'))
     else false end;
-  allowed := b.policy ->> 'whoMayTrigger' = 'anyone' or author ->> 'kind' = 'member';
+  allowed := (b.policy ->> 'whoMayTrigger' = 'anyone' or author ->> 'kind' = 'member') and not is_bot;
 
   if triggered and allowed and b.target_kind = 'chat' then
     select * into chat_row from public.chats where entity_id = b.target_id;
