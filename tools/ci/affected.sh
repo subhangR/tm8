@@ -22,7 +22,7 @@
 # means an error widens the set, it does not fail the `changes` job.
 #
 # COMPOSITION (§3): map each changed path to its node (a workspace package dir, or one of
-# the pseudo nodes deploy, db, db/migrations, integrations); take the reverse transitive closure over
+# the pseudo nodes deploy, db, db/migrations, integrations/slack-bridge, integrations); take the reverse transitive closure over
 # workspace dependency edges; then add exactly ONE hop of EXTRA_EDGES from every node in
 # that closure (no re-closure); then map nodes to modules.
 # The dependency graph is the UNION of the base and head package.json files, so a PR cannot
@@ -80,13 +80,17 @@ declare -A MODULE_OF=(
   # Docker build (integrations/whatsapp-bridge). Nothing in the workspace imports them,
   # and their suites (node:test via tsx) run in their own directories, not in CI.
   [integrations]=
+  # Except the Slack runtime: the server suite runs it for real (the supervisor and
+  # end-to-end tests start integrations/slack-bridge) and pins its app manifest
+  # (slack-manifest.test.ts), so a change there runs the server module (EXTRA_EDGES).
+  [integrations/slack-bridge]=
   [deploy]=
   # db/test, db/migrate.mjs and the rest of db/ run in the migrations job, which also
   # runs the db/test suites (ci.yml) against the migrate.mjs it ships.
   [db]=migrations
   [db/migrations]=migrations
 )
-PSEUDO_NODES=(db/migrations db deploy integrations)   # longest prefix first
+PSEUDO_NODES=(db/migrations db deploy integrations/slack-bridge integrations)   # longest prefix first
 
 # One hop, applied after the closure. Evidence is the §3 table.
 declare -A EXTRA_EDGES=(
@@ -96,6 +100,7 @@ declare -A EXTRA_EDGES=(
   [packages/cli]="packages/execution"                 # codex-loopback runs cli dist
   [tools/conformance]="packages/server packages/cli"  # w1-conformance-manifest.json is read by both
   [deploy]="packages/server"                          # security-gates.test.ts reads nginx config
+  [integrations/slack-bridge]="packages/server"       # server tests run the runtime and pin its manifest
   [db]="packages/server packages/cli"                 # scratch databases apply the migration chain
   [db/migrations]="packages/server packages/cli tools/conformance"  # db/** applies here too;
                                                     # conformance migration-inventory.ts hashes 015_w1_foundations.sql
