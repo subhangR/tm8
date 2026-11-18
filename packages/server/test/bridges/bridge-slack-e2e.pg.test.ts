@@ -488,6 +488,15 @@ describe('Slack end to end: real server + real slack-bridge runtime + fake Slack
       `select (select count(*) from public.messages where body like '%add a regression test%')
             + (select count(*) from public.workspace_events w where w::text like '%add a regression test%') as n`);
     expect(Number(left!.n)).toBe(0);
+    // Every outbox payload that quoted it is scrubbed too, whatever its status: the progress reactions' target
+    // (📨, ✅) and the session's answer's replyTo.
+    const quoted = await owner<{ kind: string; status: string }>(
+      `select kind, status from public.bridge_outbox where payload #>> '{target,externalMessageId}' = $1 or payload #>> '{replyTo,externalMessageId}' = $1`, [reply]);
+    // (A Slack send may carry no replyTo at all, since Slack has no quotes; the reactions always name their target.)
+    expect(quoted.some((q) => q.kind === 'react')).toBe(true);
+    const leaks = await owner<{ kind: string; reaction: string | null }>(
+      `select kind, reaction from public.bridge_outbox where payload::text like '%add a regression test%'`);
+    expect(leaks).toEqual([]);
   });
 
   it('8. /tm8 status <worker> arrives as a slash command and is answered in the channel (not in a thread)', async () => {
