@@ -45,7 +45,25 @@ export class Runtime {
     this.api = o.api ?? new SlackApi()
   }
 
-  private emit: Emit = (route, frame) => this.o.link.post(route, frame)
+  /** One in-order delivery chain per connection for the frames whose LAST arrival wins on the server. */
+  private ordered = new Map<string, Promise<unknown>>()
+
+  /**
+   * Frames up to the server. `state` and `conversation-state` go one at a time per connection, in the order they were
+   * made: the server keeps whichever it applies last, so a slow `connecting` POST overtaken by the `logged_out` right
+   * behind it would leave the connection showing `connecting` forever. The chain is per connection id, not per
+   * SlackConnection, so a restart's `offline` and the new `connecting` stay in order too. Everything else is unordered.
+   */
+  private emit: Emit = (route, frame) => {
+    if (route !== 'state' && route !== 'conversation-state') return this.o.link.post(route, frame)
+    const id = (frame as { connectionId: string }).connectionId
+    const next = (this.ordered.get(id) ?? Promise.resolve()).catch(() => {}).then(() => this.o.link.post(route, frame))
+    this.ordered.set(id, next)
+    void next.catch(() => {}).finally(() => {
+      if (this.ordered.get(id) === next) this.ordered.delete(id)
+    })
+    return next
+  }
 
   private connection(connectionId: string, stateKey: string): SlackConnection {
     if (!CONNECTION_ID.test(connectionId)) throw new Error(`bad connection id ${JSON.stringify(connectionId)}`)
