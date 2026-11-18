@@ -534,6 +534,9 @@ describe('444: Slack thread mode', () => {
     expect(brief).toContain('the login page 500s on Safari since this morning');
     expect(brief).toContain('can you also add a regression test?');
     expect(brief).not.toContain('so is it fixed?'); // delivered next, not repeated
+    // Guests' replies on this 'linked' bridge were never delivered, so they are not in the brief either.
+    expect(brief).not.toContain('I am not linked');
+    expect(brief).not.toContain('now anyone may');
     const replacement = (await threadRow(root))!.session_id!;
     expect(replacement).not.toBe(threadSession);
     const { port, sent } = capturingPort();

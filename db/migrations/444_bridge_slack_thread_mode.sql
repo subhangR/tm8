@@ -567,6 +567,8 @@ begin
       'memberId', case when author ->> 'kind' = 'member' then author ->> 'actorId' end)),
     -- The thread so far after the root, newest 20 in order: what a session
     -- that replaces one whose resume failed is told, so it knows what "it" is.
+    -- On a bridge where only linked members may trigger, a guest's message
+    -- (authored as the bridge) is left out, as it was never delivered.
     'recent', coalesce((
       select jsonb_agg(jsonb_build_object('messageId', r.entity_id, 'at', r.created_at, 'from', r.who, 'text', left(r.body, 500))
                        order by r.created_at, r.entity_id)
@@ -576,6 +578,7 @@ begin
                 join public.entities te on te.id = t.entity_id and te.deleted_at is null
                 left join public.message_origins o on o.message_id = t.entity_id
                where t.anchor_id = root_m.anchor_id and t.root_message_id = th.root_message_id
+                 and not (b.policy ->> 'whoMayTrigger' = 'linked' and t.author_id = b.entity_id)
                order by t.created_at desc, t.entity_id desc
                limit 20) r), '[]'::jsonb));
 end
