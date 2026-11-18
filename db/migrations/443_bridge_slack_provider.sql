@@ -490,13 +490,23 @@ begin
    where m.entity_id = log_id or m.message_batch_id = 'bridge-in:' || b.entity_id || ':' || ext;
 
   if deleting then
+    -- The copies stay, as tombstones the log shows ('[deleted]', redacted_at),
+    -- so a thread keeps its root; their words are gone (review #1505 finding 6).
     update public.messages
        set body = '[deleted]', mentions = '[]'::jsonb, attachments = '[]'::jsonb, redacted_at = now()
      where entity_id = any(ids) and redacted_at is null;
     get diagnostics n = row_count;
-    update public.entities set deleted_at = now(), updated_at = now()
-     where id = any(ids) and deleted_at is null;
-    -- Its files go with it, and nothing still waiting is fetched or delivered.
+    -- The replayable event log held the words too (every message.created and
+    -- message.updated event carries the row): scrubbed the same way.
+    update public.workspace_events
+       set payload = payload || jsonb_build_object('body', '[deleted]', 'mentions', '[]'::jsonb, 'attachments', '[]'::jsonb)
+     where space_id = b.space_id and event_type in ('message.created', 'message.updated')
+       and subject_ids && ids and payload ? 'body' and payload ->> 'body' <> '[deleted]';
+    update public.workspace_events
+       set payload = payload || jsonb_build_object('body', '[deleted]', 'mentions', '[]'::jsonb, 'attachments', '[]'::jsonb)
+     where space_id = b.space_id and event_type in ('message.created', 'message.updated') and subject_ids is null
+       and payload ->> 'entity_id' = any(ids::text[]) and payload ? 'body' and payload ->> 'body' <> '[deleted]';
+    -- Its files go with it, and nothing still waiting is fetched, delivered or answered.
     update public.entities set deleted_at = now(), updated_at = now()
      where id in (select file_id from public.bridge_media where message_id = log_id and file_id is not null)
        and deleted_at is null;
@@ -504,6 +514,8 @@ begin
     update public.session_message_deliveries
        set status = 'cancelled', failure_reason = 'message_deleted', settled_at = now()
      where message_id = any(ids) and status = 'pending';
+    -- A chat turn queued on a routed copy is withdrawn (a running one finishes).
+    delete from public.chat_turns where user_message_id = any(ids) and state = 'queued';
     update public.message_origins set sender_display = null, media = null where message_id = log_id;
     return jsonb_build_object('status', 'deleted', 'messageId', log_id, 'bridgeId', b.entity_id, 'copies', n);
   end if;

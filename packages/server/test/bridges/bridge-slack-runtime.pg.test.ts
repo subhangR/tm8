@@ -467,7 +467,7 @@ describe('a Slack channel end to end (lane A ac3)', () => {
     expect((await database.query<{ n: number }>('select count(*)::int as n from public.chat_turns where chat_id = $1', [slackChat]))).toEqual(turns);
   });
 
-  it('a delete tombstones the copy (retention) and routes nothing', async () => {
+  it('a delete tombstones the copies (shown in the log), scrubs the event log, routes nothing (review finding 6)', async () => {
     const res = await inbound({ externalMessageId: reply, body: '', deleted: true,
       sender: { externalId: PRIYA, altId: null, name: null, fromMe: false } });
     expect(res.status, res.raw).toBe(200);
@@ -475,14 +475,32 @@ describe('a Slack channel end to end (lane A ac3)', () => {
     const rows = await database.query<{ body: string; redacted: boolean; deleted: boolean }>(
       `select m.body, m.redacted_at is not null as redacted, e.deleted_at is not null as deleted
          from public.messages m join public.entities e on e.id = m.entity_id where m.entity_id = $1`, [res.body.messageId]);
-    expect(rows).toEqual([{ body: '[deleted]', redacted: true, deleted: true }]);
+    expect(rows).toEqual([{ body: '[deleted]', redacted: true, deleted: false }]);
     const [left] = await database.query<{ n: number }>(
-      `select count(*)::int as n from public.messages where body like '%regression test%'`);
+      `select ((select count(*) from public.messages where body like '%regression test%')
+             + (select count(*) from public.workspace_events where payload::text like '%regression test%'))::int as n`);
     expect(left!.n).toBe(0);
+    // The tombstone is in the bridge's log, in its thread.
+    const log = await call(`/v2/bridges/${slackBridge}/log?latest=true&limit=50`, browserToken, undefined, 'GET');
+    expect(log.status, log.raw).toBe(200);
+    expect(log.raw).toContain(res.body.messageId);
+    expect(log.raw).not.toContain('regression test');
     // A delete of a message tm8 never stored is a no-op.
     const unknown = await inbound({ externalMessageId: '1790000000.999999', body: '', deleted: true,
       sender: { externalId: PRIYA, altId: null, name: null, fromMe: false } });
     expect(unknown.body).toMatchObject({ status: 'ignored', reason: 'unknown_message' });
+  });
+
+  it('deleting a routed message withdraws the chat turn still queued on it', async () => {
+    const ext = '1790000000.000500';
+    const res = await inbound({ externalMessageId: ext, body: `<@${BOT_USER}> never mind this`, mentions: [BOT_USER],
+      sender: { externalId: PRIYA, altId: null, name: 'Priya', fromMe: false, email: SLACK_EMAIL, team: OWN_TEAM } });
+    expect(res.body).toMatchObject({ status: 'stored', routed: true });
+    const turns = () => database.query<{ state: string }>('select state from public.chat_turns where user_message_id = $1', [res.body.copyId]);
+    expect(await turns()).toEqual([{ state: 'queued' }]);
+    expect((await inbound({ externalMessageId: ext, body: '', deleted: true,
+      sender: { externalId: PRIYA, altId: null, name: null, fromMe: false } })).body.status).toBe('deleted');
+    expect(await turns()).toEqual([]);
   });
 
   it('the answer leaves on the Slack socket with voice and threadTs and no prefix; a 429 waits Retry-After; the retry settles sent', async () => {
