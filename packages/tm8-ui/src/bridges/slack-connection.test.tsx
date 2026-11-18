@@ -167,6 +167,68 @@ describe('the Slack token dialog', () => {
     expect(window.location.href).not.toContain('xapp-');
   });
 
+  /* #1509 review 1: clearing the inputs makes the pair "empty" again, so a
+     `tried` left true drew the local refusal on top of every submit and
+     disabled the retry. */
+  it('shows no local refusal after a submit, and leaves the retry live', async () => {
+    openDialog();
+    paste(BOT, APP);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Connect' })); });
+
+    expect(screen.queryByTestId('slack-token-problem')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    const again = screen.getByRole('button', { name: 'Paste again' }) as HTMLButtonElement;
+    expect(again.disabled).toBe(false);
+  });
+
+  it('shows no stale refusal beside Slack’s own refusal', async () => {
+    vi.useFakeTimers();
+    const t = slackPort();
+    render(<SlackTokensDialog port={t.port} spaceId={SPACE} relink={null} onClose={() => {}} onLinked={() => {}} />);
+    paste('xoxb-0-0-invalid', APP);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Connect' })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+
+    expect(screen.getByTestId('slack-refused')).toBeTruthy();
+    expect(screen.queryByTestId('slack-token-problem')).toBeNull();
+    // exactly one alert on screen: Slack's, not ours
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+  });
+
+  /* #1509 review 2: a second attempt must write onto the row the first one
+     made, or each refusal orphans a logged_out connection. */
+  it('a second attempt reuses the row the first one created', async () => {
+    const { port } = openDialog();
+    const before = (await port.connections.list()).length;
+    paste('xoxb-0-0-invalid', APP);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Connect' })); });
+    const first = port.connections.begin.mock.results[0]!.value as Promise<{ connection: { id: string } }>;
+    const madeId = (await first).connection.id;
+
+    paste(BOT, APP);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Paste again' })); });
+
+    expect(port.connections.begin).toHaveBeenCalledTimes(2);
+    expect(port.connections.begin.mock.calls[0]![0]).not.toHaveProperty('connectionId');
+    expect(port.connections.begin.mock.calls[1]![0]).toMatchObject({ connectionId: madeId });
+    // …and the two attempts added exactly ONE row between them, not two
+    expect((await port.connections.list()).length).toBe(before + 1);
+  });
+
+  it('reuses the row after an offline answer too (the server already made it)', async () => {
+    const t = slackPort();
+    const madeUp = { ...(await t.client.connections.list()).find((c) => c.provider === 'slack')!, id: 'new-row-1' };
+    t.port.connections.begin = vi.fn(async () => ({ connection: madeUp, runtime: 'offline' as const }));
+    render(<SlackTokensDialog port={t.port} spaceId={SPACE} relink={null} onClose={() => {}} onLinked={() => {}} />);
+    paste(BOT, APP);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Connect' })); });
+    expect(await screen.findByText(/No Slack runtime is running/)).toBeTruthy();
+
+    paste(BOT, APP);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Paste again' })); });
+    expect((t.port.connections.begin as ReturnType<typeof vi.fn>).mock.calls[1]![0]).toMatchObject({ connectionId: 'new-row-1' });
+  });
+
   it('clears them on a FAILED submit too, and the refusal never quotes them', async () => {
     const t = slackPort();
     t.port.connections.begin = vi.fn(async () => { throw new Error('the server said no'); });

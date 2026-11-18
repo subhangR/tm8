@@ -98,8 +98,15 @@ export function SlackTokensDialog({
     /* Read the values out, then clear the inputs in the same tick: whatever
        the call does next, nothing is left on screen or in state to echo. */
     const credential = { kind: 'slack_tokens' as const, botToken: botToken.trim(), appToken: appToken.trim() };
+    const onto = relink ?? pending;
     setBotToken('');
     setAppToken('');
+    /* …and the form is untouched again. Clearing the inputs makes `problem`
+       "Paste both tokens" once more, so leaving `tried` true drew a red alert
+       on every submit — beside "Checking the tokens…", announced to screen
+       readers — and left *Paste again* disabled until someone typed (#1509
+       review 1). The guard above has already run; `tried` has done its job. */
+    setTried(false);
     setBusy(true);
     setError(null);
     setWatched(null);
@@ -107,14 +114,20 @@ export function SlackTokensDialog({
       const result = await port.connections.begin({
         provider: 'slack',
         ...(label.trim() ? { label: label.trim() } : {}),
-        ...(relink ? { connectionId: relink.id } : {}),
+        /* The row to write the tokens onto: the one being rotated, or — on a
+           second attempt at a NEW workspace — the row the first attempt
+           already created. Without this, every *Paste again* inserted another
+           connection and left the refused ones orphaned in Accounts & secrets
+           (#1509 review 2). */
+        ...(onto ? { connectionId: onto.id } : {}),
         credential,
       });
+      /* Keep the row either way: `offline` means the server has ALREADY
+         inserted it and only the runtime is missing, so a retry must reuse it. */
+      setPending(result.connection);
+      setWatched(result.connection);
       if (result.runtime === 'offline') {
         setError('No Slack runtime is running on this node, so the tokens cannot be checked yet. Start the slack-runtime service, then try again.');
-      } else {
-        setPending(result.connection);
-        setWatched(result.connection);
       }
     } catch (err) {
       /* The server's words. `begin` refuses a malformed token by SHAPE, never
