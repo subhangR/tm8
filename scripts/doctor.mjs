@@ -7,7 +7,7 @@
 import { existsSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { REPO_ROOT, resolveEnv } from "./lib/env.mjs";
+import { REPO_ROOT, expandHome, isOn, resolveEnv } from "./lib/env.mjs";
 import { preflight } from "./lib/preflight.mjs";
 import { logger } from "./lib/run.mjs";
 import { PG_MAJOR, inspectDatabase, redact } from "./lib/pg.mjs";
@@ -100,6 +100,20 @@ if (agentCmd) {
         "      Then confirm with `tm8 doctor`.",
     );
   }
+}
+
+// --- the Slack runtime --------------------------------------------------------
+// Opt-in (TM8_SLACK_RUNTIME=1): the server supervises integrations/slack-bridge,
+// a standalone npm package that `bun install` does not fill. Missing deps would
+// otherwise surface only as one warning line in the server log.
+if (isOn(env.TM8_SLACK_RUNTIME)) {
+  log.info("");
+  const pkg = expandHome(env.TM8_SLACK_RUNTIME_CWD?.trim() || join(REPO_ROOT, "integrations", "slack-bridge"));
+  const stateDir = expandHome(env.TM8_SLACK_STATE_DIR?.trim() || join(dataDir, "bridges", "slack-runtime"));
+  if (!existsSync(join(pkg, "src", "runtime-main.ts"))) log.error(`slack runtime: no ${join(pkg, "src", "runtime-main.ts")}`);
+  else if (!existsSync(join(pkg, "node_modules"))) log.error(`slack runtime: dependencies missing — run: (cd ${pkg} && npm ci)`);
+  else log.info(`slack runtime: ${pkg} (dependencies installed)`);
+  log.info(`slack sealed state: ${stateDir} ${existsSync(stateDir) ? "(exists — keep it, and back it up)" : "(created when the first Slack connection connects)"}`);
 }
 
 log.info("");

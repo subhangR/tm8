@@ -125,6 +125,8 @@ import { BridgeRuntimeHub, isBridgeRuntimeUpgrade } from './bridges/runtime/hub.
 import { bridgeGroupPort, createBridgeCommands, createBridgeKeeper } from './bridges/commands/index.js';
 import { createBridgeRuntimeRoute } from './bridges/runtime/routes.js';
 import { BridgeRuntimeSupervisor } from './bridges/runtime/supervisor.js';
+import { slackRuntimePlan } from './bridges/runtime/slack-runtime.js';
+import { REPO_ROOT } from './configs/locate.js';
 import { BridgeMediaFetcher } from './bridges/runtime/media.js';
 import { createLocalTranscriber, findTranscriber } from './bridges/runtime/transcribe.js';
 import { createBridgeSessionDelivery } from './bridges/runtime/deliver.js';
@@ -252,6 +254,14 @@ export interface BootstrappedServer {
    * Narrowed to `url` + `close` for the same reason `delivery` is.
    */
   readonly preview: { readonly url: string; readonly port: number; close(): Promise<void> } | undefined;
+  /**
+   * Kills the supervised bridge runtimes (WhatsApp, Slack) synchronously and
+   * stops restarting them. The shutdown path calls it FIRST: `server.close()`
+   * can wait on a runtime's own live connections, and a runtime left running
+   * past the process outlives it (stop_prod SIGKILLs this process, never its
+   * children), then picks up the next server's token and runs twice.
+   */
+  readonly stopBridgeRuntimes: () => void;
   /**
    * The `#claim=` URL, present only while this node is UNCLAIMED.
    *
@@ -1102,9 +1112,20 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // token file configured, the node mints the runtime's bridge_runtime session
   // (and starts the sidecar, if a command is given) now that it is listening.
   let bridgeSupervisor: BridgeRuntimeSupervisor | undefined;
+  let slackSupervisor: BridgeRuntimeSupervisor | undefined;
+  // stop() kills synchronously; see BootstrappedServer.stopBridgeRuntimes.
+  const stopBridgeRuntimes = (): void => { void bridgeSupervisor?.stop(); void slackSupervisor?.stop(); };
   if (bridgeHub) {
     await bridgeHub.start();
-    server.http.once('close', () => { void bridgeHub.stop(); void bridgeSupervisor?.stop(); });
+    // Backstop for any exit that skips the shutdown path: process.exit does not
+    // take a child process along. Removed with the listener, so a process that
+    // boots many servers (tests) does not pile up listeners.
+    process.once('exit', stopBridgeRuntimes);
+    server.http.once('close', () => { void bridgeHub.stop(); stopBridgeRuntimes(); process.off('exit', stopBridgeRuntimes); });
+    const ownerClaims = async () => {
+      const o = await owner!();
+      return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'bridges.runtime-mint' };
+    };
     const tokenFile = process.env.TM8_BRIDGE_RUNTIME_TOKEN_FILE;
     if (tokenFile && db && owner) {
       const command = process.env.TM8_BRIDGE_RUNTIME_COMMAND
@@ -1112,10 +1133,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         : undefined;
       bridgeSupervisor = new BridgeRuntimeSupervisor({
         db,
-        ownerClaims: async () => {
-          const o = await owner();
-          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'bridges.runtime-mint' };
-        },
+        ownerClaims,
         tokenFile,
         label: process.env.TM8_BRIDGE_RUNTIME_LABEL ?? 'whatsapp-runtime',
         ...(command && command.length > 0
@@ -1125,6 +1143,27 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         log: (line) => console.warn(line),
       });
       await bridgeSupervisor.start().catch((err: unknown) => console.warn(`[bridges] runtime supervisor: ${String(err)}`));
+    }
+    // The Slack runtime (integrations/slack-bridge): a second sidecar with its
+    // own label and token file; TM8_SLACK_RUNTIME=1 is the whole laptop setup.
+    const slack = slackRuntimePlan(process.env, { repoRoot: REPO_ROOT, dataDir, execPath: process.execPath });
+    if (slack?.problem) {
+      console.warn(`[bridges] slack-runtime not started: ${slack.problem}`);
+    } else if (slack && db && owner) {
+      slackSupervisor = new BridgeRuntimeSupervisor({
+        db,
+        ownerClaims,
+        tokenFile: slack.tokenFile,
+        label: slack.label,
+        ...(slack.command ? { command: slack.command } : {}),
+        serverUrl: url,
+        log: (line) => console.warn(line.replace('[bridges] runtime', '[bridges] slack-runtime')),
+      });
+      await slackSupervisor.start().then(
+        () => console.warn(`[bridges] slack-runtime ${slack.command ? 'started' : 'token file kept fresh'}; sealed state in ${slack.stateDir}`),
+        (err: unknown) => console.warn(`[bridges] slack-runtime supervisor: ${String(err)}`));
+    } else if (slack) {
+      console.warn('[bridges] slack-runtime not started: the node has no database or owner');
     }
   }
 
@@ -1551,7 +1590,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     });
   }
 
-  return { server, subscriptions, events, url, db, delivery, preview, scheduler, execution, claimUrl };
+  return { server, subscriptions, events, url, db, delivery, preview, scheduler, execution, claimUrl, stopBridgeRuntimes };
 }
 
 /** How long shutdown waits for the warm lane pool to remove its lanes. */
@@ -1584,7 +1623,7 @@ export async function main(): Promise<void> {
 
     // TRUE only here: this is the one caller that owns the process lifetime and
     // can therefore stop what it starts (see BootstrapOptions.startBackgroundJobs).
-    const { server, url, db, delivery, preview, scheduler, execution, claimUrl } = await bootstrap({
+    const { server, url, db, delivery, preview, scheduler, execution, claimUrl, stopBridgeRuntimes } = await bootstrap({
       startBackgroundJobs: true,
       ...(sidecar ? { config: await desktopServerConfig() } : {}),
       // The shared registry owns Claude/Codex execution. The orchestrator owns
@@ -1644,6 +1683,9 @@ export async function main(): Promise<void> {
     const shutdown = (signal: string): void => {
       console.log(`\n${signal} — shutting down`);
       report({ phase: 'stopping', message: 'Shutting down…' });
+      // Before anything awaits: the bridge runtimes are child processes, and a
+      // close() that never resolves must not leave them running (see the field).
+      stopBridgeRuntimes();
       // FIRST, before anything is torn down: tell every live session why it is
       // about to die (171). This process holds their PTYs, so they die with it
       // either way — but this is the only moment the reason is known

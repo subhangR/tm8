@@ -96,6 +96,7 @@ const SPAWN = 'packages/execution/src/spawn/SpawnService.ts';
 const EXEC_HANDLERS = 'packages/server/src/facade/execution-handlers.ts';
 const MAIN = 'packages/server/src/main.ts';
 const TRANSCRIBE = 'packages/server/src/bridges/runtime/transcribe.ts';
+const SLACK_RUNTIME = 'packages/server/src/bridges/runtime/slack-runtime.ts';
 const NODE_KEYS = 'packages/server/src/facade/services/w2/space-credential-catalog.ts';
 const DOCTOR = 'packages/cli/src/commands/doctor.ts';
 
@@ -206,6 +207,14 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_BRIDGE_RUNTIME_COMMAND', group: 'Bridges', summary: 'JSON argv of the connector runtime to start and supervise; unset, the deployment runs it.', default: null, definedIn: MAIN },
   { name: 'TM8_BRIDGE_RUNTIME_LABEL', group: 'Bridges', summary: 'Label of the runtime\'s session; one live token per label.', default: 'whatsapp-runtime', definedIn: MAIN },
   { name: 'TM8_BRIDGE_RUNTIME_CWD', group: 'Bridges', summary: 'Working directory the supervised runtime command starts in.', default: null, definedIn: MAIN },
+  { name: 'TM8_SLACK_RUNTIME', group: 'Bridges', summary: 'Set to 1 to run and supervise the Slack connector runtime from this checkout (integrations/slack-bridge, `node --import tsx src/runtime-main.ts`); needs `npm ci` in that directory once.', default: null, definedIn: SLACK_RUNTIME },
+  { name: 'TM8_SLACK_RUNTIME_TOKEN_FILE', group: 'Bridges', summary: 'File the node writes the Slack runtime\'s bridge_runtime bearer to and keeps fresh. Set alone, the deployment runs the runtime (a container) and the node only mints. Keep it in a directory of its own: a container mounts that directory, since each mint replaces the file.', default: '<TM8_DATA_DIR>/bridges/slack-runtime-secrets/runtime.token', definedIn: SLACK_RUNTIME },
+  { name: 'TM8_SLACK_RUNTIME_COMMAND', group: 'Bridges', summary: 'JSON argv of the Slack runtime to start and supervise instead of the checkout default.', default: null, definedIn: SLACK_RUNTIME },
+  { name: 'TM8_SLACK_RUNTIME_CWD', group: 'Bridges', summary: 'Working directory the supervised Slack runtime starts in.', default: '<repo>/integrations/slack-bridge', definedIn: SLACK_RUNTIME },
+  { name: 'TM8_SLACK_STATE_DIR', group: 'Bridges', summary: 'Where the Slack runtime keeps each connection\'s sealed tokens. Keep it on persistent disk and back it up: losing it means pasting the tokens again.', default: '<TM8_DATA_DIR>/bridges/slack-runtime', definedIn: SLACK_RUNTIME },
+  { name: 'TM8_SLACK_API_URL', group: 'Bridges', summary: 'Slack Web API base the supervised runtime calls; set only to point it at a fake Slack in tests.', default: 'https://slack.com/api/', definedIn: SLACK_RUNTIME },
+  { name: 'TM8_SLACK_PROXY_URL', group: 'Bridges', summary: 'HTTP(S) proxy the supervised Slack runtime uses for all Slack traffic (Web API, Socket Mode, files); user:password@ in the URL is sent as Proxy-Authorization. Unset, the runtime uses HTTPS_PROXY / NO_PROXY; the link to tm8 never goes through a proxy.', default: null, definedIn: SLACK_RUNTIME, secret: true },
+  { name: 'TM8_SLACK_RUNTIME_ID', group: 'Bridges', summary: 'Id the supervised Slack runtime reports in hello.', default: 'slack-<hostname>', definedIn: SLACK_RUNTIME },
   { name: 'TM8_TRANSCRIBE_BIN', group: 'Bridges', summary: 'Program that turns a bridged voice note into text on this host (442), run as `<program> -` with the audio on stdin; unset, tm8-transcribe on PATH or in ~/.local/bin; set but empty, voice notes keep their file only.', default: 'tm8-transcribe', definedIn: TRANSCRIBE },
 
   // ── Keys ─────────────────────────────────────────────────────────────
