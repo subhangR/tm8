@@ -54,6 +54,11 @@ You do **not** need a public URL, a domain, a webhook or an open inbound port. T
 
 The app now exists but is not installed yet. You land on its **Basic Information** page.
 
+> **Do not turn on token rotation.** The manifest leaves it off (`token_rotation_enabled: false`), and it must
+> stay off (Slack app → **OAuth & Permissions → Advanced token security via token rotation**). With rotation on,
+> Slack makes bot tokens expire after 12 hours, and the tokens you paste into tm8 would silently stop working.
+> Slack does not let you turn rotation off again once it is on; you would have to create a new app.
+
 What the manifest asks for, and why:
 
 | Bot scope | Why tm8 needs it |
@@ -191,8 +196,8 @@ its state lives. If you see `slack-runtime not started: …` instead, the line s
 4. tm8 checks them with Slack and shows **Connected to *Your Company* (*yourcompany.slack.com* or
    *yourcompany.enterprise.slack.com*) as @tm8**.
 
-If it shows an error instead, see [Troubleshooting](#troubleshooting). The code it shows (`invalid_auth`, …) is
-Slack's own.
+If it shows an error instead, see [Troubleshooting](#troubleshooting). The connection shows the code Slack
+answered (`invalid_auth`, `missing_scope: …`, …) under its status; the table below is keyed on it.
 
 ---
 
@@ -212,6 +217,22 @@ Slack's own.
    - **Every message**: every top-level message starts a session. Only for a quiet intake channel.
    - **Off**: the channel behaves like one conversation; `@tm8` gets an answer from the target.
 6. Click **Add**.
+
+### The `/tm8` command
+
+Type these in a connected channel. Answers post in the channel (not a thread), signed `tm8:`.
+
+| Command | What it does |
+|---|---|
+| `/tm8 work <job>` | Start a worker on a job. Several jobs: one per line |
+| `/tm8 status` | What is running for this channel |
+| `/tm8 workers` | The workers and their numbers / handles |
+| `/tm8 stop <n or @handle>` | Stop a worker |
+| `/tm8 link <code>` | Link your Slack user to your tm8 member (only needed when your Slack email is not your verified tm8 email) |
+| `/tm8 whoami` | Who tm8 thinks you are |
+| `/tm8 help` | Every command |
+
+`/tm8 split` and `/tm8 invite` are WhatsApp-only and say so.
 
 ---
 
@@ -312,8 +333,10 @@ Tell your compliance team:
 
 | What you see | What it means | Fix |
 |---|---|---|
+| tm8 refuses the form: *a Slack bot token looks like xoxb-…* or *an app-level token looks like xapp-…* | A token is cut short, has a space or line break in it, or is in the wrong field. tm8 checks the shape before it asks Slack | Copy the token again with Slack's **Copy** button; bot token in the bot field, app-level token in the app-level field |
 | `invalid_auth` / `not_authed` when you click Connect | The bot token is wrong, cut short, or from another app | Copy the **Bot User OAuth Token** again (A4). It starts with `xoxb-`. Check you did not paste the xapp token into the bot field |
 | `not_allowed_token_type` | A token is in the wrong field, or a user token (`xoxp-`) was used | Bot field: `xoxb-…`; app-level field: `xapp-…` |
+| `token_expired`, or the bridge stops working about 12 hours after connecting | Token rotation was turned on for the app | Rotation cannot be turned off again: create a new app from the manifest (Part A) and **Relink** with its tokens |
 | `token_revoked` / `account_inactive` | The token was revoked, or the app was uninstalled | Reinstall the app (A3), copy the new token, **Relink** |
 | `missing_scope` | The app was created from an older or edited manifest | Slack app → **App Manifest**, paste this folder's manifest again, **Save**, then **Reinstall** (A3) and **Relink** |
 | Connected, but the channel is not in the picker | The bot is not in the channel | `/invite @tm8` in the channel, reopen the picker |
