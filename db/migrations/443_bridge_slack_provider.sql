@@ -72,9 +72,12 @@
 -- never passes an admin-tier command (executor requireAdminTier).
 --   * a code, invite or admin link on the address always wins: an email link is
 --     never written beside one;
---   * the link follows the evidence: when (a)-(c) stop holding it is revoked
---     with revoked_reason 'auto', which never blocks a later auto-link; an
---     admin's revoke (reason null) does block it;
+--   * the link follows the evidence: when Slack definitively says (a)-(c) no
+--     longer hold (a guest, external, another workspace, another email, not
+--     exactly one match) it is revoked with revoked_reason 'auto', which never
+--     blocks a later auto-link; an admin's revoke (reason null) does. Unknown
+--     (no or partial team info, no email) keeps an existing link and makes
+--     none: a Slack hiccup never unlinks anyone;
 --   * bots and the connection's own bot user never link; the email is never
 --     stored.
 -- =============================================================================
@@ -406,6 +409,7 @@ declare
   team jsonb := p_frame #> '{sender,team}';
   acct jsonb;
   own_install boolean := false;
+  known boolean;
 begin
   perform internal.bridge_runtime_session();
   if sender is null or coalesce((p_frame #>> '{sender,bot}')::boolean, false)
@@ -428,17 +432,27 @@ begin
 
   perform pg_advisory_xact_lock(hashtextextended('bridge-email-link:' || b.space_id || ':' || sender, 0));
 
-  -- (a) A full member of the connection's own install, by Slack's word. Missing: no.
+  -- What Slack said is KNOWN only with a team (both flags, an id) and an
+  -- email, on a connection that knows its own install. Unknown (users.info
+  -- failed: team null; an older runtime: no team; no email) keeps an existing
+  -- email link as it is and makes none: a Slack hiccup never unlinks anyone
+  -- (coordinator ruling). Only a definitive answer revokes.
   acct := conn.provider_account;
-  own_install := acct is not null and jsonb_typeof(team) = 'object'
+  known := coalesce(acct is not null and jsonb_typeof(team) = 'object'
+    and jsonb_typeof(team -> 'guest') = 'boolean' and jsonb_typeof(team -> 'external') = 'boolean'
+    and (nullif(team ->> 'teamId', '') is not null or nullif(team ->> 'enterpriseId', '') is not null)
+    and v_email ~ '^[^@\s]+@[^@\s]+$', false);   -- a missing key is NULL, never 'unknown = true'
+
+  -- (a) A full member of the connection's own install, by Slack's word.
+  own_install := coalesce(acct is not null and jsonb_typeof(team) = 'object'
     and jsonb_typeof(team -> 'guest') = 'boolean' and not (team ->> 'guest')::boolean
     and jsonb_typeof(team -> 'external') = 'boolean' and not (team ->> 'external')::boolean
     and ((nullif(team ->> 'teamId', '') is not null and team ->> 'teamId' = acct ->> 'teamId')
          or (coalesce((acct ->> 'isEnterpriseInstall')::boolean, false)
-             and nullif(team ->> 'enterpriseId', '') is not null and team ->> 'enterpriseId' = acct ->> 'enterpriseId'));
+             and nullif(team ->> 'enterpriseId', '') is not null and team ->> 'enterpriseId' = acct ->> 'enterpriseId')), false);
 
   -- (b)+(c) The one active account with this email whose identity is an active member here.
-  if own_install and v_email <> '' and v_email ~ '^[^@\s]+@[^@\s]+$' then
+  if known and own_install then
     select min(a.identity_id), count(*) into who, n
       from public.accounts a
      where lower(btrim(a.email)) = v_email and a.status = 'active'
@@ -459,6 +473,9 @@ begin
    where l.provider = 'slack' and l.external_id = sender and l.revoked_at is null
      and l.method = 'email' and l.space_id = b.space_id
    for update;
+  if not known then
+    return jsonb_build_object('status', case when cur.id is null then 'ignored' else 'kept' end, 'reason', 'unknown');
+  end if;
   if cur.id is not null and cur.identity_id is not distinct from who then
     return jsonb_build_object('status', 'kept', 'reason', 'same');
   end if;

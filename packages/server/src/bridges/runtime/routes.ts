@@ -237,8 +237,9 @@ async function inbound(
   // transaction, before the message is stored and its author resolved. The
   // email goes to that check only: it is not in the frame the message is
   // stored from.
-  // Called for every person (not only when an email came), so a link whose
-  // evidence is gone (no email, a guest, another workspace) is revoked.
+  // Called for every person (not only when an email came), so a link Slack
+  // definitively no longer backs (a guest, external, another workspace, another
+  // email) is revoked; unknown (no team info, no email) leaves it as it is.
   const person = typeof frame.sender?.externalId === 'string' && frame.sender.bot !== true;
   const stored: InboundFrame = frame.sender && 'email' in frame.sender
     ? { ...frame, sender: { ...frame.sender, email: null } } : frame;

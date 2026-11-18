@@ -462,6 +462,30 @@ describe('a Slack channel end to end (lane A ac3)', () => {
     expect((await linksOf('U0ROUND01')).at(-1)).toEqual({ method: 'email', revoked: true, revoked_reason: null });
   });
 
+  it('unknown team info keeps an existing email link and makes none; only a definitive answer revokes (delta ruling 3)', async () => {
+    let n = 0;
+    const say = (sender: Record<string, unknown>) => inbound({ externalMessageId: `1790000000.0006${String(n++).padStart(2, '0')}`, body: 'hi',
+      sender: { externalId: 'U0FLAKY01', altId: null, name: 'Flaky', fromMe: false, ...sender } });
+    // Unknown never creates one.
+    expect((await say({ email: SLACK_EMAIL, team: null })).body.author).toMatchObject({ kind: 'bridge', trust: 'guest' });
+    expect(await linksOf('U0FLAKY01')).toEqual([]);
+    expect((await say({ email: SLACK_EMAIL, team: OWN_TEAM })).body.author).toMatchObject({ kind: 'member', trust: 'asserted' });
+    // users.info failed (team null), an older runtime (no team), partial flags, no email: all keep it.
+    for (const sender of [
+      { email: SLACK_EMAIL, team: null },
+      { email: SLACK_EMAIL },
+      { email: SLACK_EMAIL, team: { teamId: 'T0ACME', enterpriseId: null } },
+      { email: null, team: OWN_TEAM },
+      {},
+    ]) {
+      expect((await say(sender)).body.author, JSON.stringify(sender)).toMatchObject({ kind: 'member', trust: 'asserted' });
+    }
+    expect(await linksOf('U0FLAKY01')).toEqual([{ method: 'email', revoked: false, revoked_reason: null }]);
+    // A definitive answer (Slack now marks them a guest) revokes.
+    expect((await say({ email: SLACK_EMAIL, team: { ...OWN_TEAM, guest: true } })).body.author).toMatchObject({ kind: 'bridge', trust: 'guest' });
+    expect(await linksOf('U0FLAKY01')).toEqual([{ method: 'email', revoked: true, revoked_reason: 'auto' }]);
+  });
+
   it('a bot never links, and a non-matching email stays a guest', async () => {
     const res = await inbound({ externalMessageId: '1790000000.000150', body: 'deploy finished',
       sender: { externalId: 'U0OTHER01', altId: null, name: 'Sam', fromMe: false, email: 'sam@elsewhere.example', bot: false } });
