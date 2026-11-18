@@ -18,7 +18,8 @@ export class FakeTm8 {
   refused = 0
   /**
    * How long the "server" takes to apply a frame before it is recorded (ms): a slow POST, as a busy database makes
-   * one. `posted` is in APPLY order, which is what decides a connection's state on the real server.
+   * one. `posted` is in APPLY order, which is what decides a connection's state on the real server. Infinity never
+   * answers (and never applies).
    */
   applyDelay: (route: RuntimeRoute, frame: any) => number = () => 0
   private server: http.Server
@@ -131,6 +132,8 @@ export class FakeTm8 {
       return
     }
     const delay = this.applyDelay(route as RuntimeRoute, frame)
+    // Infinity: the server never answers this request (it is dropped when the fake closes).
+    if (delay === Infinity) return void (await new Promise(() => {}))
     if (delay > 0) await new Promise((r) => setTimeout(r, delay))
     this.posted.push({ route: route as RuntimeRoute, frame })
     this.wake()

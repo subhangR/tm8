@@ -294,6 +294,23 @@ describe('Socket Mode lifecycle', () => {
     assert.deepEqual(r.tm8.lastState(CONN2), { connectionId: CONN2, status: 'logged_out', detail: 'app_already_connected' })
   })
 
+  test('a server that never answers one state POST holds the chain only until the per-attempt timeout', async () => {
+    r = await rig({ link: { postTimeoutMs: 150, retryMs: [20, 20] } })
+    seed(r.slack)
+    await r.start()
+    await r.connect(['C1'])
+    const CONN2 = '01a1eddf-0000-7000-8000-000000000002'
+    // CONN2's 'connecting' is never answered (a hung server request); the refusal behind it must still get through.
+    r.tm8.applyDelay = (route, f) => (route === 'state' && f.connectionId === CONN2 && f.status === 'connecting' ? Infinity : 0)
+    const t0 = Date.now()
+    r.tm8.push({ type: 'connect', connectionId: CONN2, stateKey: Buffer.alloc(32, 2).toString('base64'), credential: { kind: 'slack_tokens', botToken: r.slack.botToken, appToken: r.slack.appToken } })
+    const out = await r.tm8.waitFor('state', (f) => f.connectionId === CONN2 && f.status === 'logged_out', 3000)
+    // Three attempts of 150 ms plus two 20 ms waits, then the next frame: well under the old unbounded wait.
+    assert.ok(Date.now() - t0 < 2000, `took ${Date.now() - t0} ms`)
+    assert.equal(out.detail, 'app_already_connected')
+    assert.ok(r.logs.some((l) => /\[link\] state not delivered/.test(l)), r.logs.join('\n'))
+  })
+
   test('a restart keeps state order across the old and new connection object', async () => {
     r = await rig()
     seed(r.slack)
