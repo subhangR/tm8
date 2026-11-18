@@ -59,6 +59,8 @@ interface ThreadContext {
   sessionLive: boolean;
   parentSessionId: string | null;
   sender: BridgeCommandOrigin['sender'];
+  /** The thread after its root, oldest first, at most 20. */
+  recent: { messageId: string; at: string; from: string; text: string }[];
 }
 
 interface DueThread {
@@ -88,15 +90,27 @@ export function threadTitle(text: string, channel: string | null): string {
   return titleOf(words || `Thread in #${channel ?? 'slack'}`, 80);
 }
 
-function brief(ctx: ThreadContext, idleMs: number, includeRoot: boolean): string {
+/**
+ * What the session reads at launch. A session that starts with the root
+ * delivered to it (the normal start) gets the frame only. One that will not
+ * be delivered the root (a missed start, or a replacement after a failed
+ * resume, `context` set) also gets the root and the thread so far, except the
+ * message about to be delivered (`except`).
+ */
+function brief(ctx: ThreadContext, idleMs: number, context: { except: string | null } | null): string {
   const hours = Math.round(idleMs / 3_600_000);
   const lines = [
     `You were started by a message in the Slack channel #${ctx.title ?? 'unknown'}, and you live in its thread.`,
     'Every reply in that thread reaches you as a bridge message; answer each by replying to it, and your answer is posted into the thread under your own name.',
     `When nothing happens in the thread for ${hours} hour${hours === 1 ? '' : 's'} while you wait for input, you are stopped; the next reply in the thread resumes you with this history.`,
   ];
-  if (includeRoot) {
+  if (context) {
     lines.push('', `The message that started the thread${ctx.sender.participant ? ` (from ${ctx.sender.participant})` : ''}:`, ctx.rootText);
+    const recent = (ctx.recent ?? []).filter((m) => m.messageId !== context.except);
+    if (recent.length > 0) {
+      lines.push('', 'The thread so far (oldest first):');
+      for (const m of recent) lines.push(`- ${m.from}: ${m.text.replace(/\s+/g, ' ')}`);
+    }
   }
   return lines.join('\n');
 }
@@ -126,7 +140,7 @@ export function createBridgeThreadKeeper(o: {
     idempotencyKey: `thread:${ctx.bridgeId}:${ctx.rootExternalId}:${key}`,
   }).catch((err) => o.log?.(`[bridges] ${ctx.bridgeId}: thread notice failed: ${(err as Error).message}`));
 
-  async function start(ctx: ThreadContext, attempt: string, includeRoot: boolean): Promise<boolean> {
+  async function start(ctx: ThreadContext, attempt: string, context: { except: string | null } | null): Promise<boolean> {
     if (!ctx.teammateId) {
       await notice(ctx, 'no session could start for this thread: set a teammate on the bridge in tm8', 'no-teammate');
       return false;
@@ -141,7 +155,7 @@ export function createBridgeThreadKeeper(o: {
         // (444's bridge_thread_context answers parentSessionId null for those).
         origins: [{ bridgeId: ctx.bridgeId, messageId: ctx.rootMessageId, providerMessageId: ctx.rootExternalId, sender: ctx.sender, command: '/thread' }],
         parentSessionId: ctx.parentSessionId,
-        promptExtra: brief(ctx, idleMs, includeRoot),
+        promptExtra: brief(ctx, idleMs, context),
       });
       await o.db.rpc(bridgesWorkerClaims(), 'bridge_thread_bind', [ctx.bridgeId, ctx.rootExternalId, sessionId]);
       return true;
@@ -169,9 +183,10 @@ export function createBridgeThreadKeeper(o: {
       } catch (err) {
         o.log?.(`[bridges] ${ctx.bridgeId}: could not resume thread session ${ctx.sessionId}: ${(err as Error).message}`);
       }
-      return (await start(ctx, `spawn:${messageId}`, includeRoot)) ? 'replaced' : 'failed';
+      // A replacement has none of the old session's history: it is told the thread.
+      return (await start(ctx, `spawn:${messageId}`, { except: messageId })) ? 'replaced' : 'failed';
     }
-    return (await start(ctx, 'spawn', includeRoot)) ? 'started' : 'failed';
+    return (await start(ctx, 'spawn', includeRoot ? { except: null } : null)) ? 'started' : 'failed';
   }
 
   function ensureWith(bridgeId: string, messageId: string, includeRoot: boolean): Promise<BridgeThreadOutcome | null> {

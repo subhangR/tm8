@@ -24,7 +24,7 @@
 --       thread goes to that session alone, and resumes it when it has stopped.
 --   §5  The keeper's and the watchdog's doors (bridges worker only):
 --       bridge_thread_context, bridge_thread_bind, bridge_threads_due,
---       bridge_thread_idle_stopped.
+--       bridge_thread_idle_stopped; and bridge_link_method for /whoami.
 --   §6  bridge_outbox.thread_ts on insert: a Slack reply goes into the thread
 --       of the message it answers, and a thread session's own posts go into
 --       its thread. A slash command ('cmd:<trigger_id>') is never a thread.
@@ -545,7 +545,20 @@ begin
                             then b.target_id end,
     'sender', jsonb_strip_nulls(jsonb_build_object(
       'participant', coalesce(author #>> '{participant,displayName}', root_o.sender_display),
-      'memberId', case when author ->> 'kind' = 'member' then author ->> 'actorId' end)));
+      'memberId', case when author ->> 'kind' = 'member' then author ->> 'actorId' end)),
+    -- The thread so far after the root, newest 20 in order: what a session
+    -- that replaces one whose resume failed is told, so it knows what "it" is.
+    'recent', coalesce((
+      select jsonb_agg(jsonb_build_object('messageId', r.entity_id, 'at', r.created_at, 'from', r.who, 'text', left(r.body, 500))
+                       order by r.created_at, r.entity_id)
+        from (select t.entity_id, t.created_at, t.body,
+                     coalesce(o.sender_display, case when o.direction = 'out' then 'tm8' end, 'tm8') as who
+                from public.messages t
+                join public.entities te on te.id = t.entity_id and te.deleted_at is null
+                left join public.message_origins o on o.message_id = t.entity_id
+               where t.anchor_id = root_m.anchor_id and t.root_message_id = th.root_message_id
+               order by t.created_at desc, t.entity_id desc
+               limit 20) r), '[]'::jsonb));
 end
 $$;
 revoke all on function public.bridge_thread_context(uuid, uuid) from public;
@@ -673,6 +686,19 @@ end
 $$;
 revoke all on function public.bridge_thread_idle_stopped(uuid, text) from public;
 grant execute on function public.bridge_thread_idle_stopped(uuid, text) to tm8_app;
+
+-- How a sender's identity link was made ('code', 'invite', 'admin', or 443's
+-- 'email'), for /whoami: an email-matched Slack user is asserted, but not by
+-- an admin.
+create or replace function public.bridge_link_method(p_link_id uuid) returns text
+language plpgsql stable security definer set search_path = public, internal, pg_temp as $$
+begin
+  perform internal.require_bridges_worker();
+  return (select l.method from public.bridge_identity_links l where l.id = p_link_id);
+end
+$$;
+revoke all on function public.bridge_link_method(uuid) from public;
+grant execute on function public.bridge_link_method(uuid) to tm8_app;
 
 -- -----------------------------------------------------------------------------
 -- §6. Which Slack thread an outbound message goes into (bridge_outbox.thread_ts).

@@ -17,6 +17,8 @@ import { createBridgeSessionDelivery } from '../../src/bridges/runtime/deliver.j
 import { createBridgeSessionKeeper } from '../../src/bridges/runtime/keeper.js';
 import { createBridgeThreadKeeper, threadTitle } from '../../src/bridges/runtime/threads.js';
 import { createBridgeCommandExecutor } from '../../src/bridges/commands/executor.js';
+import { createBridgeCommands, createBridgeKeeper } from '../../src/bridges/commands/index.js';
+import type { SpawnService } from '@tm8/execution';
 import type { BridgeCommandPorts, SpawnWorkerRequest } from '../../src/bridges/commands/ports.js';
 import { bridgesWorkerClaims, postBridgeNotice } from '../../src/bridges/outbox.js';
 import type { MessageDeliveryPort } from '../../src/facade/services/w2/message-dispatch.js';
@@ -284,6 +286,15 @@ describe('444: Slack thread mode', () => {
       values ($1,$2,'{"text":"CI is green"}','send',$3,$4,'worker',$5)`, [bridge, own, connection, CHANNEL, threadSession]);
     expect((await row(own))!.thread_ts).toBe(root);
 
+    // A reply to one of tm8's own posts goes into the thread that post is in.
+    await owner(`update public.bridge_outbox set external_message_id = $2 where message_id = $1`, [notice.messageId, 'OUT-TS-1']);
+    const after = randomUUID();
+    await owner(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'message',$3)`, [after, spaceId, teammate]);
+    await owner(`insert into public.messages(entity_id, anchor_id, author_id, body) values ($1,$2,$3,'follow-up')`, [after, target, teammate]);
+    await owner(`insert into public.bridge_outbox(bridge_id, message_id, external_reply_to, payload, kind, connection_id, external_conversation_id, poster)
+      values ($1,$2,'OUT-TS-1','{"text":"follow-up"}','send',$3,$4,'worker')`, [bridge, after, connection, CHANNEL]);
+    expect((await row(after))!.thread_ts).toBe(root);
+
     // A slash command's answer goes to the channel.
     const cmd = await inbound({ ext: `cmd:${randomUUID()}`, body: '/status', slash: { command: '/tm8', text: 'status' } }, true);
     const answer = await postBridgeNotice(db, { bridgeId: bridge, text: 'nothing running', replyToMessageId: cmd.messageId, idempotencyKey: `t:${randomUUID()}` });
@@ -437,6 +448,78 @@ describe('444: Slack thread mode', () => {
     expect(await db.rpc(bridgesWorkerClaims(), 'bridge_thread_context', [bridge, rootMessage])).toMatchObject({ rootExternalId: root, sessionId: threadSession });
   });
 
+  it('a session that replaces one whose resume failed is told the root and the thread so far', async () => {
+    await setStatus(threadSession, 'exited');
+    const replacing = createBridgeSessionKeeper({
+      db, spawnWorker: workers.spawnWorker, resumeWorker: workers.resumeWorker, async postNotice() { return {}; },
+      threads: createBridgeThreadKeeper({
+        db, ...workers, async resumeWorker() { throw new Error('nothing to resume'); }, async postNotice() { return {}; },
+      }),
+    });
+    const reply = await inbound({ body: 'so is it fixed?', root });
+    expect(await replacing.ensure(bridge, reply.messageId)).toBe('replaced');
+    const brief = spawns.at(-1)!.promptExtra!;
+    expect(brief).toContain('the login page 500s on Safari since this morning');
+    expect(brief).toContain('can you also add a regression test?');
+    expect(brief).not.toContain('so is it fixed?'); // delivered next, not repeated
+    const replacement = (await threadRow(root))!.session_id!;
+    expect(replacement).not.toBe(threadSession);
+    const { port, sent } = capturingPort();
+    await createBridgeSessionDelivery({ db, delivery: port })(reply.messageId);
+    expect(sent.map((x) => x.session)).toEqual([replacement]);
+    threadSession = replacement;
+  });
+
+  it('a bridge whose target is not a session starts top-level thread sessions', async () => {
+    const channel = randomUUID();
+    await owner(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'channel',$3)`, [channel, spaceId, ownerMember]);
+    await owner(`insert into public.channels(entity_id, space_id, name) values ($1,$2,'support-log')`, [channel, spaceId]);
+    const created = await db.tx(human(), (q) => q.rpc<{ entity: { id: string } }>('create_bridge', [spaceId, connection, 'C0CHANTARGET',
+      JSON.stringify({ kind: 'channel', title: 'support-log', memberCount: 5 }), channel,
+      JSON.stringify({ trigger: 'mention' }), teammate, null, null, true, null, null, randomUUID()]));
+    const channelBridge = created.entity.id;
+    const ext = ts();
+    const stored = await db.rpc<Inbound>(runtime(), 'bridge_runtime_inbound', [JSON.stringify({
+      ...frame({ ext, body: `<@${BOT}> summarise yesterday`, mentions: [BOT] }), conversationId: 'C0CHANTARGET' }), false]);
+    expect(stored).toMatchObject({ status: 'stored', routed: false, thread: { rootExternalId: ext, started: true } });
+    expect(await keeper().ensure(channelBridge, stored.messageId)).toBe('started');
+    expect(spawns.at(-1)).toMatchObject({ parentSessionId: null, teamMemberId: teammate, origins: [{ command: '/thread', providerMessageId: ext }] });
+    const own = (await owner<{ session_id: string }>('select session_id::text from public.bridge_threads where bridge_id = $1', [channelBridge]))[0]!.session_id;
+    const { port, sent } = capturingPort();
+    await createBridgeSessionDelivery({ db, delivery: port })(stored.messageId);
+    expect(sent.map((x) => x.session)).toEqual([own]);
+  });
+
+  it('wiring: the command executor\'s sweep runs the thread sweep, and the keeper starts threads, through the real worker port', async () => {
+    const seen: { request: Record<string, unknown>; origins: Array<{ command: string | null }> }[] = [];
+    const spawnService = {
+      async spawn(_auth: unknown, request: Record<string, unknown>, server?: { bridgeOrigins?: Array<{ command: string | null }> }) {
+        seen.push({ request, origins: server?.bridgeOrigins ?? [] });
+        const id = randomUUID();
+        await owner(`insert into public.entities(id, space_id, kind, created_by, visibility) values ($1,$2,'work_session',$3,'space')`, [id, spaceId, teammate]);
+        await owner(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at) values ($1,$2,'running','none',now())`, [id, String(request['title'])]);
+        await scratch.transaction((c) => c.query('select public.record_bridge_provenance($1, $2::jsonb)', [id, JSON.stringify(server?.bridgeOrigins ?? [])]));
+        return { sessionId: id };
+      },
+      async resume() { throw new Error('not used'); },
+    } as unknown as SpawnService;
+
+    await setPolicy({ threadMode: 'every' });
+    const missedRoot = ts();
+    await inbound({ ext: missedRoot, body: 'nobody started me' });
+    await owner(`update public.bridge_threads set created_at = now() - interval '2 minutes' where bridge_id = $1 and root_external_id = $2`, [bridge, missedRoot]);
+    const commands = createBridgeCommands({ db, spawnService });
+    expect(await commands.sweep()).toBeGreaterThanOrEqual(1);
+    expect(seen.at(-1)!.request).toMatchObject({ parentSessionId: target, inheritPosture: null, mode: 'worker', title: 'Nobody started me' });
+    expect(seen.at(-1)!.origins[0]!.command).toBe('/thread');
+    expect((await threadRow(missedRoot))!.session_id).not.toBeNull();
+
+    const fresh = await inbound({ body: 'a fresh top-level question' });
+    expect(await createBridgeKeeper({ db, spawnService }).ensure(bridge, fresh.messageId)).toBe('started');
+    expect(seen.at(-1)!.request).toMatchObject({ parentSessionId: target, inheritPosture: null, mode: 'worker' });
+    await setPolicy({ threadMode: 'mention' });
+  });
+
   it('titles drop Slack mention markup', () => {
     expect(threadTitle('<@U0TM8BOT|tm8> fix the CSP header', 'eng')).toBe('Fix the CSP header');
     expect(threadTitle('<@U0TM8BOT>', 'eng')).toBe('Thread in #eng');
@@ -502,6 +585,15 @@ describe('444: /tm8 slash commands', () => {
   it('/tm8 link with a wrong code is answered, from a guest', async () => {
     const { answer } = await slash('link TM8-ABC123', GUEST_SLACK);
     expect(answer).toMatch(/code/i);
+  });
+
+  it('/tm8 whoami names a Slack email match as such, not as an admin\'s assertion', async () => {
+    const EMAIL_USER = 'U0EMAILMATCH';
+    await owner(`insert into public.bridge_identity_links(provider, external_id, identity_id, method, space_id, verified_at)
+      values ('slack',$1,$2,'email',$3,now())`, [EMAIL_USER, ownerIdentity, spaceId]);
+    const { answer } = await slash('whoami', EMAIL_USER);
+    expect(answer).toMatch(/linked by matching Slack email/);
+    expect(answer).not.toMatch(/asserted by an admin/);
   });
 
   it('a top-level slash command never starts a thread, even in every mode', async () => {
