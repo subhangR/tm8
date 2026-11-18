@@ -389,7 +389,9 @@ describe('a Slack channel end to end (lane A ac3)', () => {
     await db.tx(human(), (q) => q.rpc('offer_bridge_connection', [slackConnection, spaceId, 'public', null, randomUUID()]));
     const created = await db.tx(human(), (q) => q.rpc<{ entity: { id: string } }>('create_bridge', [spaceId, slackConnection, CHANNEL,
       JSON.stringify({ kind: 'channel', title: 'eng-support', memberCount: 12 }), slackChat,
-      JSON.stringify({ trigger: 'mention', direction: 'both', outbound: 'replies', whoMayTrigger: 'linked', voice: 'named', style: null }),
+      // Channel mirroring (thread mode off): 444 makes 'mention' the Slack default, and
+      // thread mode has its own suite (bridge-slack-threads.pg.test.ts).
+      JSON.stringify({ trigger: 'mention', direction: 'both', outbound: 'replies', whoMayTrigger: 'linked', voice: 'named', style: null, threadMode: 'off' }),
       teammate, null, null, true, null, null, randomUUID()]));
     slackBridge = created.entity.id;
     await until(() => slackFrames.find((f) => f.type === 'allowlist' && f.connectionId === slackConnection && f.conversationIds.includes(CHANNEL)));

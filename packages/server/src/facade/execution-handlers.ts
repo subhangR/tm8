@@ -3455,13 +3455,20 @@ export function createBridgeWorkerPort(deps: { db: Db; spawnService: SpawnServic
   const { db, spawnService } = deps;
   return {
     async spawnWorker(claims, request) {
+      // 444 (coordinator ruling, security): a Slack thread session hangs under
+      // the bridge's target session, but launches EXACTLY as a /work worker from
+      // the same bridge would. The parent's posture (access mode, credential
+      // sources) is not inherited (inheritPosture null), and its mode is 'worker',
+      // never a coordinated worker reporting to the target. Without a parent this
+      // is the /work launch unchanged.
+      const grouped = request.parentSessionId ? { parentSessionId: request.parentSessionId, inheritPosture: null } : { parentSessionId: null };
       const spawned = await rethrowing(() => spawnService.spawn(claims, {
         spaceId: request.spaceId,
         teamMemberId: request.teamMemberId,
-        parentSessionId: null,
+        ...grouped,
         taskIds: request.taskId ? [request.taskId] : [],
         projectId: request.projectId,
-        mode: null,
+        mode: request.parentSessionId ? 'worker' : null,
         model: null,
         agentTool: null,
         reasoningEffort: request.effort,

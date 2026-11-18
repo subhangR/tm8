@@ -323,10 +323,16 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     return { text: lines.slice(0, 10).join('\n') };
   }
 
-  function whoami(cmd: Command): Answer {
+  async function whoami(cmd: Command): Promise<Answer> {
     const s = cmd.sender;
     if (!s.memberId) return { text: `you're a guest here — ${GUEST_FIRST.replace(/\. \/whoami to check$/, '')}` };
-    const how = s.trust === 'linked' ? 'linked ✓' : 'asserted by an admin';
+    // 443/444: a Slack user linked because their Slack email matches a member's
+    // is asserted too, but by that match, not by an admin.
+    const author = cmd.input.author;
+    const method = s.trust === 'asserted' && author.kind === 'member' && author.linkId
+      ? await exec(q => q.rpc<string | null>('bridge_link_method', [author.linkId])).catch(() => null)
+      : null;
+    const how = s.trust === 'linked' ? 'linked ✓' : method === 'email' ? 'linked by matching Slack email' : 'asserted by an admin';
     const can = s.admin ? 'you can start and stop any worker' : 'you can start workers';
     return { text: `you are ${s.displayName || 'a member'} (${how}) in ${cmd.bridge.title || 'this group'} — ${can}` };
   }
@@ -1432,8 +1438,11 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
         return;
       }
 
-      // §4.8: ≤ 2 s, or ⏳ first and the answer when it lands.
+      // §4.8: ≤ 2 s, or ⏳ first and the answer when it lands. A Slack slash
+      // command ('cmd:<trigger_id>', 444) is no message, so there is nothing to react to.
+      const reactable = !input.externalMessageId.startsWith('cmd:');
       const ack = setTimeout(() => {
+        if (!reactable) return;
         void ports.react?.(ports.db, {
           bridgeId: input.bridgeId, messageId: input.messageId, emoji: '⏳', idempotencyKey: `ack:${cmd.key}`,
         }).catch(() => undefined);

@@ -9,6 +9,7 @@ import { createBridgeWorkerPort } from '../../facade/execution-handlers.js';
 import { bridgesWorkerClaims, postBridgeNotice, reactBridgeMessage } from '../outbox.js';
 import { createBridgeCommandExecutor, type BridgeCommandExecutor } from './executor.js';
 import { createBridgeSessionKeeper, type BridgeSessionKeeper } from '../runtime/keeper.js';
+import { createBridgeThreadKeeper } from '../runtime/threads.js';
 import type { BridgeCommandPorts, BridgeGroupPort, BridgeGroupResult } from './ports.js';
 import type { BridgeRuntimeHub } from '../runtime/hub.js';
 import { CollabError, type GroupFrame } from '@tm8/contract';
@@ -58,7 +59,7 @@ export function createBridgeCommands(deps: {
 }): BridgeCommandExecutor {
   const { db } = deps;
   const workers = createBridgeWorkerPort({ db, spawnService: deps.spawnService });
-  return createBridgeCommandExecutor({
+  const executor = createBridgeCommandExecutor({
     db,
     executorClaims: async () => bridgesWorkerClaims(),
     postNotice: postBridgeNotice,
@@ -83,6 +84,17 @@ export function createBridgeCommands(deps: {
     ...(deps.logger ? { logger: deps.logger } : {}),
     ...(deps.groups ? { groups: deps.groups } : {}),
   });
+  // 444: the watchdog's sweep (which reaches the executor's) also stops idle
+  // Slack thread sessions and starts the ones a restart missed.
+  const threads = createBridgeThreadKeeper({
+    db, spawnWorker: workers.spawnWorker, resumeWorker: workers.resumeWorker, stopWorker: workers.stopWorker,
+    postNotice: postBridgeNotice,
+    ...(deps.logger ? { log: (line: string) => deps.logger!.warn(line) } : {}),
+  });
+  const sweepCommands = executor.sweep.bind(executor);
+  const sweepThreads = () => threads.sweepThreads();
+  executor.sweep = async () => (await sweepCommands()) + (await sweepThreads());
+  return executor;
 }
 
 /** R11: the keeper that resumes, else replaces, a bridge's stopped session (runtime/keeper.ts). */
@@ -97,6 +109,10 @@ export function createBridgeKeeper(deps: {
     spawnWorker: workers.spawnWorker,
     resumeWorker: workers.resumeWorker,
     postNotice: postBridgeNotice,
+    threads: createBridgeThreadKeeper({
+      db: deps.db, spawnWorker: workers.spawnWorker, resumeWorker: workers.resumeWorker, postNotice: postBridgeNotice,
+      ...(deps.log ? { log: deps.log } : {}),
+    }),
     ...(deps.log ? { log: deps.log } : {}),
   });
 }
