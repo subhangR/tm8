@@ -61,6 +61,18 @@ describe('slackRuntimePlan', () => {
     });
   });
 
+  it('expands a leading ~ and refuses a relative path instead of resolving it under the server cwd', () => {
+    const plan = slackRuntimePlan({ TM8_SLACK_RUNTIME: '1', TM8_SLACK_STATE_DIR: '~/slack-state', TM8_SLACK_RUNTIME_TOKEN_FILE: '~/s/runtime.token' },
+      { ...host(), home: '/home/u' });
+    expect(plan?.stateDir).toBe('/home/u/slack-state');
+    expect(plan?.tokenFile).toBe('/home/u/s/runtime.token');
+    expect(plan?.command?.env.TM8_SLACK_STATE_DIR).toBe('/home/u/slack-state');
+    const relative = slackRuntimePlan({ TM8_SLACK_RUNTIME: '1', TM8_SLACK_STATE_DIR: 'slack-state' }, host());
+    expect(relative?.problem).toMatch(/TM8_SLACK_STATE_DIR must be an absolute path/);
+    expect(relative?.command).toBeUndefined();
+    expect(slackRuntimePlan({ TM8_SLACK_RUNTIME: '1', TM8_SLACK_RUNTIME_CWD: './sb' }, host())?.problem).toMatch(/TM8_SLACK_RUNTIME_CWD/);
+  });
+
   it('a token file alone mints for a runtime the deployment runs', () => {
     const plan = slackRuntimePlan({ TM8_SLACK_RUNTIME_TOKEN_FILE: '/secrets/slack.token' }, host([]));
     expect(plan).toMatchObject({ label: 'slack-runtime', tokenFile: '/secrets/slack.token' });

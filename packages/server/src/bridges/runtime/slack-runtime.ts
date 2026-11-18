@@ -16,7 +16,8 @@
  * pull does not wipe it; losing it means pasting the tokens again.
  */
 import { existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { isAbsolute, join, resolve } from 'node:path';
 
 export const SLACK_RUNTIME_LABEL = 'slack-runtime';
 
@@ -46,6 +47,8 @@ export interface SlackRuntimeHost {
   /** The node binary that runs the server (process.execPath). */
   readonly execPath: string;
   readonly exists?: (path: string) => boolean;
+  /** For a leading ~ in a path setting; the process's home when absent. */
+  readonly home?: string;
 }
 
 const truthy = (v: string | undefined): boolean => /^(1|true|yes|on)$/i.test(v?.trim() ?? '');
@@ -57,14 +60,27 @@ export function slackRuntimePlan(env: NodeJS.ProcessEnv, host: SlackRuntimeHost)
   const tokenFileEnv = env.TM8_SLACK_RUNTIME_TOKEN_FILE?.trim();
   if (!enabled && !commandJson && !tokenFileEnv) return null;
 
+  // A path setting: a leading ~ is the home dir, anything else must be absolute. A relative
+  // one would resolve under the server's cwd, which for a deploy/prod build is a directory
+  // the next deploy rotates away, sealed tokens and all.
+  const home = host.home ?? homedir();
+  const bad: string[] = [];
+  const pathSetting = (name: string, fallback: string): string => {
+    const raw = env[name]?.trim();
+    if (!raw) return resolve(fallback);
+    const p = raw === '~' ? home : raw.startsWith('~/') ? join(home, raw.slice(2)) : raw;
+    if (!isAbsolute(p)) bad.push(`${name} must be an absolute path or start with ~/, got ${JSON.stringify(raw)}`);
+    return resolve(p);
+  };
   // A directory of its own: a container mounts the directory (never the file, which each
   // mint replaces by rename) and sees nothing else of bridges/.
-  const tokenFile = resolve(tokenFileEnv || join(host.dataDir, 'bridges', 'slack-runtime-secrets', 'runtime.token'));
-  const stateDir = resolve(env.TM8_SLACK_STATE_DIR?.trim() || join(host.dataDir, 'bridges', 'slack-runtime'));
+  const tokenFile = pathSetting('TM8_SLACK_RUNTIME_TOKEN_FILE', join(host.dataDir, 'bridges', 'slack-runtime-secrets', 'runtime.token'));
+  const stateDir = pathSetting('TM8_SLACK_STATE_DIR', join(host.dataDir, 'bridges', 'slack-runtime'));
+  const cwdEnv = env.TM8_SLACK_RUNTIME_CWD?.trim() ? pathSetting('TM8_SLACK_RUNTIME_CWD', '') : undefined;
   const childEnv: NodeJS.ProcessEnv = { TM8_SLACK_STATE_DIR: stateDir };
   for (const name of PASSED_THROUGH) if (env[name]?.trim()) childEnv[name] = env[name]!.trim();
-  const cwdEnv = env.TM8_SLACK_RUNTIME_CWD?.trim();
   const base = { label: SLACK_RUNTIME_LABEL, tokenFile, stateDir };
+  if (bad.length > 0) return { ...base, problem: bad.join('; ') };
 
   if (commandJson) {
     let argv: unknown;
@@ -77,7 +93,7 @@ export function slackRuntimePlan(env: NodeJS.ProcessEnv, host: SlackRuntimeHost)
   }
   if (!enabled) return base;
 
-  const cwd = resolve(cwdEnv || join(host.repoRoot, 'integrations', 'slack-bridge'));
+  const cwd = cwdEnv ?? resolve(join(host.repoRoot, 'integrations', 'slack-bridge'));
   const exists = host.exists ?? existsSync;
   if (!exists(join(cwd, 'src', 'runtime-main.ts'))) {
     return { ...base, problem: `no Slack runtime at ${join(cwd, 'src', 'runtime-main.ts')}; set TM8_SLACK_RUNTIME_CWD to the integrations/slack-bridge checkout` };

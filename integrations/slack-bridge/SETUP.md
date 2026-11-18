@@ -289,8 +289,10 @@ decrypted without the tm8 database, and the database does not contain the tokens
 The server prints the exact path at start (B3), and `bun run doctor` prints it too. It sits under the tm8 data
 directory, not in the checkout, so pulling, rebuilding or redeploying tm8 does not touch it.
 
-**To put it somewhere else**, set `TM8_SLACK_STATE_DIR=/path/you/want` in the same place you set
-`TM8_SLACK_RUNTIME=1`, and restart tm8. Move the old folder there first, or paste the tokens again.
+**To put it somewhere else**, set `TM8_SLACK_STATE_DIR=/path/you/want` (an absolute path, or one starting with
+`~/`) in the same place you set `TM8_SLACK_RUNTIME=1`, and restart tm8. Move the old folder there first, or paste
+the tokens again. tm8 refuses a relative path (the log says so) rather than guess where it would land.
+In these settings files, `# comments` may follow a value; quote a value that itself contains ` #`.
 
 **Back it up, or keep it on persistent storage.** It must survive restarts for the bridge to keep working:
 - On a laptop, include the tm8 data directory in your backups (it also holds the rest of tm8's files).

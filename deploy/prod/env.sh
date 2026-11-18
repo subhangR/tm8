@@ -26,16 +26,28 @@ export TM8_PROD_ROOT
 # The connector runtimes are opt-in, per machine, and must survive a restart from
 # any shell, so they come from one small file rather than the ambient env:
 #   ~/.config/tm8/bridges.env        e.g.  TM8_SLACK_RUNTIME=1
-# Only TM8_SLACK_* and TM8_BRIDGE_RUNTIME_* lines are read (KEY=VALUE, # comments);
-# nothing in it can repoint the database or the ports. A variable already in the
-# environment wins. integrations/slack-bridge/SETUP.md is the guide.
+# Only TM8_SLACK_* and TM8_BRIDGE_RUNTIME_* lines are read: KEY=VALUE, optional
+# `export `, "double" or 'single' quotes, whole-line and trailing ` # comments`,
+# CRLF tolerated, and a leading ~/ expanded to $HOME (so a moved state dir can
+# never land relative to the server's cwd, inside a build that a deploy rotates
+# away). Nothing in it can repoint the database or the ports. A variable already
+# in the environment wins. integrations/slack-bridge/SETUP.md is the guide.
 TM8_BRIDGES_ENV_FILE="${TM8_BRIDGES_ENV_FILE:-$HOME/.config/tm8/bridges.env}"
 if [[ -r "$TM8_BRIDGES_ENV_FILE" ]]; then
   while IFS= read -r _tm8_line || [[ -n "$_tm8_line" ]]; do
+    _tm8_line="${_tm8_line%$'\r'}"
+    _tm8_line="${_tm8_line#"${_tm8_line%%[![:space:]]*}"}"
     _tm8_line="${_tm8_line#export }"
     [[ "$_tm8_line" =~ ^(TM8_SLACK_[A-Z0-9_]*|TM8_BRIDGE_RUNTIME_[A-Z0-9_]*)=(.*)$ ]] || continue
     _tm8_k="${BASH_REMATCH[1]}"; _tm8_v="${BASH_REMATCH[2]}"
-    [[ "$_tm8_v" =~ ^\"(.*)\"$ || "$_tm8_v" =~ ^\'(.*)\'$ ]] && _tm8_v="${BASH_REMATCH[1]}"
+    if [[ "$_tm8_v" =~ ^\"([^\"]*)\"[[:space:]]*(#.*)?$ || "$_tm8_v" =~ ^\'([^\']*)\'[[:space:]]*(#.*)?$ ]]; then
+      _tm8_v="${BASH_REMATCH[1]}"
+    else
+      _tm8_v="${_tm8_v%%[[:space:]]#*}"
+      _tm8_v="${_tm8_v%"${_tm8_v##*[![:space:]]}"}"
+    fi
+    [[ "$_tm8_v" == "~" ]] && _tm8_v="$HOME"
+    [[ "$_tm8_v" == "~/"* ]] && _tm8_v="$HOME/${_tm8_v#\~/}"
     [[ -n "${!_tm8_k+x}" ]] || export "$_tm8_k=$_tm8_v"
   done < "$TM8_BRIDGES_ENV_FILE"
   unset _tm8_line _tm8_k _tm8_v
