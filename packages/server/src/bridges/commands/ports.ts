@@ -57,7 +57,11 @@ export interface SpawnWorkerRequest {
   origins: BridgeCommandOrigin[];
   /** The session's brief, after its launch context (a fork's topic, D83). */
   promptExtra?: string | null;
-  /** 444: a Slack thread's session is a child of the bridge's target session. */
+  /**
+   * 444: a Slack thread's session is grouped under the bridge's target session.
+   * The parent is only where it hangs: the launch inherits none of the parent's
+   * posture and runs in mode 'worker', exactly as a /work worker (execution-handlers).
+   */
   parentSessionId?: string | null;
 }
 
