@@ -189,11 +189,11 @@ In the tm8 server's log (the terminal running `bun run dev`, or `~/.local/share/
 
 ```
 [bridges] slack-runtime started; sealed state in /home/you/.tm8-dev/data/bridges/slack-runtime
-[2026-…Z] [runtime] slack-yourlaptop → http://127.0.0.1:4610, Slack API https://slack.com/api/, state in /home/you/.tm8-dev/data/bridges/slack-runtime
+[2026-…Z] [runtime] slack-yourlaptop → http://127.0.0.1:4610, Slack API https://slack.com/api/ direct, state in /home/you/.tm8-dev/data/bridges/slack-runtime
 ```
 
-The first line is the server's; the second is the runtime's own, naming the server it talks to and its state
-directory. `bun run doctor` also reports the runtime and where its state lives. If you see `slack-runtime not started: …` instead, the line says what to fix (usually: run
+The first line is the server's; the second is the runtime's own, naming the server it talks to, how it reaches
+Slack (`direct`, or `via proxy http://proxy.example.com:3128` behind a proxy) and its state directory. `bun run doctor` also reports the runtime and where its state lives. If you see `slack-runtime not started: …` instead, the line says what to fix (usually: run
 `npm ci` in `integrations/slack-bridge`).
 
 ### B4. Paste the tokens into tm8
@@ -371,13 +371,16 @@ Tell your compliance team:
 | *This Slack app has been uninstalled or disabled in the workspace…* (`account_inactive`), or `token_revoked` | The app was uninstalled, disabled or its tokens revoked | Install it again (A3; on Grid an Org Admin may have to approve it, A2), then **Paste new tokens** |
 | *tm8 holds no tokens for this connection yet…* (`no_credential`) | The sealed state was lost, moved or never written | **Paste new tokens**; see [Where the tokens live](#where-the-tokens-live-and-keeping-them) |
 | `token_expired`, or the bridge stops about 12 hours after connecting | Token rotation was turned on for the app | Rotation cannot be turned off again: create a new app from the manifest (Part A) and connect its tokens |
+| `app_already_connected` | This Slack app's tokens are already used by another tm8 connection. Socket Mode spreads an app's events over all of its sockets, so tm8 runs one connection per app | Use one connection per Slack app: remove the other connection, or create a second Slack app from the manifest for the second one |
+| Replies arrive from **tm8** prefixed `*Name:*` instead of under the session's own name and icon | The install lacks `chat:write.customize` | Add the scope (App Manifest → paste this manifest → Save), **Reinstall**, **Paste new tokens** |
 | *Slack refused the tokens: <code>…* (any other code) | Usually the app is not installed in this workspace | Check the app at api.slack.com/apps is installed (A3), then paste both tokens again |
 | Connected, but the channel is not in the picker | The bot is not in the channel | `/invite @tm8` in the channel, reopen the picker |
 | `not_in_channel` or `channel_not_found` when tm8 replies | The bot was removed from the channel, or it is a private channel it was never invited to | `/invite @tm8` again |
 | Nothing happens on `@tm8`, connection shows disconnected | The runtime is not running or cannot reach Slack | Check the server log for `slack-runtime` lines (B3); run `bun run doctor` |
 | `slack-runtime not started: … npm ci` in the log | The runtime's dependencies are not installed | `(cd integrations/slack-bridge && npm ci)`, restart tm8 |
 | Socket never connects; Web API errors like `ECONNREFUSED`, `ETIMEDOUT`, `getaddrinfo` | A firewall or proxy blocks Slack, or the network needs a proxy and none is set | Allow **outbound** TCP 443 to `slack.com`, `*.slack.com` (Web API, `files.slack.com`) and `wss-*.slack.com` (Socket Mode), or set a proxy ([Behind a proxy](#behind-a-proxy)). TLS interception (a corporate MITM certificate) breaks it: exempt these hosts from inspection |
-| Errors naming the proxy (`407`, `CONNECT` refused, proxy timeout) | The proxy refuses the runtime, or needs a login | Put the login in the URL (`http://user:password@proxy:3128`); ask the proxy's admins to allow `CONNECT` to `slack.com`, `*.slack.com` and `files.slack.com` on 443 |
+| The runtime stops at start with an error about `TM8_SLACK_PROXY_URL` | The proxy URL does not parse | Write it as `http://host:port` or `http://user:password@host:port` (percent-encode special characters in the password) |
+| `proxy_auth_required`, or errors naming the proxy (`407`, `CONNECT` refused, proxy timeout) | The proxy refuses the runtime, or needs a login | Put the login in the URL (`http://user:password@proxy:3128`); ask the proxy's admins to allow `CONNECT` to `slack.com`, `*.slack.com` and `files.slack.com` on 443 |
 | Replies arrive slowly in a busy channel; log shows `ratelimited` / 429 | Slack allows about one message per second per channel | Nothing to do: tm8 queues and retries after Slack's `Retry-After`. Use **Mention** rather than **Every message** in busy channels |
 | `/tm8` says the app did not respond | The runtime is down, or the command reached a workspace where the app is not installed | Check B3; on Grid, add the app to that workspace (A3 step 4) |
 | After a restart the connection asks for tokens again | The sealed state directory was lost or moved | See [Where the tokens live](#where-the-tokens-live-and-keeping-them); paste the tokens again and keep the directory on persistent storage |
