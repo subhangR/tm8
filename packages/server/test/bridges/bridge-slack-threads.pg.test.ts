@@ -236,6 +236,33 @@ describe('444: Slack thread mode', () => {
     expect(logged[0]!.root_message_id).toBe((await threadRow(root))!.root_message_id);
   });
 
+  it('a thread start honours the policy: none on trigger "none" or direction "in"', async () => {
+    const threads0 = async () => (await owner<{ n: number }>('select count(*)::int n from public.bridge_threads where bridge_id = $1', [bridge]))[0]!.n;
+    const before = await threads0();
+    await setPolicy({ trigger: 'none' });
+    expect((await inbound({ body: `<@${BOT}> log only here`, mentions: [BOT] })).thread).toBeUndefined();
+    await setPolicy({ trigger: 'mention', direction: 'in' });
+    expect((await inbound({ body: `<@${BOT}> tm8 may not post here`, mentions: [BOT] })).thread).toBeUndefined();
+    await setPolicy({ threadMode: 'every' });
+    expect((await inbound({ body: 'every, but direction in' })).thread).toBeUndefined();
+    await setPolicy({ direction: 'both', threadMode: 'mention' });
+    expect(await threads0()).toBe(before);
+  });
+
+  it('a guest\'s thread reply reaches the thread session only where anyone may trigger', async () => {
+    const { port, sent } = capturingPort();
+    const guest = await inbound({ body: 'I am not linked', root, sender: GUEST_SLACK });
+    expect(guest).toMatchObject({ status: 'stored', routed: false });
+    expect(guest.targetSession).toBeUndefined();
+    await createBridgeSessionDelivery({ db, delivery: port })(guest.messageId);
+    expect(sent).toEqual([]);
+    await setPolicy({ whoMayTrigger: 'anyone' });
+    const allowed = await inbound({ body: 'now anyone may', root, sender: GUEST_SLACK });
+    await createBridgeSessionDelivery({ db, delivery: port })(allowed.messageId);
+    expect(sent.map((x) => x.session)).toEqual([threadSession]);
+    await setPolicy({ whoMayTrigger: 'linked' });
+  });
+
   it('outbox: replies go into the thread; a thread session\'s own post goes into its thread; a slash command answer does not', async () => {
     const reply = await inbound({ body: 'and on iOS?', root });
     const notice = await postBridgeNotice(db, { bridgeId: bridge, text: 'looking', replyToMessageId: reply.messageId, idempotencyKey: `t:${randomUUID()}` });

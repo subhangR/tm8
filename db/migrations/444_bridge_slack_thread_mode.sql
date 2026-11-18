@@ -159,8 +159,14 @@ begin
     select internal.bridge_message_session(me.parent_id) where me.parent_id is not null
     union
     select o.holder_id from public.session_bridge_origins o
-     where o.bridge_id = p_bridge_id and o.command in ('/work', '/thread') and o.message_id = root
-       and not o.inherited
+     where o.bridge_id = p_bridge_id and o.message_id = root and not o.inherited
+       -- 444: a Slack thread's session hears its thread, except a guest's
+       -- message on a bridge where only linked members may trigger (a guest is
+       -- authored as the bridge itself).
+       and (o.command = '/work'
+            or (o.command = '/thread'
+                and ((select br.policy ->> 'whoMayTrigger' from public.bridges br where br.entity_id = p_bridge_id) = 'anyone'
+                     or m.author_id is distinct from p_bridge_id)))
   ),
   listening as (
     select c.session_id as sid, c.wake from public.bridge_read_cursors c where c.bridge_id = p_bridge_id and c.wake <> 'directed'
@@ -367,8 +373,12 @@ begin
         'targetSession', case when allowed and (th.session_id is null or not internal.bridge_session_live(th.session_id))
                               then jsonb_build_object('sessionId', coalesce(th.session_id, b.target_id), 'live', false) end));
     end if;
+  -- A start is a trigger like any other: never on a log-only bridge
+  -- (trigger 'none') or one tm8 may not post to (direction 'in'; 'out'
+  -- returned above), and whoMayTrigger applies (`allowed`).
   elsif b.provider = 'slack' and reply_ext is null and ext not like 'cmd:%'
-        and jsonb_typeof(p_frame -> 'slashCommand') is distinct from 'object' then
+        and jsonb_typeof(p_frame -> 'slashCommand') is distinct from 'object'
+        and b.policy ->> 'trigger' <> 'none' and b.policy ->> 'direction' = 'both' then
     thread_mode := coalesce(b.policy ->> 'threadMode', 'off');
     starts := case thread_mode
       when 'every' then true
