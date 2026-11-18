@@ -477,11 +477,17 @@ describe('Slack end to end: real server + real slack-bridge runtime + fake Slack
 
     await event({ type: 'message', subtype: 'message_deleted', channel: CHANNEL, hidden: true, ts: slack.ts(), deleted_ts: reply,
       previous_message: { type: 'message', user: PRIYA, text: 'can you also add a regression test?', ts: reply, thread_ts: root } });
+    // A provider delete leaves a visible tombstone in the log (the thread keeps its shape) and scrubs the text,
+    // from the copies and from the event log.
     const gone = await until('the delete', async () => {
       const c = await inboundCopies(reply);
-      return c.length && c.every((x) => x.redacted && x.deleted) ? c : undefined;
+      return c.length && c.every((x) => x.redacted) ? c : undefined;
     });
-    expect(gone.every((x) => !x.body.includes('regression test'))).toBe(true);
+    expect(gone.map((x) => ({ body: x.body, deleted: x.deleted }))).toEqual(gone.map(() => ({ body: '[deleted]', deleted: false })));
+    const [left] = await owner<{ n: number }>(
+      `select (select count(*) from public.messages where body like '%add a regression test%')
+            + (select count(*) from public.workspace_events w where w::text like '%add a regression test%') as n`);
+    expect(Number(left!.n)).toBe(0);
   });
 
   it('8. /tm8 status <worker> arrives as a slash command and is answered in the channel (not in a thread)', async () => {
