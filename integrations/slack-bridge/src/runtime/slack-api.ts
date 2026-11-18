@@ -1,0 +1,108 @@
+// A minimal Slack Web API client: form-encoded POSTs to <base><method> with the token as a Bearer header. The base is
+// TM8_SLACK_API_URL (default https://slack.com/api/), the seam the fake Slack in test/ plugs into. Errors carry Slack's
+// own error code and, on HTTP 429, the Retry-After seconds. Nothing here logs, and no error message holds a token.
+
+export const DEFAULT_SLACK_API_URL = 'https://slack.com/api/'
+
+export class SlackApiError extends Error {
+  constructor(
+    /** Slack's error code (`invalid_auth`, `channel_not_found`, `ratelimited`…), or `http_<status>` / `network_error`. */
+    readonly code: string,
+    readonly method: string,
+    readonly o: { retryAfterSec?: number; needed?: string; status?: number } = {},
+  ) {
+    super(`slack ${method}: ${code}${o.needed ? ` (needs ${o.needed})` : ''}`)
+  }
+
+  get retryAfterSec(): number | undefined {
+    return this.o.retryAfterSec
+  }
+
+  /** The detail the server shows for a refused token: Slack's code, `missing_scope: <scope>` when it named one. */
+  get detail(): string {
+    return this.code === 'missing_scope' && this.o.needed ? `missing_scope: ${this.o.needed}` : this.code
+  }
+}
+
+/** Codes that mean the token itself is no good: the connection is logged out and its sealed tokens wiped. */
+export const AUTH_ERRORS: ReadonlySet<string> = new Set([
+  'invalid_auth', 'not_authed', 'account_inactive', 'token_revoked', 'token_expired', 'not_allowed_token_type', 'no_permission',
+  'team_access_not_granted', 'app_uninstalled',
+])
+
+/** Codes worth trying again later; anything else is the request's own fault. */
+const RETRYABLE: ReadonlySet<string> = new Set([
+  'ratelimited', 'internal_error', 'fatal_error', 'service_unavailable', 'request_timeout', 'network_error', 'slack_not_connected',
+])
+
+export function isRetryable(code: string): boolean {
+  return RETRYABLE.has(code) || /^http_(408|429|5\d\d)$/.test(code)
+}
+
+export type ApiResult = Record<string, any> & { ok: true }
+
+export class SlackApi {
+  readonly base: URL
+
+  constructor(base: string = DEFAULT_SLACK_API_URL, private fetchImpl: typeof fetch = fetch) {
+    this.base = new URL(base.endsWith('/') ? base : `${base}/`)
+  }
+
+  /** Calls one Web API method. Arrays and objects in `params` go JSON-encoded, as Slack's form encoding expects. */
+  async call(method: string, token: string, params: Record<string, unknown> = {}): Promise<{ body: ApiResult; headers: Headers }> {
+    const form = new URLSearchParams()
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === null) continue
+      form.set(k, typeof v === 'object' ? JSON.stringify(v) : String(v))
+    }
+    let res: Response
+    try {
+      res = await this.fetchImpl(new URL(method, this.base), {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/x-www-form-urlencoded; charset=utf-8' },
+        body: form,
+        signal: AbortSignal.timeout(30_000),
+      })
+    } catch {
+      throw new SlackApiError('network_error', method)
+    }
+    if (res.status === 429) {
+      await res.body?.cancel()
+      throw new SlackApiError('ratelimited', method, { retryAfterSec: retryAfter(res.headers), status: 429 })
+    }
+    const text = await res.text().catch(() => '')
+    let body: Record<string, any> | null = null
+    try {
+      body = JSON.parse(text)
+    } catch {
+      body = null
+    }
+    if (!body || typeof body !== 'object') throw new SlackApiError(`http_${res.status}`, method, { status: res.status })
+    if (body.ok !== true) {
+      const code = typeof body.error === 'string' ? body.error : `http_${res.status}`
+      throw new SlackApiError(code, method, { status: res.status, needed: typeof body.needed === 'string' ? body.needed : undefined,
+        retryAfterSec: code === 'ratelimited' ? retryAfter(res.headers) : undefined })
+    }
+    return { body: body as ApiResult, headers: res.headers }
+  }
+
+  /**
+   * May the bot token be sent to this URL? Only Slack's own hosts (files are served from files.slack.com), or the
+   * configured API base's host when it was pointed elsewhere (the fake Slack in tests).
+   */
+  trusts(url: string): boolean {
+    let u: URL
+    try {
+      u = new URL(url)
+    } catch {
+      return false
+    }
+    if (u.host === this.base.host && u.protocol === this.base.protocol) return true
+    return u.protocol === 'https:' && (u.hostname === 'slack.com' || u.hostname.endsWith('.slack.com') || u.hostname.endsWith('.slack-edge.com'))
+  }
+}
+
+function retryAfter(h: Headers): number {
+  const n = Number(h.get('retry-after'))
+  return Number.isFinite(n) && n > 0 ? Math.ceil(n) : 1
+}
