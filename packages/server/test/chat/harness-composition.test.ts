@@ -54,6 +54,9 @@ async function rig() {
       return { id, runtime_member_id: 'runtime-member', runtime_chat_id: CHAT, expires_at: new Date(Date.now() + 60000).toISOString() };
     }
     if (name === 'resolve_auth_session') return state.revoked ? null : [...sessions.values()].at(-1) ?? null;
+    // Chat resolves GitHub alongside its model credential now. Null is the
+    // ordinary case: this member has connected no GitHub credential.
+    if (name === 'read_account_git_credential') return null;
     if (name === 'revoke_agent_runtime_session') {
       if (state.failRevoke) throw new Error(SECRET_ERROR);
       const session = sessions.get(args[3] as string);
@@ -225,7 +228,10 @@ describe('private generation launch composition', () => {
     rpc.mockClear();
     await prepared.revalidate();
     await prepared.launch.materialize();
-    expect(rpc.mock.calls.every(call => call[1] === 'resolve_auth_session')).toBe(true);
+    // Revalidation stays a pure READ path: the auth session, plus the GitHub
+    // rung chat now resolves. Still nothing that writes.
+    expect(rpc.mock.calls.every(call =>
+      call[1] === 'resolve_auth_session' || call[1] === 'read_account_git_credential')).toBe(true);
     expect(bind).toHaveBeenCalledOnce();
     state.connectorCredential = 'different-account';
     await expect(prepared.launch.materialize()).rejects.toThrow('authorization is no longer available');

@@ -34,6 +34,7 @@ export {
   codexLoopbackConfigArgs,
   codexUpdateCheckConfigArgs,
   composeEnv,
+  isolateGitHubCredential,
   composeManifest,
   asPermissionMode,
   memberLaunchPreferences,

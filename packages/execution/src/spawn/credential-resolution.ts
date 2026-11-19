@@ -84,8 +84,42 @@ export interface CredentialResolutionInput {
    * server's claims, since `GraphAuth` is opaque here. Absent means false.
    */
   linkBound?: boolean;
-  /** Headless chat selects only its model credential; GitHub selection remains separate. */
+  /**
+   * Headless chat: resolve the model credential and GitHub, and STOP there.
+   *
+   * What it skips is the trailing pass that resolves an explicit `space`
+   * source for a provider THIS tool does not use. That pass exists so a child
+   * spawned on another tool inherits the exact credential id out of the
+   * manifest — and chat writes no manifest and spawns no child, so there is
+   * nothing for it to record for.
+   *
+   * It used to skip GitHub too, and returned `gitHubCredential: null`
+   * unconditionally. That was the whole reason a chat could not use `gh` or
+   * push while a session in the same Space could: not a policy decision, an
+   * unfinished one — the name `modelOnly` and the old comment here ("GitHub
+   * selection remains separate") recorded an intention to do it later, and
+   * this change is later. GitHub now runs for chat through THIS function, so
+   * the space policy gate is enforced in exactly one place for both lanes.
+   */
   modelOnly?: boolean;
+  /**
+   * GitHub resolving to NOTHING is an acceptable answer rather than a refusal.
+   *
+   * Set by chat, and the asymmetry is deliberate. For a session, refusing to
+   * start is the right failure: a worker that cannot push has nowhere to put
+   * its work, so the link-bound ladder below says so outright ("the session is
+   * not started without git"). A chat is a conversation. Failing the TURN —
+   * which is what a throw here does — would mean a human who only wanted an
+   * answer gets an error because a space has no default GitHub token, and
+   * that is strictly worse than the status quo this change is fixing, where
+   * chat simply had no git.
+   *
+   * It degrades to NO CREDENTIAL, never to the node's. `isolateGitHubCredential`
+   * is still applied with member posture, so the machine's gh and any global
+   * helper stay blanked: the failure mode is a clean authentication refusal
+   * attributed to nobody, not a push authored by the box.
+   */
+  gitHubOptional?: boolean;
 }
 
 export interface ResolvedSessionCredentials {
@@ -389,14 +423,8 @@ export async function resolveSessionCredentials(
     if (toolProvider) effective[toolProvider] = credentialHome ? 'member' : 'node';
   }
 
-  if (input.modelOnly) return {
-    launch: { ...launch, credentialSources: sources, credentialSource: commonCredentialSource(sources),
-      spaceCredentialIds: ids, effectiveCredentialSources: effective,
-      ...(Object.keys(picks).length > 0 ? { spaceCredentialPicks: picks } : {}) },
-    credentialHome, gitHubCredential: null, spaceCredentialIds: Object.values(ids),
-  };
-
   // ---- GitHub -----------------------------------------------------------
+  // Runs for chat too (`modelOnly`), which returns just below this block.
   let gitHubCredential: GitHubCredential | null = null;
   {
     const provider = 'github' as const;
@@ -432,12 +460,24 @@ export async function resolveSessionCredentials(
           useSpace(provider, grant, 'space_default');
         } else if (allowed.nodeBySpace && allowed.nodeByNode) {
           effective.github = 'node';
+        } else if (input.gitHubOptional) {
+          // Chat: every rung is closed, so this turn has no git. Recorded as
+          // `node` only because the map must name a rung; nothing is injected
+          // and member posture below still blanks the machine's own gh.
+          effective.github = 'node';
         } else {
           throw autoExhausted(provider);
         }
       }
     }
   }
+
+  if (input.modelOnly) return {
+    launch: { ...launch, credentialSources: sources, credentialSource: commonCredentialSource(sources),
+      spaceCredentialIds: ids, effectiveCredentialSources: effective,
+      ...(Object.keys(picks).length > 0 ? { spaceCredentialPicks: picks } : {}) },
+    credentialHome, gitHubCredential, spaceCredentialIds: Object.values(ids),
+  };
 
   // ---- an explicit space source for a provider this tool does not use ------
   // Still resolved and recorded — fail closed, and a child on the other tool
@@ -601,33 +641,47 @@ async function resolveLinkBoundCredentials(
     effective[toolProvider] = 'node';
   }
 
-  if (input.modelOnly) return {
-    launch: { ...launch, credentialSources: sources, credentialSource: commonCredentialSource(sources),
-      spaceCredentialIds: ids, effectiveCredentialSources: effective },
-    credentialHome, gitHubCredential: null, spaceCredentialIds: Object.values(ids),
-  };
-
   // ---- GitHub: this space's default, nothing else ------------------------
+  // Runs for chat too (`modelOnly`), which returns just below this block. A
+  // link-bound chat is an ordinary case — `chat/credentials.ts` sets
+  // `linkBound` straight off `authKind === 'link'` — so the two refusals here
+  // are the ones `gitHubOptional` exists for: see its doc on why a chat
+  // answers without git rather than not answering.
   const ghSource = launch.credentialSources.github ?? null;
   refuseMember('github', ghSource);
-  if (ghSource === 'node') {
+  let gitHubCredential: GitHubCredential | null = null;
+  if (ghSource === 'node' && !input.gitHubOptional) {
     throw linkRefusal(
       "runs git only on this space's default GitHub credential, never the node's — choose 'space'",
       { provider: 'github', reason: 'node_git_refused' },
     );
   }
-  const ghGrant = allowedBy(policies, 'github').space ? await readDefault('github') : null;
-  if (!ghGrant) {
+  const ghGrant = ghSource !== 'node' && allowedBy(policies, 'github').space
+    ? await readDefault('github')
+    : null;
+  if (!ghGrant && !input.gitHubOptional) {
     throw linkRefusal(
       "runs git only on this space's default GitHub credential, and there is none it may use — " +
         'a space admin can add one, so the session is not started without git',
       { provider: 'github', reason: 'no_git_credential' },
     );
   }
-  const gitHubCredential = spaceGitHub(ghGrant);
-  sources.github = 'space';
-  ids.github = ghGrant.credentialId;
-  effective.github = 'space';
+  if (ghGrant) {
+    gitHubCredential = spaceGitHub(ghGrant);
+    sources.github = 'space';
+    ids.github = ghGrant.credentialId;
+    effective.github = 'space';
+  } else {
+    // Chat only (a session threw above). No rung is reachable, so the turn
+    // has no git; member posture still blanks the node's gh.
+    effective.github = 'node';
+  }
+
+  if (input.modelOnly) return {
+    launch: { ...launch, credentialSources: sources, credentialSource: commonCredentialSource(sources),
+      spaceCredentialIds: ids, effectiveCredentialSources: effective },
+    credentialHome, gitHubCredential, spaceCredentialIds: Object.values(ids),
+  };
 
   // ---- an explicit space source for a provider this tool does not use ------
   for (const provider of SPACE_CREDENTIAL_PROVIDERS) {
