@@ -39,7 +39,7 @@ export const CONNECTORS: ConnectorRegistry = Object.freeze({
       // https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps
       { methods: ALL, pathPattern: /(?:^|\/)oauth(?:\/|$)/i },
       // https://docs.github.com/en/rest/orgs/members#create-an-organization-invitation
-      { methods: ALL, pathPattern: /(?:^|\/)(?:invitations|invitations?)(?:\/|$)/i },
+      { methods: ALL, pathPattern: /(?:^|\/)invitations?(?:\/|$)/i },
     ],
   },
   openai: {
@@ -65,7 +65,8 @@ export const CONNECTORS: ConnectorRegistry = Object.freeze({
     ],
   },
   stripe: {
-    id: 'stripe', hosts: ['api.stripe.com'], injection: { kind: 'basic', username: '' },
+    // https://docs.stripe.com/api/authentication — Stripe explicitly supports bearer auth.
+    id: 'stripe', hosts: ['api.stripe.com'], injection: { kind: 'bearer' },
     defaultPathPrefixes: ['/v1/customers', '/v1/products', '/v1/prices', '/v1/payment_intents'],
     deny: [
       // https://docs.stripe.com/api/tokens and https://docs.stripe.com/api/ephemeral_keys
