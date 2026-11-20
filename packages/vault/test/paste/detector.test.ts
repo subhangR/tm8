@@ -85,6 +85,13 @@ describe('paste detector: all 18 kinds', () => {
     expect(tokenSpanScanner(detector)(text)).toEqual([{ start: 0, end: github().length }]);
   });
 
+  it('recognizes JWT values after assignment punctuation and before a sentence stop', () => {
+    for (const text of ['jwt=' + jwt(), '(' + jwt() + ').', 'Bearer ' + jwt()]) {
+      expect(detector.scan(text).findings.some((finding) => finding.kind === 'jwt' && finding.confidence === 'high')).toBe(true);
+    }
+    expect(detector.scan('id=' + uuid()).findings).toEqual([]);
+  });
+
   it('guards UUIDs, contextual git digests, image data, URLs and prose', () => {
     const digest = 'a1b2c3d4e5f60789'.repeat(4);
     const inputs = [uuid(), 'commit ' + digest, 'sha ' + digest.slice(0, 40), 'hash: ' + digest,
@@ -94,7 +101,7 @@ describe('paste detector: all 18 kinds', () => {
   });
 
   it('requires card digit-run boundaries, Luhn and a known IIN', () => {
-    for (const input of ['1' + card(), card() + '1', '0'.repeat(16), '1234'.repeat(4), '4111-1111-1111-1112']) {
+    for (const input of ['1' + card(), card() + '1', '0'.repeat(16), '1234'.repeat(4), ['4111', '1111', '1111', '1112'].join('-')]) {
       expect(detector.scan(input).findings.some((finding) => finding.kind === 'card_number')).toBe(false);
     }
     expect(detector.scan(card().replaceAll(' ', '-')).findings[0]?.kind).toBe('card_number');
@@ -113,7 +120,7 @@ describe('paste detector: all 18 kinds', () => {
 
   it('scans each adversarial 1 MiB input in under 500 ms', () => {
     const size = 1024 * 1024;
-    const inputs = ['a'.repeat(size), mixed().repeat(Math.ceil(size / mixed().length)).slice(0, size), ('gh' + 'p_').repeat(size / 4)];
+    const inputs = ['a'.repeat(size), mixed().repeat(Math.ceil(size / mixed().length)).slice(0, size), ('gh' + 'p_').repeat(size / 4), '4' + ' '.repeat(size - 2) + '4'];
     detector.scan('warmup');
     for (const input of inputs) {
       const start = performance.now();

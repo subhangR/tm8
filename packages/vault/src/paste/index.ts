@@ -3,7 +3,8 @@ import type { PasteDetector, PasteFinding, PasteKind, TokenSpanScanner } from '.
 // Bounded provider patterns run in overlapping UTF-16 windows. The overlap is
 // larger than the longest provider match. Unbounded lexical runs and PEM blocks
 // have separate forward-only passes, so window edges never truncate a finding.
-const WINDOW = 1024 * 1024;
+// Even all three-byte UTF-8 code units fit below the 1 MiB input threshold.
+const WINDOW = 256 * 1024;
 const OVERLAP = 4096;
 const WORD = '[A-Za-z0-9_-]';
 const PROVIDERS: readonly [PasteKind, string][] = [
@@ -62,7 +63,7 @@ interface Span { start: number; end: number }
 
 function urls(text: string, add: (kind: PasteKind, start: number, end: number) => void): Span[] {
   const excluded: Span[] = [];
-  const starts = /[a-z][a-z0-9+.-]{0,31}:\/\/|data:/gi;
+  const starts = /(?<![A-Za-z0-9+.-])[a-z][a-z0-9+.-]{0,31}:\/\/|data:/gi;
   let match: RegExpExecArray | null;
   while ((match = starts.exec(text)) !== null) {
     const rest = /[^\s"'<>`]+/y;
@@ -167,12 +168,18 @@ export function createPasteDetector(): PasteDetector {
       providers(text, add);
       privateKeys(text, add);
       const excluded = urls(text, add);
+      for (const match of text.matchAll(/[A-Za-z0-9_.-]+/g)) {
+        let first = 0;
+        let last = match[0].length;
+        while (first < last && match[0][first] === '.') first += 1;
+        while (last > first && match[0][last - 1] === '.') last -= 1;
+        if (isJwt(match[0].slice(first, last))) add('jwt', match.index + first, match.index + last);
+      }
       let exclusion = 0;
-      for (const match of text.matchAll(/[A-Za-z0-9_+/=.\-]+/g)) {
+      for (const match of text.matchAll(/[A-Za-z0-9_+/\-]+={0,2}/g)) {
         const token = match[0];
         const start = match.index;
         const end = start + token.length;
-        if (isJwt(token)) add('jwt', start, end);
         if (token.length < 20) continue;
         while (excluded[exclusion] && excluded[exclusion]!.end <= start) exclusion += 1;
         if (excluded[exclusion] && excluded[exclusion]!.start < end) continue;
@@ -207,7 +214,9 @@ export function createPasteDetector(): PasteDetector {
         assignments.lastIndex = Math.max(assignments.lastIndex, end + (quote && text[end] === quote ? 1 : 0));
       }
       for (const match of text.matchAll(/[0-9][0-9 -]*/g)) {
-        const raw = match[0].replace(/[ -]+$/, '');
+        let length = match[0].length;
+        while (length > 0 && (match[0][length - 1] === ' ' || match[0][length - 1] === '-')) length -= 1;
+        const raw = match[0].slice(0, length);
         if (raw.length > 64) continue;
         const digits = raw.replace(/[ -]/g, '');
         if (knownIin(digits) && luhn(digits)) add('card_number', match.index, match.index + raw.length);
