@@ -91,6 +91,8 @@ export interface ApiResponseOutcome {
 }
 
 export type EgressRefusalCode =
+  /** Unparseable URL, a fragment, a port other than 443, or an encoded slash, backslash or NUL in the path. */
+  | 'url_refused'
   | 'scheme_refused'
   | 'credentials_in_url'
   | 'host_not_allowed'
@@ -102,9 +104,8 @@ export type EgressRefusalCode =
   | 'private_address'
   | 'dns_failed'
   | 'redirect_refused'
+  /** The agent-supplied URL, headers or body carry a planted canary. */
   | 'canary_in_request'
-  | 'canary_in_response'
-  | 'response_too_large'
   | 'upstream_unreachable'
   | 'timeout';
 
@@ -136,16 +137,34 @@ export interface EgressExecutor {
   execute(input: EgressExecuteInput): Promise<ApiResponseOutcome>;
 }
 
+/**
+ * Finds credential-shaped spans (provider tokens, private keys, JWTs) in text.
+ * WS-E's paste detector provides the production implementation (high-confidence
+ * findings only). The response filter takes it as input so that the two
+ * workstreams share one pattern set and nobody duplicates it.
+ */
+export type TokenSpanScanner = (text: string) => readonly { start: number; end: number }[];
+
 export interface ResponseFilterInput {
+  /** Upstream status, copied to the outcome unchanged. */
+  status: number;
+  /** The DECODED body (after any content-encoding). The executor enforces the size cap while decoding. */
   body: Buffer;
   contentType: string | null;
+  /** Raw upstream response headers, lowercase names. The filter applies the allowlist. */
   headers: Readonly<Record<string, string>>;
   key: SecretMaterial;
   canaries: CanarySet;
   maxBytes: number;
+  scanTokens?: TokenSpanScanner;
 }
 
-/** Pure function. Throws EgressRefusal('canary_in_response') when a canary is present (the response is withheld). */
+/**
+ * Pure function. It never throws for content: the upstream call has already
+ * happened, so the agent and the core must still see the status. A body that
+ * carries a canary, is over `maxBytes`, or is not text comes back as
+ * `{ kind: 'withheld', reason }`. The core alerts on `reason === 'canary'`.
+ */
 export type ResponseFilter = (input: ResponseFilterInput) => ApiResponseOutcome;
 
 // ---------------------------------------------------------------------------
@@ -160,6 +179,8 @@ export interface FillIntent {
   /** Page to open. Must be same-origin with `origin`; defaults to `origin + "/"`. */
   startUrl?: string;
   submit: boolean;
+  /** The item's dev mode (an owner-approved property): allows http and localhost origins. False in every production item. */
+  devMode: boolean;
 }
 
 export interface LoginMaterial {
