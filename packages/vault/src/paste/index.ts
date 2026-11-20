@@ -43,20 +43,57 @@ function providers(text: string, add: (kind: PasteKind, start: number, end: numb
   }
 }
 
+function armorBody(body: string): { end: number; complete: boolean } {
+  let cursor = 0;
+  let end = 0;
+  let characters = 0;
+  let started = false;
+  let separated = false;
+  while (cursor < body.length) {
+    const start = cursor;
+    while (cursor < body.length && body[cursor] !== '\r' && body[cursor] !== '\n') cursor += 1;
+    const line = body.slice(start, cursor).trim();
+    const lineEnd = cursor;
+    if (body[cursor] === '\r') cursor += 1;
+    if (body[cursor] === '\n') cursor += 1;
+    if (line === '') {
+      if (started) separated = true;
+      continue;
+    }
+    // Traditional encrypted PEM and OpenPGP armor allow metadata before the
+    // base64 body. Metadata after body data terminates truncated armor.
+    if (!started && /^(?:Proc-Type|DEK-Info|Version|Comment|Hash|Charset):[\t ]*[^\r\n]*$/i.test(line)) continue;
+    if (separated || !/^[A-Za-z0-9+/=\t ]+$/.test(line)) return { end: characters >= 16 ? end : 0, complete: false };
+    started = true;
+    characters += line.replace(/[\t ]/g, '').length;
+    end = lineEnd;
+    while (end > start && /[\t ]/.test(body[end - 1]!)) end -= 1;
+  }
+  return { end: characters >= 16 ? end : 0, complete: true };
+}
+
 function privateKeys(text: string, add: (kind: PasteKind, start: number, end: number) => void): void {
-  const markers = /-----(BEGIN|END) ((?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY)-----/g;
+  const markers = /-----(BEGIN|END) ((?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY|PGP PRIVATE KEY BLOCK)-----/g;
   let opening: { start: number; body: number; label: string } | undefined;
+  const finish = (stop: number, closing?: RegExpMatchArray) => {
+    if (!opening) return;
+    // Marker gaps are disjoint, including malformed/repeated BEGINs: no
+    // missing END can cause a rescan of the remaining input.
+    const body = armorBody(text.slice(opening.body, stop));
+    if (body.end > 0) {
+      const end = closing && body.complete && opening.label === closing[2]
+        ? stop + closing[0].length : opening.body + body.end;
+      add('private_key', opening.start, end);
+    }
+    opening = undefined;
+  };
   for (const match of text.matchAll(markers)) {
+    finish(match.index, match[1] === 'END' ? match : undefined);
     if (match[1] === 'BEGIN') {
       opening = { start: match.index, body: match.index + match[0].length, label: match[2]! };
-    } else if (opening && opening.label === match[2]) {
-      const body = text.slice(opening.body, match.index);
-      if (body.replace(/\s/g, '').length >= 16 && /^[A-Za-z0-9+/=\r\n\t ]+$/.test(body)) {
-        add('private_key', opening.start, match.index + match[0].length);
-      }
-      opening = undefined;
     }
   }
+  finish(text.length);
 }
 
 interface Span { start: number; end: number }
@@ -75,6 +112,18 @@ function urls(text: string, add: (kind: PasteKind, start: number, end: number) =
       try {
         const parsed = new URL(raw);
         if (parsed.username !== '' && parsed.password !== '') add('connection_string', match.index, end);
+        else if (parsed.username !== '') {
+          const username = decodeURIComponent(parsed.username);
+          if (username.length >= 20 && /^[\x21-\x7e]+$/.test(username) && entropy(username) >= 4.2) {
+            add('connection_string', match.index, end);
+          }
+        }
+        if (parsed.protocol === 'https:' && (
+          ((parsed.hostname === 'discord.com' || parsed.hostname === 'discordapp.com')
+            && /^\/api\/(?:v[0-9]{1,2}\/)?webhooks\/[0-9]{16,20}\/[A-Za-z0-9_-]{20,}\/?$/.test(parsed.pathname))
+          || (/^[a-z0-9-]+\.webhook\.office\.com$/.test(parsed.hostname)
+            && /^\/webhookb2\/[^/]+(?:\/[^/]+)*\/?$/.test(parsed.pathname))
+        )) add('webhook_url', match.index, end);
       } catch { /* Unparseable URLs still are not entropy evidence. */ }
     }
     excluded.push({ start: match.index, end });
@@ -109,6 +158,33 @@ function entropy(token: string): number {
     }
   }
   return result;
+}
+
+function repeating(token: string): boolean {
+  // Only called for 32/64-character hex tokens. Check periods explicitly;
+  // entropy alone would accept a repeated, evenly distributed hex alphabet.
+  for (let period = 1; period <= token.length / 2; period *= 2) {
+    let index = period;
+    while (index < token.length && token[index] === token[index % period]) index += 1;
+    if (index === token.length) return true;
+  }
+  return false;
+}
+
+const QUERY_SECRET = /^(?:sig|signature|x-amz-signature|x-goog-signature|x-amz-security-token)$/i;
+
+function querySecrets(text: string, add: (kind: PasteKind, start: number, end: number, confidence: 'medium') => void): void {
+  const parameters = /[?&](?:sig|signature|x-amz-signature|x-goog-signature|x-amz-security-token)=/gi;
+  const value = /[^&#\s"'<>`]+/y;
+  let parameter: RegExpExecArray | null;
+  while ((parameter = parameters.exec(text)) !== null) {
+    const start = parameters.lastIndex;
+    value.lastIndex = start;
+    if (value.exec(text)) {
+      add('generic_secret_assignment', start, value.lastIndex, 'medium');
+      parameters.lastIndex = value.lastIndex;
+    }
+  }
 }
 
 function knownIin(digits: string): boolean {
@@ -184,8 +260,18 @@ export function createPasteDetector(): PasteDetector {
         while (excluded[exclusion] && excluded[exclusion]!.end <= start) exclusion += 1;
         if (excluded[exclusion] && excluded[exclusion]!.start < end) continue;
         if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token)) continue;
+        if (/^sha(?:256|384|512)-[A-Za-z0-9+/]+={0,2}$/i.test(token)) continue;
         if ((token.length === 40 || token.length === 64) && /^[0-9a-f]+$/i.test(token)
           && /commit|sha(?:1|256|512)?|hash|digest/i.test(text.slice(Math.max(0, start - 48), Math.min(text.length, end + 48)))) continue;
+        if (/^[0-9a-f]+$/i.test(token)) {
+          // Hex tops out at 4 bits/character, below the general 4.2 floor.
+          // Retain only secret-sized, sufficiently varied, nonperiodic runs.
+          const hex = token.toLowerCase();
+          if ((hex.length === 32 || hex.length === 64) && entropy(hex) >= 3 && !repeating(hex)) {
+            add('high_entropy', start, end, 'medium');
+          }
+          continue;
+        }
         if (entropy(token) >= 4.2) add('high_entropy', start, end, 'medium');
       }
       const access = findings.filter((finding) => finding.kind === 'aws_access_key').sort((a, b) => a.start - b.start);
@@ -194,10 +280,13 @@ export function createPasteDetector(): PasteDetector {
         while (access[near] && access[near]!.end < match.index - 256) near += 1;
         if (access[near] && access[near]!.start <= match.index + 296) add('aws_secret_key', match.index, match.index + 40, 'medium');
       }
+      querySecrets(text, add);
       const assignments = /(?<![A-Za-z0-9_])["']?([A-Za-z_][A-Za-z0-9_.-]{0,127})["']?[ \t]{0,32}(?:[:=]|\bis\b)[ \t]{0,32}/gi;
       let assignment: RegExpExecArray | null;
       while ((assignment = assignments.exec(text)) !== null) {
         const key = assignment[1]!.toLowerCase();
+        const query = text[assignment.index - 1] === '?' || text[assignment.index - 1] === '&';
+        if (query && QUERY_SECRET.test(key)) continue;
         const password = /(?:^|[_.-])(?:password|passwd|pwd|passphrase)$/.test(key);
         if (!password && !/(?:^|[_.-])(?:api[_.-]?key|secret|token|access[_.-]?key|private[_.-]?key)(?:$|[_.-])/.test(key)) continue;
         let start = assignments.lastIndex;
@@ -206,6 +295,7 @@ export function createPasteDetector(): PasteDetector {
         end = start;
         while (end < text.length) {
           const ch = text[end]!;
+          if (query && /[&#]/.test(ch)) break;
           if (quote ? ch === quote || ch === '\n' || ch === '\r' : /[\s,;"'<>`]/.test(ch)) break;
           if (quote && ch === '\\' && end + 1 < text.length) end += 1;
           end += 1;
@@ -218,6 +308,10 @@ export function createPasteDetector(): PasteDetector {
         while (length > 0 && (match[0][length - 1] === ' ' || match[0][length - 1] === '-')) length -= 1;
         const raw = match[0].slice(0, length);
         if (raw.length > 64) continue;
+        // Numeric substrings of SHAs, UUIDs and other word tokens are not
+        // standalone card numbers, even when their checksum happens to pass.
+        if ((match.index > 0 && /[A-Za-z0-9_]/.test(text[match.index - 1]!))
+          || (match.index + raw.length < text.length && /[A-Za-z0-9_]/.test(text[match.index + raw.length]!))) continue;
         const digits = raw.replace(/[ -]/g, '');
         if (knownIin(digits) && luhn(digits)) add('card_number', match.index, match.index + raw.length);
       }
