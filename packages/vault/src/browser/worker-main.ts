@@ -41,6 +41,7 @@ export async function startFillWorker(options: {
         stdio: ['pipe', 'pipe', 'ignore'],
         env: {
           PATH: process.env.PATH,
+          LD_LIBRARY_PATH: process.env.LD_LIBRARY_PATH,
           TMPDIR: options.runtimeDirectory ?? '/dev/shm',
           PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH,
           TM8_VAULT_CHROMIUM_EXECUTABLE: options.executablePath,
