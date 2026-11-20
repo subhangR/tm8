@@ -55,3 +55,4 @@ export * from './loops.js';
 export * from './bridges.js';
 export * from './bridge-runtime-protocol.js';
 export * from './labels.js';
+export * from './vault.js';

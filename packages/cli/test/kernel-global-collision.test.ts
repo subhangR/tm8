@@ -450,6 +450,18 @@ const DELIBERATE_SPELLINGS: Readonly<Record<string, string>> = {
   allowed: 'no CLI flag: credentials.space.spaceDefaultConsent is a commandless human-settings row (2026-09-26)',
   rankForSuggestedTeammate: 'no CLI flag: launch.suggest is UI-only (Ask Jev on the launch card), no CLI verb; Decision 7 (2026-09-27)',
   ro: '`--mount <host>:<guest>:ro`, a per-element suffix — a top-level --ro could not name which mount it meant (2026-09-03)',
+  // Secure Vault (task 01a1fa87). The vault's human doors are commandless BY
+  // DESIGN, not by omission: they need a vault session held only in an HttpOnly
+  // cookie scoped to /v2/vault, and a WebAuthn user-verified assertion for each
+  // step-up. A CLI holds neither, and an agent session acts as the human, so a CLI
+  // spelling would be a door around the owner's passkey. Do not "fix" these by
+  // adding a flag.
+  confirmLast: 'no CLI flag: vault.passkeys.revoke is a commandless human row behind the vault session cookie; the vault settings screen sets it (2026-11-20)',
+  devMode: 'no CLI flag: vault.items.setProperties is a commandless human row behind a WebAuthn step-up; the item screen sets it (2026-11-20)',
+  standing: 'no CLI flag: vault.approvals.decide is a commandless human row behind a WebAuthn step-up; the approval card sets it (2026-11-20)',
+  // vault.fill IS an agent door. Its CLI row arrives with the vault catalog pass,
+  // which registers --submit as a boolean option and deletes this entry.
+  submit: '`tm8 vault fill --submit`, registered by the vault catalog pass; vault.fill is reserved until then (2026-11-20)',
 };
 
 describe('CLASS SWEEP: every boolean the frozen input schemas accept is expressible', () => {
