@@ -144,7 +144,6 @@ export function createImportParser(): ImportParser {
       const candidates: ImportCandidate[] = [];
       const payloads: CapturePayload[] = [];
       const skipped = parsed.skipped;
-      const duplicates = new Map<string, number>();
       const sensitive = new Set<string>();
       for (const row of parsed.rows) {
         for (const value of [row.password, row.notes, row.totp, row.pan]) if (value) sensitive.add(value);
@@ -183,24 +182,39 @@ export function createImportParser(): ImportParser {
         }
         const checked = CapturePayloadSchema.safeParse(payload);
         if (!checked.success) { skipped.push({ index: row.index, reason: 'invalid_payload' }); continue; }
-        if (candidate.origin !== null && row.type === 'login') {
-          const pair = JSON.stringify([candidate.origin, row.username]);
-          const prior = duplicates.get(pair);
-          if (prior !== undefined) candidate.duplicateOf = prior;
-          else duplicates.set(pair, candidate.index);
-        }
         candidate.warnings = [...new Set(warnings)];
         candidates.push(candidate);
         payloads.push(checked.data);
       }
       const containsSecret = previewGuard(sensitive);
-      for (const candidate of candidates) {
-        if (containsSecret(candidate.name)) candidate.name = '[redacted]';
-        if (candidate.username !== null && containsSecret(candidate.username)) candidate.username = '[redacted]';
-        if (candidate.origin !== null && containsSecret(candidate.origin)) { candidate.origin = null; candidate.originError = 'invalid_url'; }
-      }
+      // A payload's name, username and origin become plaintext item metadata at
+      // commit, and agents can read item metadata. So the payload follows the
+      // preview: a name that repeats a secret is redacted on both sides, and a
+      // row whose username or origin repeats one is not importable at all.
+      const duplicates = new Map<string, number>();
+      const keptCandidates: ImportCandidate[] = [];
+      const keptPayloads: CapturePayload[] = [];
+      candidates.forEach((candidate, position) => {
+        const payload = payloads[position]!;
+        const username = payload.type === 'login' ? payload.username : undefined;
+        if ((username !== undefined && containsSecret(username))
+          || (candidate.username !== null && containsSecret(candidate.username))
+          || (candidate.origin !== null && containsSecret(candidate.origin))) {
+          skipped.push({ index: candidate.index, reason: 'secret_in_metadata' });
+          return;
+        }
+        if (containsSecret(candidate.name) || containsSecret(payload.name)) { candidate.name = '[redacted]'; payload.name = '[redacted]'; }
+        // Duplicates are marked among importable rows only.
+        if (candidate.origin !== null && payload.type === 'login') {
+          const pair = JSON.stringify([candidate.origin, payload.username ?? '']);
+          const prior = duplicates.get(pair);
+          if (prior !== undefined) candidate.duplicateOf = prior;
+          else duplicates.set(pair, candidate.index);
+        }
+        keptCandidates.push(candidate); keptPayloads.push(payload);
+      });
       skipped.sort((a, b) => a.index - b.index);
-      return { format: parsed.format, candidates, payloads, skipped };
+      return { format: parsed.format, candidates: keptCandidates, payloads: keptPayloads, skipped };
     },
   };
 }

@@ -6,7 +6,7 @@ import { createEgressExecutor, CONNECTORS, GENERIC_DENY_SEGMENTS, type EgressExe
   type PinnedHttpsResponse, type PinnedHttpsRequest } from '../../src/egress/index.js';
 import { buildCanarySet } from '../../src/canary/index.js';
 import { SecretMaterial } from '../../src/secret-material.js';
-import { EgressRefusal, type BrokerPolicy, type EgressExecuteInput, type EgressRefusalCode, type KeyInjection } from '../../src/types.js';
+import { EgressRefusal, type ApiRequestBody, type BrokerPolicy, type EgressExecuteInput, type EgressRefusalCode, type KeyInjection } from '../../src/types.js';
 
 const fixtureKey = ['safe', 'fixture', 'value-1234567890'].join('-');
 const publicAddress = { address: '93.184.216.34', family: 4 as const };
@@ -49,6 +49,9 @@ describe('request policy (acceptance 8)', () => {
     ['https://evil.example/v1/x', 'host_not_allowed'], ['https://api.example.com.evil.example/v1/x', 'host_not_allowed'],
     ['https://api.example.com./v1/x', 'host_not_allowed'], ['https://api.example.com/v1/xy', 'path_not_allowed'],
     ['https://api.example.com/v1/x/../../elsewhere', 'path_not_allowed'],
+    // Path parameters: an upstream that strips them routes differently from these checks.
+    ['https://api.example.com/v1/x;jsessionid=1', 'url_refused'], ['https://api.example.com/v1/x/..;/elsewhere', 'url_refused'],
+    ['https://api.example.com/v1/x%3Bchild', 'url_refused'],
   ] as const)('refuses a destination with %s', (url, code) => withInput((input) => refused({ ...input, request: { ...input.request, url } }, code)));
 
   it('refuses off-allowlist methods', () => withInput((input) => refused({ ...input, request: { ...input.request, method: 'DELETE' } }, 'method_not_allowed')));
@@ -65,7 +68,11 @@ describe('request policy (acceptance 8)', () => {
 
   const refusedNames = ['Authorization', 'COOKIE', 'Proxy-Authorization', 'proxy-connection', 'Host', 'Forwarded',
     'X-Forwarded-For', 'x-forwarded-proto', 'X-Real-IP', 'Content-Length', 'Transfer-Encoding', 'Connection', 'TE',
-    'Upgrade', 'Keep-Alive', 'bad name', 'x-bad\rname', 'x-bad:name', ''];
+    'Upgrade', 'Keep-Alive', 'bad name', 'x-bad\rname', 'x-bad:name', '',
+    // Method/URL overrides and client-address claims an upstream framework may honor.
+    'X-HTTP-Method-Override', 'x-http-method', 'X-Method-Override', 'X-Original-URL', 'x-original-uri', 'X-Rewrite-URL',
+    'x-override-url', 'X-Host', 'X-Client-IP', 'True-Client-IP', 'X-Originating-IP', 'x-remote-ip', 'x-remote-addr',
+    'Client-IP', 'X-Cluster-Client-IP', 'CF-Connecting-IP', 'Fastly-Client-IP'];
   it.each(refusedNames)('refuses header %s before DNS', (name) => withInput((input) =>
     refused({ ...input, request: { ...input.request, headers: { [name]: 'value' } } }, 'header_refused')));
   it.each(['\r', '\n', '\0'])('refuses a header control value', (control) => withInput((input) =>
@@ -73,6 +80,34 @@ describe('request policy (acceptance 8)', () => {
   it.each(['\r', '\n', '\0'])('refuses a key control character before DNS', (control) => withInput(async (input) => {
     const key = SecretMaterial.fromUtf8(JSON.stringify({ key: `fixture${control}value` }));
     try { await refused({ ...input, key }, 'header_refused'); } finally { key.dispose(); }
+  }));
+
+  it('refuses _method overrides in the query and in form, multipart and JSON bodies before DNS', () => withInput(async (input) => {
+    const post = { ...input.request, method: 'POST' as const };
+    for (const url of ['https://api.example.com/v1/x?_method=DELETE', 'https://api.example.com/v1/x?a=1&%5FMETHOD=DELETE']) {
+      await refused({ ...input, request: { ...post, url } }, 'method_not_allowed');
+    }
+    const multipart = (disposition: string) => `--b\r\nContent-Disposition: form-data; ${disposition}\r\n\r\nDELETE\r\n--b--\r\n`;
+    const spoofing: ApiRequestBody[] = [
+      { kind: 'text', value: 'a=1&_method=DELETE', contentType: 'application/x-www-form-urlencoded; charset=utf-8' },
+      // Rack parses a POST without a content type as a form.
+      { kind: 'text', value: '_method=DELETE' },
+      { kind: 'text', value: multipart('name="_method"'), contentType: 'multipart/form-data; boundary=b' },
+      { kind: 'text', value: multipart('name=_method'), contentType: 'multipart/form-data; boundary=b' },
+      { kind: 'json', value: { _method: 'DELETE' } },
+      { kind: 'text', value: '{"_Method":"DELETE"}', contentType: 'application/vnd.api+json' },
+    ];
+    for (const body of spoofing) await refused({ ...input, request: { ...post, body } }, 'method_not_allowed');
+    // Only the whole top-level field counts: Stripe's payment_method is ordinary data.
+    const h = harness();
+    const ordinary: ApiRequestBody[] = [
+      { kind: 'text', value: 'payment_method=pm_fixture', contentType: 'application/x-www-form-urlencoded' },
+      { kind: 'json', value: { payment_method: 'pm_fixture', nested: { _method: 'DELETE' } } },
+      { kind: 'text', value: multipart('filename="_method"; name="file"'), contentType: 'multipart/form-data; boundary=b' },
+      { kind: 'text', value: '_method=DELETE', contentType: 'text/plain' },
+    ];
+    for (const body of ordinary) expect((await h.executor.execute({ ...input, request: { ...post, body } })).status).toBe(200);
+    expect(h.transport).toHaveBeenCalledTimes(ordinary.length);
   }));
 
   it('refuses the injection header name, duplicates, excessive count and bytes', () => withInput(async (input) => {

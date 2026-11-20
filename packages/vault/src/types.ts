@@ -70,7 +70,7 @@ export interface ApiRequestSpec {
   method: HttpMethod;
   /** Absolute https URL. A query is allowed; credentials and fragments are refused. */
   url: string;
-  /** Agent headers. Authorization, Cookie, Proxy-*, Host, Forwarded, X-Forwarded-* and the injection header are refused. */
+  /** Agent headers. Authorization, Cookie, Proxy-*, Host, Forwarded, X-Forwarded-*, method/URL overrides, client-address claims and the injection header are refused. */
   headers?: Readonly<Record<string, string>>;
   body?: ApiRequestBody;
 }
@@ -91,11 +91,12 @@ export interface ApiResponseOutcome {
 }
 
 export type EgressRefusalCode =
-  /** Unparseable URL, a fragment, a port other than 443, or an encoded slash, backslash or NUL in the path. */
+  /** Unparseable URL, a fragment, a port other than 443, an encoded slash, backslash or NUL in the path, or a path parameter (`;`). */
   | 'url_refused'
   | 'scheme_refused'
   | 'credentials_in_url'
   | 'host_not_allowed'
+  /** Off the policy's method list, or a `_method` override field in the query or a form/multipart/JSON body. */
   | 'method_not_allowed'
   | 'path_not_allowed'
   | 'token_management_denied'

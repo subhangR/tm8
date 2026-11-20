@@ -129,6 +129,27 @@ describe('password-manager imports', () => {
     assertSafe(result, [...Object.values(s), 'different-fixture-password']);
   });
 
+  it('keeps sealed metadata in step with the preview: names redacted, repeated usernames refused', () => {
+    const s = secrets();
+    const other = (suffix: string) => ['different', 'fixture', 'password', suffix].join('-');
+    const result = parser.parse(Buffer.from(csv([['name', 'url', 'username', 'password'],
+      ['Name copy ' + s.password, 'https://example.com', 'fixture-a', other('a')],
+      ['Username copy', 'https://example.org', 'user-' + s.password, other('b')],
+      ['Same as password', 'https://example.net', other('c'), other('c')],
+      ['Source', 'https://example.com', 'fixture-a', s.password],
+      ['Duplicate', 'https://example.com', 'fixture-a', other('d')]])));
+    expect(result.candidates.map((candidate) => candidate.index)).toEqual([0, 3, 4]);
+    expect(result.skipped).toEqual([{ index: 1, reason: 'secret_in_metadata' }, { index: 2, reason: 'secret_in_metadata' }]);
+    expect(result.candidates[0]?.name).toBe('[redacted]');
+    expect(result.payloads[0]?.name).toBe('[redacted]');
+    expect(result.candidates.map((candidate) => candidate.duplicateOf)).toEqual([undefined, 0, 0]);
+    // Name, username and origin are what the commit split turns into agent-readable metadata.
+    const metadata = JSON.stringify(result.payloads.map((payload) => payload.type === 'login'
+      ? [payload.name, payload.username, payload.origin] : [payload.name]));
+    for (const secret of [s.password, other('a'), other('b'), other('c'), other('d')]) expect(metadata.includes(secret)).toBe(false);
+    assertSafe(result, [...Object.values(s), other('a'), other('b'), other('c'), other('d')]);
+  });
+
   it('truncates display names with the fixed warning and preserves caller-owned input', () => {
     const s = secrets();
     const bytes = Buffer.from(csv([['name', 'url', 'username', 'password'], ['N'.repeat(201), s.url, 'fixture-user', s.password]]));

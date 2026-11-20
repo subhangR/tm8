@@ -28,8 +28,18 @@ export interface EgressExecutorOptions {
 const TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 const BAD_VALUE = /[\r\n\0]/;
 const BLOCKED_HEADERS = new Set(['authorization', 'cookie', 'host', 'forwarded', 'x-real-ip',
-  'content-length', 'transfer-encoding', 'connection', 'te', 'upgrade', 'keep-alive']);
+  'content-length', 'transfer-encoding', 'connection', 'te', 'upgrade', 'keep-alive',
+  // Method and URL overrides. Google APIs, ASP.NET, Symfony, Express
+  // method-override and IIS URL Rewrite can honor these upstream, which would
+  // escape the method allowlist, path prefixes and deny rules checked here.
+  'x-http-method-override', 'x-http-method', 'x-method-override',
+  'x-original-url', 'x-original-uri', 'x-rewrite-url', 'x-override-url', 'x-host',
+  // Client-address claims, like x-real-ip: the broker is the client.
+  'x-client-ip', 'true-client-ip', 'x-originating-ip', 'x-remote-ip', 'x-remote-addr',
+  'client-ip', 'x-cluster-client-ip', 'cf-connecting-ip', 'fastly-client-ip']);
 const METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']);
+/** Rails (Rack), Laravel/Symfony and Express middleware can take `_method` as the real method. */
+const METHOD_FIELD = /^_method$/i;
 const systemResolver: HostResolver = async (host) => (await dnsLookup(host, { all: true }))
   .map(({ address, family }) => ({ address, family: family as 4 | 6 }));
 
@@ -63,6 +73,24 @@ function blockedHeader(name: string): boolean {
 
 function validateHeader(name: string, value: string): void {
   if (!TOKEN.test(name) || typeof value !== 'string' || BAD_VALUE.test(value)) throw new EgressRefusal('header_refused');
+}
+
+/**
+ * A `_method` field in the body the upstream will parse. Rack parses a POST
+ * without a content type as a form, so a missing type is checked as one.
+ */
+function spoofsMethod(text: string, contentType: string | undefined): boolean {
+  const mime = (contentType ?? '').split(';', 1)[0]!.trim().toLowerCase();
+  if (mime === '' || mime === 'application/x-www-form-urlencoded') {
+    return [...new URLSearchParams(text).keys()].some((key) => METHOD_FIELD.test(key));
+  }
+  if (mime === 'multipart/form-data') return /(?:^|[;\s])name\*?\s*=\s*(?:"_method"|_method(?=[;\s]|$))/im.test(text);
+  if (mime === 'application/json' || mime.endsWith('+json')) {
+    let value: unknown;
+    try { value = JSON.parse(text); } catch { return false; }
+    return value !== null && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).some((key) => METHOD_FIELD.test(key));
+  }
+  return false;
 }
 
 function sameInjection(a: KeyInjection, b: KeyInjection): boolean {
@@ -99,9 +127,13 @@ function parseDestination(input: EgressExecuteInput, connectors: ConnectorRegist
     if (!sameInjection(policy.injection, connector.injection)) throw new EgressRefusal('header_refused');
   }
   if (!METHODS.has(request.method) || !policy.methods.includes(request.method)) throw new EgressRefusal('method_not_allowed');
+  if ([...url.searchParams.keys()].some((key) => METHOD_FIELD.test(key))) throw new EgressRefusal('method_not_allowed');
   let path: string;
   try { path = decodeURIComponent(url.pathname); } catch { throw new EgressRefusal('url_refused'); }
-  if (/[\0-\x1f\x7f\\]/.test(path) || /%(?:2f|5c|00|2e|25)/i.test(path)) throw new EgressRefusal('url_refused');
+  // ';' starts a path parameter: Tomcat-style upstreams strip it before routing,
+  // so `/tokens;x` would miss a deny rule and `/allowed/..;/other` would leave
+  // the allowed prefix after these checks pass.
+  if (/[\0-\x1f\x7f\\;]/.test(path) || /%(?:2f|5c|00|2e|25)/i.test(path)) throw new EgressRefusal('url_refused');
   // Deny wins even when an owner selected an overly broad path prefix.
   const denied = connector ? connector.deny.some((entry) =>
     entry.methods.includes(request.method) && new RegExp(entry.pathPattern.source, entry.pathPattern.flags.replace(/[gy]/g, '')).test(path)) :
@@ -141,6 +173,7 @@ function prepare(input: EgressExecuteInput, url: URL): { headers: Record<string,
       body = Buffer.from(text);
       const contentType = request.body.kind === 'json' ? 'application/json' : request.body.contentType;
       if (contentType !== undefined) { validateHeader('content-type', contentType); headers['content-type'] ??= contentType; }
+      if (spoofsMethod(text, headers['content-type'])) throw new EgressRefusal('method_not_allowed');
     }
     if (canaries.matches(request.url) || canaries.matches(url.href) || Object.values(headers).some((value) => canaries.matches(value)) || (body && canaries.matches(body))) {
       throw new EgressRefusal('canary_in_request');
