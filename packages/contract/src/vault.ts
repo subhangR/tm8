@@ -83,6 +83,12 @@ const StepUpLabel = (max: number) => z.string().min(1).max(max).regex(/^\S(?:[\s
 export const VAULT_BASE_PATH = '/v2/vault';
 /** The standalone capture page (not the SPA). The link is `<origin>/vault/capture/<captureId>#t=<linkToken>`. */
 export const VAULT_CAPTURE_PAGE_PATH = '/vault/capture/';
+/**
+ * The import page: the same standalone page, in import mode. The plaintext export
+ * file is read and sealed there, never in the SPA. It needs no link token: every
+ * import operation already requires the owner's vault session.
+ */
+export const VAULT_IMPORT_PAGE_PATH = '/vault/capture/import';
 export const VAULT_SESSION_COOKIE = 'tm8_vault_session';
 export const VAULT_REFRESH_COOKIE = 'tm8_vault_refresh';
 export const VAULT_CAPTURE_LINK_TTL_SECONDS = 600;
