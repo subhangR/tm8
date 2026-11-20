@@ -21,4 +21,4 @@ export function generatedCanary() {
   return ['gh', 'p_', 'A'.repeat(20), crypto.randomUUID().replace(/-/g, '').slice(0, 16)].join('');
 }
 
-export const tinyPng = () => btoa(String.fromCharCode(137, 80, 78, 71, 13, 10, 26, 10) + '\0\0\0\rIHDR');
+export const tinyPng = () => 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/c9sAAAAASUVORK5CYII=';

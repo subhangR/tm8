@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VAULT_ERROR_REASONS, VAULT_OUTPUT_SCHEMAS, vaultStepUpBoundParams, type VaultOperationName } from '@tm8/contract';
 import { createVaultFixture, VAULT_FIXTURE_IDS as ids } from './fixture';
 import { VAULT_ERROR_COPY, VaultUiError, vaultError } from './errors';
-import { createVaultPort, type VaultPort, type VaultCallOptions, type VaultTransport } from './port';
+import { createStepUpRequester, type VaultPort, type VaultCallOptions } from './port';
+import { browserVaultAuthenticator } from './webauthn';
 import { generatedCanary, installFakeCredentials } from './test-fixtures';
 import { openVaultCapture } from './links';
 
@@ -165,6 +166,41 @@ describe('bound, fresh WebAuthn ceremonies', () => {
     const fixture = createVaultFixture();
     await expect(fixture.port.recoveryCodesCreate()).rejects.toMatchObject({ code: 'authenticator_cancelled' });
     expect(fixture.calls.map((call) => call.op)).toEqual(['vault.webauthn.challenge']);
+  });
+  it('sanitizes synchronous authenticator exceptions for both assertion and registration', async () => {
+    const canary = generatedCanary();
+    const fixture = createVaultFixture({ authenticator: {
+      get() { throw new Error(canary); }, create() { throw new Error(canary); },
+    } });
+    for (const run of [() => fixture.port.recoveryCodesCreate(), () => fixture.port.signIn(),
+      () => fixture.port.passkeyRegister('Fixture', { kind: 'enrollment', code: 'fixture-code' })]) {
+      try { await run(); throw new Error('Expected refusal'); }
+      catch (error) {
+        expect(error).toBeInstanceOf(VaultUiError);
+        expect((error as VaultUiError).code).toBe('request_failed');
+        expect(String(error).includes(canary)).toBe(false);
+      }
+    }
+    expect(fixture.calls.some((call) => call.op === 'vault.recovery.codes.create' || call.op === 'vault.session.begin'
+      || call.op === 'vault.passkeys.registerFinish')).toBe(false);
+  });
+  it('checks challenge expiry again after the authenticator returns', async () => {
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+    const native = installFakeCredentials().get;
+    vi.spyOn(navigator.credentials, 'get').mockImplementation(async () => {
+      clock.mockReturnValue(now + 180_000); return native() as unknown as Credential;
+    });
+    const fixture = createVaultFixture();
+    await expect(fixture.port.recoveryCodesCreate()).rejects.toMatchObject({ code: 'expired' });
+    expect(fixture.calls.some((call) => call.op === 'vault.recovery.codes.create')).toBe(false);
+  });
+  it('rejects attempts to shadow a path parameter before requesting a challenge', async () => {
+    const call = vi.fn();
+    const requestStepUp = createStepUpRequester(call, browserVaultAuthenticator);
+    const body = { clientMutationId: 'fixture', 'path.itemId': ids.item };
+    await expect(requestStepUp('vault.recovery.codes.create', {}, body)).rejects.toMatchObject({ code: 'invalid_input' });
+    expect(call).not.toHaveBeenCalled();
   });
   it('refuses an expired challenge before invoking the authenticator', async () => {
     const source = createVaultFixture(); await source.port.signIn();

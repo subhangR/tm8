@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { VaultApprovalView } from '@tm8/contract';
+import { vaultError } from './errors';
 import {
   CommandNotice, LoadState, Metadata, PageControls, actorLabel, dateLabel, hasOwnerSession,
   useVaultCommand, useVaultNow, useVaultResource, type SurfaceProps,
@@ -44,9 +45,10 @@ function ApprovalMetadata({ approval }: { approval: VaultApprovalView }) {
     </div> : null}
     <Metadata entries={[
       ['Item', approval.itemName], ['Item ID', approval.itemId], ['Requesting actor', actorLabel(approval.requestedBy)],
-      ['Actor kind', approval.requestedBy.kind], ['Actor session', approval.requestedBy.sessionId],
+      ['Actor kind', approval.requestedBy.kind], ['Requesting member', approval.requestedBy.memberId], ['Actor session', approval.requestedBy.sessionId],
       ['Purpose', approval.purpose], ['Expires', dateLabel(approval.expiresAt)],
       ['Decision', approval.decidedAt ? dateLabel(approval.decidedAt) : 'Not decided'],
+      ['Decided by', approval.decidedBy ? actorLabel(approval.decidedBy) : null],
       ['Consumed', approval.consumedAt ? dateLabel(approval.consumedAt) : 'Not consumed'],
       ...Object.entries(approval.boundParams).map(([key, value]): [string, React.ReactNode] =>
         [`Bound ${key}`, Array.isArray(value) ? value.join(', ') : String(value)]),
@@ -70,7 +72,13 @@ function ApprovalDetail({ port, status, readOnly, approvalId, onBack }: SurfaceP
   const disabled = readOnly || command.busy || !hasOwnerSession(status, now);
   function decide(decision: 'approve' | 'deny') {
     if (!approval || !pending) return;
-    void command.run(() => port.approvalDecide(approval.id, approval.intentHash, decision, standing), (result) => {
+    void command.run(async () => {
+      try { return await port.approvalDecide(approval.id, approval.intentHash, decision, standing); }
+      catch (failure) {
+        if (vaultError(failure).code === 'approval_not_pending') resource.reload();
+        throw failure;
+      }
+    }, (result) => {
       setDecided(result); command.setNotice(decision === 'deny' ? 'Approval denied.' : 'Approval approved.');
     });
   }

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { VAULT_IMPORT_PAGE_PATH, type VaultOperationName, type VaultOutput, type VaultStatus } from '@tm8/contract';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { VAULT_IMPORT_PAGE_PATH } from '@tm8/contract';
 import { VaultSection } from './VaultSection';
 import { MaskedScreenshot } from './ActivityPanels';
 import { createVaultFixture, VAULT_FIXTURE_IDS as ids, type VaultFixtureOptions } from './fixture';
@@ -102,7 +102,7 @@ describe('status, session and passkeys', () => {
     await mount({ status: { viewer: { passkeys: 2, recoveryCodesRemaining: 10,
       vaultSession: { sessionId: ids.session, expiresAt: new Date(0).toISOString() } } } });
     expect(screen.getByText('Session expired.')).toBeDefined();
-    await openScreen('Sessions');
+    fireEvent.click(screen.getByRole('button', { name: 'Sessions', exact: true }));
     await screen.findByText('Sign in with a passkey to open this screen.');
     expect(screen.queryByRole('button', { name: /Revoke session/ })).toBeNull();
   });
@@ -188,7 +188,7 @@ describe('metadata items, capture and use-only sharing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'New item' }));
     await waitFor(() => expect(window.open).toHaveBeenCalledOnce());
     expect(vi.mocked(window.open).mock.calls[0].slice(1)).toEqual(['_blank', 'noopener,noreferrer']);
-    await openItem(); expect(screen.getByText('Test secrets only.', { selector: 'strong', exact: true })).toBeDefined();
+    await openItem(); expect(screen.getAllByText('Test secrets only.', { selector: 'strong', exact: true }).length).toBe(2);
     fireEvent.click(screen.getByRole('button', { name: 'Rotate' }));
     await waitFor(() => expect(window.open).toHaveBeenCalledTimes(2));
     const bodies = fixture.calls.filter((call) => call.op === 'vault.captureLinks.create').map((call) => call.opts!.body);
@@ -221,7 +221,7 @@ describe('metadata items, capture and use-only sharing', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Revoke grant to Example teammate' }));
     await screen.findByText('Grant revoked, effective within 5 s. A use already in progress may complete.');
     expect(vi.mocked(navigator.credentials.get).mock.calls.length).toBe(getCount);
-    expect(screen.queryByRole('button', { name: 'Revoke grant to Example teammate' })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Revoke grant to Example teammate' })).toBeNull());
   });
   it('does not offer rotation or grants for a tombstoned item', async () => {
     await mount(); fireEvent.click(await screen.findByRole('button', { name: 'Example deleted note' }));
@@ -252,6 +252,16 @@ describe('approvals and outcomes', () => {
     await screen.findByText('Approval denied.');
     expect(navigator.credentials.get).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Approve with passkey' })).toBeNull();
+  });
+  it('refreshes a stale approval after the broker reports that it has already been decided', async () => {
+    const fixture = await mount(); await openApproval();
+    const approval = await fixture.port.approvalGet(ids.approval);
+    fixture.responses['vault.approvals.get'] = { ...approval, state: 'consumed', consumedAt: new Date().toISOString() };
+    fixture.errors['vault.approvals.decide'] = { details: { reason: 'approval_not_pending' } };
+    fireEvent.click(screen.getByRole('button', { name: 'Approve with passkey' }));
+    await screen.findByText('This approval is consumed. It cannot be decided again.');
+    expect(screen.queryByRole('button', { name: 'Approve with passkey' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Deny' })).toBeNull();
   });
   it.each(['denied', 'expired', 'consumed', 'approved'] as const)('renders a %s approval with no decision controls', async (approvalState) => {
     await mount({ approvalState }); await openApproval();
@@ -309,6 +319,11 @@ describe('sessions, audit and fixed errors on each screen', () => {
     await mount({ chain: 'unverified' }); await openScreen('Audit');
     await screen.findByText('Chain unverified; feed unverified.');
   });
+  it('fails closed on audit verification errors without showing a partially loaded feed', async () => {
+    await mount({ errors: { 'vault.audit.verify': { details: { reason: 'audit_unavailable' } } } });
+    await openScreen('Audit'); await screen.findByText('Audit is unavailable. The vault is read-only.');
+    expect(screen.queryByText('item.imported')).toBeNull();
+  });
   it.each([
     ['Items', 'vault.items.list'], ['Approvals', 'vault.approvals.list'], ['Passkeys', 'vault.passkeys.list'],
     ['Sessions', 'vault.sessions.list'], ['Audit', 'vault.audit.list'],
@@ -331,15 +346,20 @@ describe('canary sweep across every owner surface', () => {
     const canary = generatedCanary();
     const local = vi.spyOn(localStorage, 'setItem'); const session = vi.spyOn(sessionStorage, 'setItem');
     const cookie = vi.spyOn(document, 'cookie', 'set');
-    const logs = (['log', 'info', 'warn', 'error', 'debug', 'trace', 'dir', 'table'] as const)
-      .map((method) => vi.spyOn(console, method).mockImplementation(() => {}));
+    const logs = Object.getOwnPropertyNames(console)
+      .filter((method) => typeof (console as unknown as Record<string, unknown>)[method] === 'function')
+      .map((method) => vi.spyOn(console, method as 'log').mockImplementation(() => {}));
     const push = vi.spyOn(history, 'pushState'); const replace = vi.spyOn(history, 'replaceState');
     const locationBefore = location.href; const cookieBefore = document.cookie;
     const fixture = await mount({ metadata: canary, responses: {
       'vault.recovery.codes.create': { codes: Array.from({ length: 10 }, (_, i) => `${canary}-${i}`), createdAt: new Date().toISOString() },
     } });
+    fireEvent.click(screen.getByRole('button', { name: 'New item' }));
+    await waitFor(() => expect(window.open).toHaveBeenCalledOnce());
     fireEvent.click(await screen.findByRole('button', { name: `${canary} login` }));
     await screen.findByRole('button', { name: `Revoke grant to ${canary} teammate` });
+    fireEvent.click(screen.getByRole('button', { name: 'Rotate' }));
+    await waitFor(() => expect(window.open).toHaveBeenCalledTimes(2));
     fireEvent.click(screen.getByRole('button', { name: 'Back to items' }));
     await openScreen('Approvals');
     fireEvent.click(await screen.findByRole('button', { name: `Review ${canary} login` }));

@@ -23,6 +23,11 @@ export type VaultValidatedCall = <N extends VaultOperationName>(
 
 const mutation = () => ({ clientMutationId: `vault-${crypto.randomUUID()}` });
 
+async function ceremony<T>(perform: () => Promise<T>): Promise<T> {
+  try { return await perform(); }
+  catch (error) { throw vaultError(error); }
+}
+
 function freeze<T>(value: T): T {
   if (value !== null && typeof value === 'object') {
     Object.values(value).forEach(freeze);
@@ -54,7 +59,7 @@ export function createStepUpRequester(call: VaultValidatedCall, authenticator: V
       throw new VaultUiError('invalid_response');
     }
     if (Date.parse(challenge.expiresAt) <= Date.now()) throw new VaultUiError('expired');
-    const assertion = await authenticator.get(challenge.publicKey);
+    const assertion = await ceremony(() => authenticator.get(challenge.publicKey));
     if (Date.parse(challenge.expiresAt) <= Date.now()) throw new VaultUiError('expired');
     return call(action, { params, body: {
       ...unsigned, stepUp: { challengeId: challenge.challengeId, assertion },
@@ -104,7 +109,7 @@ export function createVaultPort(transport: VaultTransport, options: { authentica
         throw new VaultUiError('invalid_response');
       }
       if (Date.parse(challenge.expiresAt) <= Date.now()) throw new VaultUiError('expired');
-      const assertion = await authenticator.get(challenge.publicKey);
+      const assertion = await ceremony(() => authenticator.get(challenge.publicKey));
       if (Date.parse(challenge.expiresAt) <= Date.now()) throw new VaultUiError('expired');
       return call('vault.session.begin', { body: { ...mutation(), challengeId: challenge.challengeId, assertion } });
     },
@@ -120,7 +125,7 @@ export function createVaultPort(transport: VaultTransport, options: { authentica
             ? { enrollmentCode: authorization.code } : { recoveryCode: authorization.code }),
         } });
       if (Date.parse(registration.expiresAt) <= Date.now()) throw new VaultUiError('expired');
-      const credential = await authenticator.create(registration.publicKey);
+      const credential = await ceremony(() => authenticator.create(registration.publicKey));
       if (Date.parse(registration.expiresAt) <= Date.now()) throw new VaultUiError('expired');
       return call('vault.passkeys.registerFinish', {
         params: { registrationId: registration.registrationId }, body: { ...mutation(), credential },
