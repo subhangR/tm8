@@ -137,6 +137,26 @@ pre-submit and end screenshot are taken; the current seam returns the final one
 and the earlier PNG is zeroized. Masking is defense in depth for a trusted site;
 it is not a guarantee against arbitrary malicious rendering or transformations.
 
+## Known limits for the independent review
+
+The lead integration review (subtask `01a1fac0-e500`) left these open on purpose.
+None blocks the flag-off build with test material only. The security review and the
+penetration test must assess each one before the vault holds a real secret.
+
+* Masking finds text in the DOM and in form values. Canvas drawing, CSS generated
+  content, transformed text and closed shadow roots on the bound origin can still
+  show a filled value in the screenshot that is returned to the agent.
+* The off-origin value guard checks HTTP requests only. Page WebSockets are closed
+  and service workers are blocked, but neither WebRTC nor WebSockets opened from
+  dedicated workers has been shown to be covered. Custom encodings are not covered.
+* The agent chooses `startUrl` within the bound origin. On multi-tenant origins,
+  restrict it to the item's login path or to an allowlist (follow-up).
+* If a fill child fails to spawn and never emits `exit`, the worker stays busy
+  and refuses fills until it restarts. This fails closed and affects availability only.
+* The broker must set `FillIntent.devMode` from its own configuration, never from
+  the agent's request. Changing an item's origin must require an owner WebAuthn
+  step-up, because the origin is the fill's only trust anchor.
+
 ## Rollback
 
 Set the vault flag off, stop/disable `tm8-vault-fill`, and stop broker calls to its
