@@ -36,6 +36,7 @@ export class CapturePage {
   private readonly crypto: Crypto;
   private readonly credentials: Pick<CredentialsContainer, 'get'>;
   private readonly abort: AbortController;
+  private credentialAbort: AbortController | null = null;
   private readonly mode: Mode;
   private token: string | null = null;
   private capture: CaptureOpen | null = null;
@@ -77,6 +78,7 @@ export class CapturePage {
     this.disposed = true;
     this.epoch += 1;
     this.abort.abort();
+    this.credentialAbort?.abort();
     this.stopTimer();
     this.clear();
     this.token = null;
@@ -107,6 +109,19 @@ export class CapturePage {
   private assertActive(epoch = this.epoch): void {
     if (this.disposed || epoch !== this.epoch) throw new PageError('failed');
     if (this.expired || Date.now() >= this.expires) throw new PageError('expired');
+  }
+
+  private async credentialCeremony<T>(action: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const controller = new this.win.AbortController();
+    this.credentialAbort?.abort();
+    this.credentialAbort = controller;
+    const abort = (): void => { controller.abort(); };
+    this.abort.signal.addEventListener('abort', abort, { once: true });
+    try { return await action(controller.signal); }
+    finally {
+      this.abort.signal.removeEventListener('abort', abort);
+      if (this.credentialAbort === controller) this.credentialAbort = null;
+    }
   }
 
   private element<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLElementTagNameMap[K] {
@@ -198,7 +213,7 @@ export class CapturePage {
         const challenge = await this.api.call<Challenge>('vault.webauthn.challenge', {}, { ...this.api.command(), purpose: 'sign_in' });
         this.assertActive(epoch);
         if (challenge.purpose !== 'sign_in') throw new PageError('passkey_failed');
-        const assertion = await getAssertion(challenge, this.credentials, this.abort.signal);
+        const assertion = await this.credentialCeremony((signal) => getAssertion(challenge, this.credentials, signal));
         this.assertActive(epoch);
         await this.api.call('vault.session.begin', {}, { ...this.api.command(), challengeId: challenge.challengeId, assertion });
         this.assertActive(epoch);
@@ -227,7 +242,7 @@ export class CapturePage {
       const seconds = Math.max(0, Math.ceil((this.expires - Date.now()) / 1000));
       node.textContent = `Expires in ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
       if (!seconds) {
-        this.expired = true; this.epoch += 1; this.clear(); this.token = null;
+        this.expired = true; this.epoch += 1; this.credentialAbort?.abort(); this.clear(); this.token = null;
         this.disable(true); this.message(errorCopy(new PageError('expired')), true); this.stopTimer();
       }
     };
@@ -251,7 +266,7 @@ export class CapturePage {
         if (!this.token) throw new PageError('invalid_link');
         const path = { captureId: capture.captureId };
         const body = { ...this.api.command(), linkToken: this.token, sealed };
-        const proof = await stepUp(this.api, this.credentials, this.abort.signal, 'vault.captures.submit', path, body, () => this.assertActive(epoch));
+        const proof = await this.credentialCeremony((signal) => stepUp(this.api, this.credentials, signal, 'vault.captures.submit', path, body, () => this.assertActive(epoch)));
         this.assertActive(epoch);
         const result = await this.api.call<{ name: string }>('vault.captures.submit', path, { ...body, stepUp: proof });
         this.assertActive(epoch);
@@ -302,6 +317,12 @@ export class CapturePage {
       const format = IMPORT_FORMATS.includes(value as ImportFormat) ? value as ImportFormat : undefined;
       this.clearFields();
       const session = await this.api.call<ImportSession>('vault.imports.begin', {}, { ...this.api.command(), ...(format ? { format } : {}) });
+      // Cancel may arrive while begin is pending. Revoke the new empty session
+      // as soon as its id becomes known, without reopening the cancelled UI.
+      if (!this.disposed && epoch !== this.epoch) {
+        await this.api.call('vault.imports.cancel', { importId: session.importId }, this.api.command());
+        return;
+      }
       this.assertActive(epoch); this.importSession = session;
       this.renderImportFile(session); this.countdown(session.expiresAt);
     });
@@ -373,7 +394,7 @@ export class CapturePage {
       const path = { importId: session.importId };
       const body = { ...this.api.command(), rows };
       this.clearFields();
-      const proof = await stepUp(this.api, this.credentials, this.abort.signal, 'vault.imports.commit', path, body, () => this.assertActive(epoch));
+      const proof = await this.credentialCeremony((signal) => stepUp(this.api, this.credentials, signal, 'vault.imports.commit', path, body, () => this.assertActive(epoch)));
       this.assertActive(epoch);
       const result = await this.api.call<ImportResult>('vault.imports.commit', path, { ...body, stepUp: proof });
       this.assertActive(epoch);
@@ -429,6 +450,7 @@ export class CapturePage {
 
   private async cancelImport(): Promise<void> {
     if (this.disposed) return;
+    this.credentialAbort?.abort();
     this.epoch += 1; const epoch = this.epoch;
     this.clear(); this.disable(true); this.busy = true;
     try {

@@ -181,4 +181,31 @@ describe('import page', () => {
     expect(h.win.document.querySelector('#vault-page')?.dataset.state).toBe('cancelled');
     expect(h.requests.some((request) => request.operation === 'vault.imports.commit')).toBe(false);
   });
+
+  it('cancels a session whose begin response arrives after cancellation', async () => {
+    let release: ((value: Response) => void) | undefined;
+    const h = make({ onRequest: (request) => request.operation === 'vault.imports.begin' ? new Promise<Response>((resolve) => { release = resolve; }) : undefined });
+    await h.mount().ready; submit(h);
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    h.win.document.querySelector<HTMLButtonElement>('[data-cancel]')!.click(); await state(h, 'cancelled');
+    release!(response({ importId: h.importId, expiresAt: new Date(Date.now() + 10000).toISOString(), publicKey: h.broker.publicKey(), maxCiphertextBytes: 8 * 1024 * 1024 }));
+    await vi.waitFor(() => expect(h.requests.at(-1)?.operation).toBe('vault.imports.cancel'));
+    expect(h.win.document.querySelector('#vault-page')?.dataset.state).toBe('cancelled');
+  });
+
+  it('aborts a pending authenticator when the owner cancels the import', async () => {
+    const h = make(); await begin(h); await upload(h);
+    let signal: AbortSignal | undefined;
+    let release: (() => void) | undefined;
+    h.credentials.get.mockImplementation((options: CredentialRequestOptions) => new Promise((_resolve, reject) => {
+      signal = options.signal;
+      release = () => reject(new Error('Synthetic authenticator cancellation'));
+    }));
+    submit(h); await vi.waitFor(() => expect(signal).toBeDefined());
+    h.win.document.querySelector<HTMLButtonElement>('[data-cancel]')!.click(); await state(h, 'cancelled');
+    expect(signal!.aborted).toBe(true); release!();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(h.requests.some((request) => request.operation === 'vault.imports.commit')).toBe(false);
+    expect(h.win.document.querySelector('#vault-page')?.dataset.state).toBe('cancelled');
+  });
 });

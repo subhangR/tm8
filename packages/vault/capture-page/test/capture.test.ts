@@ -92,6 +92,27 @@ describe('capture page', () => {
     expect(h.credentials.get).not.toHaveBeenCalled();
   });
 
+  it('zeroes the capture plaintext bytes before requesting step-up', async () => {
+    const plaintextBuffers: Uint8Array[] = [];
+    const fixture = payloadFixture('login');
+    const encode = TextEncoder.prototype.encode;
+    vi.spyOn(TextEncoder.prototype, 'encode').mockImplementation(function (value?: string) {
+      const bytes = encode.call(this, value);
+      if (value?.includes(String(fixture.password))) plaintextBuffers.push(bytes);
+      return bytes;
+    });
+    const h = make({ onRequest: (request) => {
+      if (request.body.purpose === 'step_up') {
+        expect(plaintextBuffers).toHaveLength(1);
+        expect(plaintextBuffers[0]!.every((byte) => byte === 0)).toBe(true);
+      }
+      return undefined;
+    } });
+    await h.mount().ready; fillCapture(h, fixture); submit(h); await state(h, 'stored');
+    expect(plaintextBuffers).toHaveLength(1);
+    expect(plaintextBuffers[0]!.every((byte) => byte === 0)).toBe(true);
+  });
+
   it('clears every field on pagehide, disables the form and aborts requests', async () => {
     const h = make(); await h.mount().ready;
     const fixture = payloadFixture('login');
