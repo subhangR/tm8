@@ -35,12 +35,17 @@ const systemResolver: HostResolver = async (host) => (await dnsLookup(host, { al
 
 // Gaps in the shared guard at base 7e65fe28 (to be moved there by WS-A):
 // 192.88.99/24 (deprecated 6to4), IPv4-compatible/reserved IPv6 outside
-// 2000::/3, IETF special-purpose 2001::/23, and documentation 3fff::/20.
+// 2000::/3, IETF special-purpose 2001::/23, former 6bone 3ffe::/16 and
+// documentation 3fff::/20. Sources:
+// https://www.iana.org/assignments/iana-ipv4-special-registry/
+// https://www.iana.org/assignments/iana-ipv6-special-registry/
+// https://www.rfc-editor.org/rfc/rfc3701 (6bone phaseout).
 // These are additions, not a fork of the shared deny list.
 const EXTRA_V4 = new BlockList(); EXTRA_V4.addSubnet('192.88.99.0', 24, 'ipv4');
 const GLOBAL_V6 = new BlockList(); GLOBAL_V6.addSubnet('2000::', 3, 'ipv6');
 const EXTRA_V6 = new BlockList();
 EXTRA_V6.addSubnet('2001::', 23, 'ipv6'); EXTRA_V6.addSubnet('3fff::', 20, 'ipv6');
+EXTRA_V6.addSubnet('3ffe::', 16, 'ipv6');
 
 function nonPublic({ address, family }: ResolvedAddress): boolean {
   if (address.includes('%') || isIP(address) !== family || isNonPublicAddress(address)) return true;
@@ -174,7 +179,7 @@ function inject(input: EgressExecuteInput, url: URL, headers: Record<string, str
 function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
     const onAbort = () => reject(new EgressRefusal('timeout'));
-    if (signal.aborted) { onAbort(); return; }
+    if (signal.aborted) { void work.catch(() => {}); onAbort(); return; }
     signal.addEventListener('abort', onAbort, { once: true });
     work.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
   });
@@ -220,8 +225,7 @@ async function readCapped(response: PinnedHttpsResponse, maxBytes: number): Prom
     if (error instanceof EgressRefusal) throw error;
     // A malformed compressed representation is content, not an agent-visible
     // upstream exception. Network stream failures retain their typed refusal.
-    const code = (error as { code?: string } | null)?.code ?? '';
-    if (code.startsWith('Z_') || code.startsWith('ERR_PADDING') || code.startsWith('ERR_BROTLI')) return { body: Buffer.alloc(0), reason: 'binary' };
+    if (decoder?.errored && !response.body.errored) return { body: Buffer.alloc(0), reason: 'binary' };
     throw new EgressRefusal('upstream_unreachable');
   } finally {
     if (decoder) { response.body.unpipe(decoder); decoder.destroy(); }
@@ -257,7 +261,9 @@ export function createEgressExecutor(options: EgressExecutorOptions = {}): Egres
         pendingResponse.then((late) => { if (controller.signal.aborted) late.close(); }, () => {});
         response = await abortable(pendingResponse, controller.signal);
         if (response.status >= 300 && response.status < 400) throw new EgressRefusal('redirect_refused');
-        const result = await abortable(readCapped(response, input.policy.maxResponseBytes), controller.signal);
+        const pendingBody = readCapped(response, input.policy.maxResponseBytes);
+        pendingBody.then((late) => { if (controller.signal.aborted) late.body.fill(0); }, () => {});
+        const result = await abortable(pendingBody, controller.signal);
         decoded = result.body;
         const outcome = filter({ status: response.status, headers: response.headers, body: decoded,
           contentType: response.headers['content-type'] ?? null, key: input.key, canaries: input.canaries,
@@ -266,6 +272,7 @@ export function createEgressExecutor(options: EgressExecutorOptions = {}): Egres
       } catch (error) {
         if (controller.signal.aborted) throw new EgressRefusal('timeout');
         if (error instanceof EgressRefusal) throw error;
+        if (['ETIMEDOUT', 'ABORT_ERR'].includes((error as { code?: string } | null)?.code ?? '')) throw new EgressRefusal('timeout');
         throw new EgressRefusal('upstream_unreachable');
       } finally {
         clearTimeout(totalTimer); input.signal?.removeEventListener('abort', onAbort);

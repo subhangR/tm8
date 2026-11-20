@@ -128,11 +128,13 @@ describe('request policy (acceptance 8)', () => {
 describe('connector denials (acceptance 8)', () => {
   const cases: Record<string, string[]> = {
     github: ['/authorizations', '/app/installations/1/access_tokens', '/repos/a/b/keys', '/repos/a/b/hooks',
-      '/repos/a/b/actions/secrets', '/login/oauth/access_token', '/orgs/a/invitations'],
+      '/repos/a/b/actions/secrets', '/login/oauth/access_token', '/orgs/a/invitations', '/orgs/a/personal-access-token-requests',
+      '/app/hook/config', '/repos/a/b/collaborators'],
     openai: ['/v1/organization/admin_api_keys', '/v1/realtime/client_secrets', '/v1/webhooks'],
     anthropic: ['/v1/organizations/api_keys', '/v1/api_keys'],
-    stripe: ['/v1/tokens', '/v1/webhook_endpoints', '/v1/apps/secrets', '/oauth/token'],
-    slack: ['/api/oauth.v2.access', '/api/apps.connections.open', '/api/admin.users.invite', '/api/auth.tokens', '/api/users.admin.invite'],
+    stripe: ['/v1/tokens', '/v1/webhook_endpoints', '/v1/apps/secrets', '/oauth/token', '/v1/terminal/connection_tokens', '/v1/account_sessions'],
+    slack: ['/api/oauth.v2.access', '/api/apps.connections.open', '/api/admin.users.invite', '/api/auth.tokens', '/api/users.admin.invite',
+      '/api/apps.auth.external.get', '/api/rtm.connect'],
   };
   it.each(Object.keys(cases))('denies every %s entry, with broad owner allowances', (id) => withInput(async (input) => {
     const connector = CONNECTORS[id]!;
@@ -168,7 +170,7 @@ describe('SSRF and DNS pinning (acceptance 9)', () => {
     '198.51.100.1', '203.0.113.1', '224.0.0.1', '239.1.2.3', '240.1.2.3', '255.255.255.255',
     '::', '::1', 'fc00::1', 'fdff::1', 'fe80::1', 'fec0::1', 'ff02::1', '::ffff:127.0.0.1', '::ffff:10.1.2.3',
     '::ffff:100.64.0.1', '::ffff:169.254.169.254', '::ffff:0a01:0203', '::127.0.0.1', '64:ff9b::a00:1',
-    '100::1', '2001::1', '2001:2::1', '2001:20::1', '2001:db8::1', '2002:7f00:1::1', '3fff::1', '5f00::1'];
+    '100::1', '2001::1', '2001:2::1', '2001:20::1', '2001:db8::1', '2002:7f00:1::1', '3ffe::1', '3fff::1', '5f00::1'];
   it.each(privateAddresses)('refuses non-public DNS answer %s', (address) => withInput(async (input) => {
     const resolve = vi.fn(async () => [{ address, family: isIP(address) as 4 | 6 }]);
     const h = harness({ resolve });
@@ -228,7 +230,9 @@ describe('response and failure path (acceptance 10)', () => {
   it('withholds wire/decoded binary and malformed or unsupported encodings', () => withInput(async (input) => {
     for (const [body, headers] of [[Buffer.from([0, 1, 2]), { 'content-type': 'image/png' }],
       [Buffer.from('text'), { 'content-type': 'text/plain', 'content-encoding': 'compress' }],
-      [Buffer.from('not gzip'), { 'content-type': 'text/plain', 'content-encoding': 'gzip' }]] as const) {
+      [Buffer.from('not gzip'), { 'content-type': 'text/plain', 'content-encoding': 'gzip' }],
+      [Buffer.from('not deflate'), { 'content-type': 'text/plain', 'content-encoding': 'deflate' }],
+      [Buffer.from([0xff, 0xff, 0xff]), { 'content-type': 'text/plain', 'content-encoding': 'br' }]] as const) {
       expect((await harness({ transport: async () => response(body, headers) }).executor.execute(input)).body).toEqual({ kind: 'withheld', reason: 'binary' });
     }
   }));
@@ -267,6 +271,23 @@ describe('response and failure path (acceptance 10)', () => {
     const active = new AbortController();
     const transport = vi.fn(async () => { active.abort(); return response(); });
     await expect(harness({ transport }).executor.execute({ ...input, signal: active.signal })).rejects.toMatchObject({ code: 'timeout' });
+  }));
+
+  it('handles abort during a failing resolver, late transports and transport timeout codes', () => withInput(async (input) => {
+    const active = new AbortController();
+    const resolve = async () => { active.abort(); throw new Error('resolver detail'); };
+    await expect(harness({ resolve }).executor.execute({ ...input, signal: active.signal })).rejects.toMatchObject({ code: 'timeout' });
+    for (const code of ['ETIMEDOUT', 'ABORT_ERR']) {
+      await expect(harness({ transport: async () => { throw Object.assign(new Error('unsafe detail'), { code }); } }).executor.execute(input))
+        .rejects.toMatchObject({ code: 'timeout', message: 'egress refused: timeout' });
+    }
+    const lateResponse = response();
+    let finish!: (value: PinnedHttpsResponse) => void;
+    const pending = new Promise<PinnedHttpsResponse>((resolveLate) => { finish = resolveLate; });
+    await expect(harness({ transport: () => pending, totalTimeoutMs: 15 }).executor.execute(input)).rejects.toMatchObject({ code: 'timeout' });
+    finish(lateResponse);
+    await Promise.resolve();
+    expect(lateResponse.close).toHaveBeenCalled();
   }));
 
   it('only throws fixed EgressRefusal messages for policy decisions', () => {

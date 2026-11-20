@@ -1,6 +1,6 @@
 import { TextDecoder } from 'node:util';
 import type { ApiResponseBody, ApiResponseOutcome, ResponseFilter, TokenSpanScanner } from '../types.js';
-import { compileMatcher, encodedPatterns, mergeSpans, type Span } from '../canary/encodings.js';
+import { compileMatcher, decodedView, encodedPatterns, mergeSpans, sourceSpan, type Span } from '../canary/encodings.js';
 
 const ALLOWED_HEADERS = new Set([
   'content-type', 'content-language', 'etag', 'last-modified', 'cache-control',
@@ -34,9 +34,16 @@ function basicSpans(text: string, key: string): Span[] {
 
 function redactor(key: string, scanner?: TokenSpanScanner) {
   const matcher = compileMatcher(encodedPatterns(key));
+  const rawMatcher = compileMatcher([{ text: key }]);
   return (text: string): { value: string; count: number } => {
+    const decodedSpans: Span[] = [];
+    for (const encoding of ['json', 'url'] as const) {
+      if (!text.includes(encoding === 'json' ? '\\' : '%') && (encoding !== 'url' || !text.includes('+'))) continue;
+      const view = decodedView(text, encoding);
+      decodedSpans.push(...rawMatcher.occurrences(view.text).map((span) => sourceSpan(view, span)));
+    }
     const spans = mergeSpans([
-      ...matcher.occurrences(text), ...basicSpans(text, key), ...(scanner?.(text) ?? []),
+      ...matcher.occurrences(text), ...decodedSpans, ...basicSpans(text, key), ...(scanner?.(text) ?? []),
     ], text.length);
     const chunks: string[] = [];
     let offset = 0;

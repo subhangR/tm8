@@ -40,6 +40,12 @@ export const CONNECTORS: ConnectorRegistry = Object.freeze({
       { methods: ALL, pathPattern: /(?:^|\/)oauth(?:\/|$)/i },
       // https://docs.github.com/en/rest/orgs/members#create-an-organization-invitation
       { methods: ALL, pathPattern: /(?:^|\/)invitations?(?:\/|$)/i },
+      // https://docs.github.com/en/rest/orgs/personal-access-tokens
+      { methods: ALL, pathPattern: /(?:^|\/)personal-access-tokens?(?:-requests)?(?:\/|$)/i },
+      // https://docs.github.com/en/rest/apps/webhooks — the GitHub App spelling is singular 'hook'.
+      { methods: ALL, pathPattern: /^\/app\/hook(?:\/|$)/i },
+      // https://docs.github.com/en/rest/collaborators/collaborators and https://docs.github.com/en/rest/orgs/members
+      { methods: ALL, pathPattern: /(?:^|\/)(?:collaborators|outside_collaborators|memberships)(?:\/|$)/i },
     ],
   },
   openai: {
@@ -49,7 +55,7 @@ export const CONNECTORS: ConnectorRegistry = Object.freeze({
       // https://platform.openai.com/docs/api-reference/admin-api-keys — deny the entire administration surface.
       { methods: ALL, pathPattern: /^\/v1\/(?:organization|organizations|admin)(?:\/|$)/i },
       // https://platform.openai.com/docs/api-reference/realtime-sessions — ephemeral credentials/client secrets.
-      { methods: ALL, pathPattern: /(?:^|\/)(?:api_keys|admin_api_keys|service_accounts|client_secrets|sessions|tokens?|keys|credentials)(?:\/|$)/i },
+      { methods: ALL, pathPattern: /(?:^|\/)(?:api_keys|admin_api_keys|service_accounts|client_secrets|sessions|transcription_sessions|tokens?|keys|credentials)(?:\/|$)/i },
       // https://platform.openai.com/docs/guides/webhooks — registration can create an exfiltration channel.
       { methods: ALL, pathPattern: /(?:^|\/)(?:webhooks|hooks|oauth|authorizations|secrets|invitations)(?:\/|$)/i },
     ],
@@ -77,6 +83,10 @@ export const CONNECTORS: ConnectorRegistry = Object.freeze({
       { methods: ALL, pathPattern: /^\/v1\/apps\/secrets(?:\/|$)/i },
       // https://docs.stripe.com/connect/oauth-reference — OAuth exchange/revocation and client-secret sessions.
       { methods: ALL, pathPattern: /(?:^|\/)(?:oauth|secrets|sessions|authorizations|invitations)(?:\/|$)/i },
+      // https://docs.stripe.com/api/terminal/connection_tokens — Terminal credentials.
+      { methods: ALL, pathPattern: /(?:^|\/)connection_tokens(?:\/|$)/i },
+      // https://docs.stripe.com/api/account_sessions and https://docs.stripe.com/api/accounts/login_link
+      { methods: ALL, pathPattern: /(?:^|\/)(?:account_sessions|account_links|login_links|verification_sessions)(?:\/|$)/i },
     ],
   },
   slack: {
@@ -93,6 +103,10 @@ export const CONNECTORS: ConnectorRegistry = Object.freeze({
       { methods: ALL, pathPattern: /(?:^|[/.])(?:tokens?|api_keys|keys|credentials|secrets|authorizations|webhooks|hooks|ssh_keys|gpg_keys|deploy_keys|sessions|invitations)(?:[/.]|$)/i },
       // https://docs.slack.dev/reference/methods/users.admin.invite/ — legacy invitation endpoint.
       { methods: ALL, pathPattern: /^\/api\/users\.admin\.(?:invite|setAdmin|setOwner)(?:[./]|$)/i },
+      // https://docs.slack.dev/reference/methods/apps.auth.external.get/ — returns an external OAuth token.
+      { methods: ALL, pathPattern: /^\/api\/apps\.(?:auth|managed\.permissions|user\.connection)(?:[./]|$)/i },
+      // https://docs.slack.dev/reference/methods/rtm.connect/ — returns a credentialed WebSocket URL.
+      { methods: ALL, pathPattern: /^\/api\/rtm\.(?:connect|start)(?:[./]|$)/i },
     ],
   },
 });

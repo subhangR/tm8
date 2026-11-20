@@ -68,4 +68,14 @@ describe('canaries', () => {
     expect(set.matches('z'.repeat(500_000))).toBe(false);
     expect(set.matches(`prefix ${JSON.stringify(values.at(-1)).slice(1, -1)} suffix`)).toBe(true);
   });
+
+  it('matches mixed JSON escapes and percent-escape casing without repeated decoding', () => {
+    const value = 'unicode-é-🔒/quote"-long-value';
+    const set = buildCanarySet([value]);
+    const json = JSON.stringify(value).slice(1, -1).replace('unicode', '\\u0075nicode').replace('é', '\\u00e9');
+    expect(set.matches(`{"value":"${json}"}`)).toBe(true);
+    const url = encodeURIComponent(value).replace('%2F', '%2f').replace('%C3', '%c3');
+    expect(set.matches(`data=${url}`)).toBe(true);
+    expect(set.matches('invalid escapes %GG \\uZZZZ')).toBe(false);
+  });
 });

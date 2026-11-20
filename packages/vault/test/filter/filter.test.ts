@@ -112,4 +112,25 @@ describe('response filter (acceptance 10)', () => {
       expect(run('hello', { scanTokens: () => { throw new Error('scanner failed'); } }).body).toEqual({ kind: 'withheld', reason: 'binary' });
     } finally { key.dispose(); }
   });
+
+  it('redacts mixed JSON and URL escapes with exact original-source spans', () => {
+    const escaped = JSON.stringify(keyValue).slice(1, -1).replace('fixture', '\\u0066ixture');
+    const json = run(`{"value":"${escaped}","other":"safe"}`, { contentType: 'application/json' });
+    expect(json.body).toEqual({ kind: 'json', value: { value: '[redacted]', other: 'safe' } });
+    expect(json.redactions).toBe(1);
+    const mixedUrl = encodeURIComponent(keyValue).replace('%2F', '%2f');
+    expect(run(`x=${mixedUrl}&y=safe`).body).toEqual({ kind: 'text', value: 'x=[redacted]&y=safe' });
+    expect(run(`x=${mixedUrl}&y=${mixedUrl}`).redactions).toBe(2);
+  });
+
+  it('preserves exact Unicode source positions when decoding form escapes', () => {
+    const value = 'é-🔒-more-than-twelve';
+    const key = SecretMaterial.fromUtf8(JSON.stringify({ key: value }));
+    try {
+      const encoded = `prefix+${encodeURIComponent(value).replace('%C3', '%c3')}+suffix`;
+      const outcome = run(encoded, { key });
+      expect(outcome.body).toEqual({ kind: 'text', value: 'prefix+[redacted]+suffix' });
+      expect(outcome.redactions).toBe(1);
+    } finally { key.dispose(); }
+  });
 });

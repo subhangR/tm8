@@ -7,6 +7,60 @@ export interface EncodedPattern {
 
 export interface Span { start: number; end: number }
 
+export interface DecodedView {
+  text: string;
+  starts: number[];
+  ends: number[];
+}
+
+/** One decoding pass, with UTF-16 source coordinates for redaction. */
+export function decodedView(source: string, encoding: 'json' | 'url'): DecodedView {
+  const chunks: string[] = [];
+  const starts: number[] = [];
+  const ends: number[] = [];
+  const push = (value: string, start: number, end: number) => {
+    chunks.push(value);
+    for (let j = 0; j < value.length; j += 1) { starts.push(start); ends.push(end); }
+  };
+  for (let i = 0; i < source.length;) {
+    if (encoding === 'json' && source[i] === '\\') {
+      const escaped = source[i + 1];
+      if (escaped === 'u' && /^[0-9a-f]{4}$/i.test(source.slice(i + 2, i + 6))) {
+        push(String.fromCharCode(parseInt(source.slice(i + 2, i + 6), 16)), i, i + 6); i += 6; continue;
+      }
+      const simple: Record<string, string> = { '"': '"', '\\': '\\', '/': '/', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t' };
+      if (escaped !== undefined && Object.hasOwn(simple, escaped)) {
+        push(simple[escaped]!, i, i + 2); i += 2; continue;
+      }
+    }
+    if (encoding === 'url' && source[i] === '%' && /^[0-9a-f]{2}$/i.test(source.slice(i + 1, i + 3))) {
+      const start = i;
+      const bytes: number[] = [];
+      while (source[i] === '%' && /^[0-9a-f]{2}$/i.test(source.slice(i + 1, i + 3))) {
+        bytes.push(parseInt(source.slice(i + 1, i + 3), 16)); i += 3;
+      }
+      const buffer = Buffer.from(bytes);
+      try {
+        const decoded = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(buffer);
+        let offset = start;
+        for (const char of decoded) {
+          const end = offset + Buffer.byteLength(char) * 3;
+          push(char, offset, end); offset = end;
+        }
+      } catch {
+        for (let at = start; at < i; at += 1) push(source[at]!, at, at + 1);
+      } finally { buffer.fill(0); }
+      continue;
+    }
+    push(encoding === 'url' && source[i] === '+' ? ' ' : source[i]!, i, i + 1); i += 1;
+  }
+  return { text: chunks.join(''), starts, ends };
+}
+
+export function sourceSpan(view: DecodedView, span: Span): Span {
+  return { start: view.starts[span.start]!, end: view.ends[span.end - 1]! };
+}
+
 export function encodedPatterns(value: string): EncodedPattern[] {
   const patterns: EncodedPattern[] = [];
   const seen = new Set<string>();

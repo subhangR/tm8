@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { CanarySet } from '../types.js';
-import { compileMatcher, encodedPatterns } from './encodings.js';
+import { compileMatcher, decodedView, encodedPatterns } from './encodings.js';
 
 /** Fresh decoys only: none of these values belongs to an account or a card. */
 export function mintCanary(kind: 'api_key' | 'password' | 'card'): string {
@@ -19,7 +19,7 @@ export function mintCanary(kind: 'api_key' | 'password' | 'card'): string {
 }
 
 /**
- * O(n) matching for n input bytes, including the byte-to-latin1 view; no regex
+ * O(n) matching for n input bytes, including three fixed decoding views; no regex
  * alternation, repeated per-canary scan, decoding loop or unbounded backtrack.
  * The precompiled Aho-Corasick automaton takes O(p) space for p pattern bytes.
  * Only fully known sextets are matched at offsets 0, 1 and 2 in a base64 stream,
@@ -38,7 +38,14 @@ export function buildCanarySet(values: readonly string[]): CanarySet {
   return Object.freeze({
     size: unique.length,
     matches(data: string | Buffer): boolean {
-      return matcher.has((Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8')).toString('latin1'));
+      const bytes = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8');
+      if (matcher.has(bytes.toString('latin1'))) return true;
+      const text = typeof data === 'string' ? data : data.toString('utf8');
+      for (const encoding of ['json', 'url'] as const) {
+        if (!text.includes(encoding === 'json' ? '\\' : '%') && (encoding !== 'url' || !text.includes('+'))) continue;
+        if (matcher.has(Buffer.from(decodedView(text, encoding).text, 'utf8').toString('latin1'))) return true;
+      }
+      return false;
     },
   });
 }
