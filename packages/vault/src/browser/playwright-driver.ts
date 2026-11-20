@@ -124,7 +124,9 @@ export class PlaywrightFillDriver implements FillDriver {
             catch { await result.dispose(); routeRefusal = 'cross_origin_redirect'; await route.abort('blockedbyclient'); return; }
             const targetOffOrigin = !sameOrigin(target, intent.origin, { devMode: intent.devMode });
             const retainsBody = status === 307 || status === 308;
-            if (targetOffOrigin && (carriesValue(target) || (retainsBody && carriesValue(postData)))) {
+            // A form charset or multipart encoding may transform the password.
+            // Never forward ANY submitted body off-origin with 307/308.
+            if (targetOffOrigin && (carriesValue(target) || (retainsBody && postData.length > 0))) {
               await result.dispose();
               routeRefusal = 'cross_origin_form_action';
               await route.abort('blockedbyclient');
@@ -184,7 +186,12 @@ export class PlaywrightFillDriver implements FillDriver {
       if (action === null) return failed('fields_not_found', page.url());
       code = checkFormAction(action, page.url(), intent.origin, intent.devMode);
       if (code) return failed(code, page.url());
-      const username = await usernameField(password);
+      if (intent.submit) {
+        const initialTarget = await submissionTarget(password, await submitButton(page, fieldMarker));
+        code = initialTarget === null ? 'fields_not_found' : checkFormAction(initialTarget, page.url(), intent.origin, intent.devMode);
+        if (code) return failed(code, page.url());
+      }
+      const username = await usernameField(page, password, fieldMarker);
       if (username) await username.evaluate((element, marker) => element.setAttribute(marker, 'username'), fieldMarker);
       phase = 'filling';
       makeVariants();
@@ -208,19 +215,20 @@ export class PlaywrightFillDriver implements FillDriver {
 
       if (intent.submit) {
         // A checked submitter may override the form action; check that too.
-        const form = password.locator('xpath=ancestor::form[1]');
-        const submit = await firstUsable(form, 'button:not([type]), button[type="submit"], input[type="submit"], input[type="image"]');
-        const target = submit ? await submit.evaluate((element) => {
-          const button = element as HTMLButtonElement;
-          return button.hasAttribute('formaction') ? button.formAction : button.form?.action ?? null;
-        }) : await formAction(password);
+        const submit = await submitButton(page, fieldMarker);
+        const target = await submissionTarget(password, submit);
         code = checkTopFrameUrl(page.url(), intent.origin, intent.devMode);
         code ??= target === null ? 'fields_not_found' : checkFormAction(target, page.url(), intent.origin, intent.devMode);
         if (code || routeRefusal) return failed(routeRefusal ?? code ?? 'navigation_failed', page.url());
+        const valid = await password.evaluate((element) => (element as HTMLInputElement).form?.checkValidity() ?? false);
+        if (!valid) return failed('fields_not_found', page.url());
         phase = 'submitting';
         const navigation = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: Math.min(timeoutMs, 5_000) }).catch(() => null);
         if (submit) await submit.click();
-        else await password.evaluate((element) => (element as HTMLInputElement).form?.requestSubmit());
+        else await password.evaluate((element) => {
+          const form = (element as HTMLInputElement).form;
+          if (form) HTMLFormElement.prototype.requestSubmit.call(form);
+        });
         await navigation;
         if (routeRefusal) return failed(routeRefusal, page.url());
       }
@@ -273,18 +281,42 @@ async function formAction(password: Locator): Promise<string | null> {
   return password.evaluate((element) => (element as HTMLInputElement).form?.action ?? null);
 }
 
-async function usernameField(password: Locator): Promise<Locator | null> {
-  const form = password.locator('xpath=ancestor::form[1]');
-  if (await form.count() === 0) return null;
-  const marked = await firstUsable(form, 'input[autocomplete~="username"]');
-  if (marked) return marked;
-  const preceding = form.locator('input:not([type]), input[type="text"], input[type="email"]');
+async function sameForm(field: Locator, fieldMarker: string): Promise<boolean> {
+  return field.evaluate((element, marker) => {
+    const password = document.querySelector<HTMLInputElement>(`[${marker}="password"]`);
+    return !!password?.form && (element as HTMLInputElement | HTMLButtonElement).form === password.form;
+  }, fieldMarker);
+}
+
+async function submitButton(page: Page, fieldMarker: string): Promise<Locator | null> {
+  const buttons = page.locator('button:not([type]), button[type="submit"], input[type="submit"], input[type="image"]');
+  for (let i = 0, count = await buttons.count(); i < count; i += 1) {
+    const button = buttons.nth(i);
+    if (await button.isVisible() && await button.isEnabled() && await sameForm(button, fieldMarker)) return button;
+  }
+  return null;
+}
+
+async function submissionTarget(password: Locator, submit: Locator | null): Promise<string | null> {
+  return submit ? submit.evaluate((element) => {
+    const button = element as HTMLButtonElement;
+    return button.hasAttribute('formaction') ? button.formAction : button.form?.action ?? null;
+  }) : formAction(password);
+}
+
+async function usernameField(page: Page, password: Locator, fieldMarker: string): Promise<Locator | null> {
+  const marked = page.locator('input[autocomplete~="username" i]');
+  for (let i = 0, count = await marked.count(); i < count; i += 1) {
+    const field = marked.nth(i);
+    if (await field.isVisible() && await field.isEnabled() && await sameForm(field, fieldMarker)) return field;
+  }
+  const preceding = page.locator('input:not([type]), input[type="text"], input[type="email"]');
   for (let i = await preceding.count() - 1; i >= 0; i -= 1) {
     const field = preceding.nth(i);
-    if (!await field.isVisible() || !await field.isEnabled()) continue;
+    if (!await field.isVisible() || !await field.isEnabled() || !await sameForm(field, fieldMarker)) continue;
     // No values cross this evaluation, only document order.
     const after = await password.evaluate((element, index) => {
-      const candidates = element.closest('form')?.querySelectorAll('input:not([type]), input[type="text"], input[type="email"]');
+      const candidates = document.querySelectorAll('input:not([type]), input[type="text"], input[type="email"]');
       const candidate = candidates?.[index];
       return !!candidate && !!(candidate.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING);
     }, i);

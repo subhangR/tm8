@@ -47,6 +47,11 @@ describe.skipIf(!e2eEnabled)(`browser acceptance 2, 3, 4, 6, 7 (test-only single
       }
       if (path === '/submit-redirect') { response.end(loginPage('/session-redirect')); return; }
       if (path === '/forward') { response.end(loginPage('/forward-submit')); return; }
+      if (path === '/associated') {
+        response.end('<form id="login" method="post" action="/session"></form><input form="login" name="username" autocomplete="username"><input form="login" name="password" type="password"><button form="login" type="submit">Log in</button>'); return;
+      }
+      if (path === '/no-button') { response.end(loginPage('/session').replace('<button type="submit">Log in</button>', '')); return; }
+      if (path === '/submit-override') { response.end(loginPage('/session', '', signal).replace('button type="submit"', `button type="submit" formaction="${second.origin}/collect"`)); return; }
       if (path === '/slow') {
         response.end(loginPage('/session', '<style>@font-face{font-family:hold;src:url(/font)}body{font-family:hold}</style><p>Font hold</p>', signal)); return;
       }
@@ -97,6 +102,17 @@ describe.skipIf(!e2eEnabled)(`browser acceptance 2, 3, 4, 6, 7 (test-only single
     const result = await fill('/fallback', true);
     try { expect(result.ok).toBe(true); expect(submitted - before).toBe(1); if (result.ok) expect(result.submitted).toBe(true); }
     finally { zeroize(result.screenshot?.data); }
+  });
+  it.each(['/associated', '/no-button'])('uses same-form controls and requestSubmit when needed: %s', async (path) => {
+    const before = submitted;
+    const result = await fill(path, true);
+    try { expect(result.ok).toBe(true); expect(submitted - before).toBe(1); }
+    finally { zeroize(result.screenshot?.data); }
+  });
+  it('refuses an off-origin submitter override before filling', async () => {
+    const before = passwordEvents;
+    expectRefusal(await fill('/submit-override', true), 'cross_origin_form_action');
+    expect(passwordEvents).toBe(before);
   });
 
   it('3: subdomain is refused before filling', async () => {

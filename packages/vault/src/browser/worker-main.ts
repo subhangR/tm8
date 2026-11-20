@@ -7,7 +7,7 @@ import type { FillOutcome } from '../types.js';
 import { PlaywrightFillDriver } from './playwright-driver.js';
 import { probeIsolatedBrowser } from './browser-session.js';
 import { DEFAULT_FILL_TIMEOUT_MS, FrameReader, MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES, decodeOutcome,
-  encodeJsonFrame, encodeOutcome, frame, parseRequest, refusal } from './protocol.js';
+  encodeJsonFrame, encodeOutcome, frame, parseRequest, refusal, ProductionSwitchRefusal, TEST_CLI_SWITCHES, TEST_ENV_SWITCHES } from './protocol.js';
 
 /** Parent serves the uid-protected socket; each fill gets a killable process group. */
 interface WorkerOptions {
@@ -32,7 +32,10 @@ export async function startFillWorker(options: WorkerOptions): Promise<{ close()
       timer = null;
       let request;
       try { request = parseRequest(body); }
-      catch { zeroize(body); socket.destroy(); return; }
+      catch (error) {
+        if (error instanceof ProductionSwitchRefusal) process.stderr.write(`${error.message}\n`);
+        zeroize(body); socket.destroy(); return;
+      }
       if (request.op === 'health') {
         zeroize(body);
         send(socket, encodeJsonFrame({ id: request.id, op: 'health', ok: true, ready: browserReady && !active && !closed }));
@@ -162,7 +165,7 @@ async function probeWorker(options: WorkerOptions): Promise<boolean> {
 }
 
 async function runFillChild(): Promise<void> {
-  if (!process.send || !process.connected) throw new Error('private worker channel required');
+  if (!process.send || !process.connected) throw new ProductionSwitchRefusal('--fill-child');
   const configuration = await new Promise<{ testOnlyDisableSandbox: boolean }>((resolve, reject) => {
     process.once('message', (message: unknown) => {
       if (!message || typeof message !== 'object' || Object.keys(message).length !== 1 ||
@@ -229,6 +232,11 @@ function parseTimeout(value: string | undefined): number {
 
 async function main(): Promise<void> {
   process.umask(0o077); // Private browser directories keep their required search bits.
+  for (const name of TEST_ENV_SWITCHES) if (Object.hasOwn(process.env, name)) throw new ProductionSwitchRefusal(name);
+  if (Object.keys(process.env).some((name) => name.startsWith('TM8_VAULT_FILL_TEST_'))) throw new ProductionSwitchRefusal('TM8_VAULT_FILL_TEST_*');
+  for (const name of TEST_CLI_SWITCHES) {
+    if (process.argv.slice(2).some((argument) => argument.split('=', 1)[0] === name)) throw new ProductionSwitchRefusal(name);
+  }
   if (process.argv[2] === '--fill-child') { await runFillChild(); return; }
   if (process.argv.length > 3) throw new Error('invalid worker arguments');
   const socketPath = process.argv[2] ?? process.env.TM8_VAULT_FILL_SOCKET;
@@ -242,5 +250,9 @@ async function main(): Promise<void> {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch(() => { process.exitCode = 1; }); // fixed exit status; never print an exception.
+  main().catch((error: unknown) => {
+    // Fixed vocabulary only. Never forward a parser, browser or system exception.
+    process.stderr.write(error instanceof ProductionSwitchRefusal ? `${error.message}\n` : 'vault fill worker unavailable\n');
+    process.exitCode = 1;
+  });
 }

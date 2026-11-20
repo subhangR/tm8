@@ -6,6 +6,19 @@ export const MAX_REQUEST_BYTES = 128 * 1024;
 export const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
 export const DEFAULT_FILL_TIMEOUT_MS = 30_000;
 
+export const TEST_ENV_SWITCHES = ['TM8_VAULT_FILL_TEST_NO_SANDBOX', 'TM8_VAULT_FILL_TEST_SINGLE_PROCESS', 'TM8_VAULT_BROWSER_E2E'] as const;
+export const TEST_CLI_SWITCHES = ['--no-sandbox', '--single-process', '--no-zygote', '--test-only-disable-sandbox'] as const;
+const TEST_SOCKET_SWITCHES = ['testOnlyDisableSandbox', 'testOnlySingleProcess'] as const;
+type TestSwitchName = typeof TEST_ENV_SWITCHES[number] | typeof TEST_CLI_SWITCHES[number] | typeof TEST_SOCKET_SWITCHES[number] | 'TM8_VAULT_FILL_TEST_*' | '--fill-child';
+
+/** Names come only from this fixed vocabulary; supplied values never enter diagnostics. */
+export class ProductionSwitchRefusal extends Error {
+  constructor(readonly switchName: TestSwitchName) {
+    super(`vault fill worker refused: ${switchName}`);
+    this.name = 'ProductionSwitchRefusal';
+  }
+}
+
 export type WorkerRequest = { id: string; op: 'health' } | {
   id: string; op: 'fill'; intent: FillIntent; username: string | null; password_b64: string;
 };
@@ -85,6 +98,11 @@ export function parseRequest(body: Buffer): WorkerRequest {
   try { parsed = JSON.parse(body.toString('utf8')); } catch { throw new Error('invalid worker request'); }
   if (!parsed || typeof parsed !== 'object') throw new Error('invalid worker request');
   const value = parsed as Record<string, unknown>;
+  for (const name of TEST_SOCKET_SWITCHES) {
+    if (Object.hasOwn(value, name) || (value.intent && typeof value.intent === 'object' && Object.hasOwn(value.intent, name))) {
+      throw new ProductionSwitchRefusal(name);
+    }
+  }
   if (typeof value.id !== 'string' || !/^[a-zA-Z0-9-]{1,128}$/.test(value.id)) throw new Error('invalid worker request');
   if (value.op === 'health' && Object.keys(value).length === 2) return { id: value.id, op: 'health' };
   if (value.op !== 'fill' || Object.keys(value).some((key) => !['id', 'op', 'intent', 'username', 'password_b64'].includes(key))) {

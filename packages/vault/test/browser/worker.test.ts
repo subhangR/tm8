@@ -113,7 +113,8 @@ describe.skipIf(!e2eEnabled)(`worker isolation and SIGKILL acceptance 13 — ${E
         }
         return true;
       });
-      const artifacts = [...host.output, ...host.errors];
+      // Scan complete streams too: a canary may span two transport chunks.
+      const artifacts = [Buffer.concat(host.output), Buffer.concat(host.errors)];
       await gatherFiles(host.directory, artifacts);
       try {
         // Assertion exposes only a boolean; a failing scan never prints a canary.

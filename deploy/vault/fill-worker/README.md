@@ -20,7 +20,10 @@ until the separate security review and penetration test pass.
 3. Verify unprivileged Chromium sandbox/user namespaces work for the dedicated
    account under `NoNewPrivileges`. Production always enables the sandbox; the
    in-process test option to disable it is unavailable through the socket/CLI or
-   environment. Also run a protection-key allocate/use/free probe on the broker
+   environment. Known test switches at the production entry are refused with a
+   nonzero exit (CLI/env) or closed connection (socket), and only the fixed switch
+   name is sent to the worker's journal. Values are never printed. Also run a
+   protection-key allocate/use/free probe on the broker
    VM: this build host advertises protection keys but Chromium child processes
    fault when using them. If the VM has the same quirk, an operator must verify a
    seccomp rule returning `ENOSPC` for `pkey_alloc` in the unit. A conditional
@@ -92,7 +95,7 @@ The SIGKILL test scans captured stdout/stderr and all files under its temporary
 runtime/profile tree, including any core files, for raw/base64/hex canaries. It
 does not prove absence from physical memory, host journal configuration, swap or
 external crash collectors. The unit adds `LimitCORE=0`, `MemorySwapMax=0`, tmpfs,
-discarded process output and cgroup teardown; independent review must verify
+discarded browser output, fixed worker diagnostics and cgroup teardown; independent review must verify
 those controls in the deployed environment. Same-uid agents or root compromise
 are outside this local isolation claim; use the separate uid/VM boundary.
 
@@ -109,7 +112,7 @@ a fresh browser (single-process Chromium only supports one context lifetime on
 this host). These tests exercise origin and mechanism behavior; they do not
 validate the production Chromium sandbox or protection-key seccomp policy.
 Production-entry tests use a fake executable to prove CLI/env test switches are
-ignored/refused, sandbox flags are retained, failed probes never report ready,
+explicitly refused by fixed name, sandbox flags are retained, failed probes never report ready,
 and fills fail closed. Test configuration reaches disposable children only over
 an inherited private IPC channel, never through the broker socket or environment.
 

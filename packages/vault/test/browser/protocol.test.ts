@@ -78,6 +78,16 @@ describe('private fill protocol', () => {
     finally { zeroize(body); }
   });
 
+  it.each(['testOnlyDisableSandbox', 'testOnlySingleProcess'])('refuses socket test switch %s by fixed name, without its value', (name) => {
+    const body = Buffer.from(JSON.stringify({ id: 'test', op: 'health', [name]: 'must-never-be-printed' }));
+    try {
+      let message = '';
+      try { parseRequest(body); } catch (error) { message = (error as Error).message; }
+      expect(message).toBe(`vault fill worker refused: ${name}`);
+      expect(message.includes('must-never-be-printed')).toBe(false);
+    } finally { zeroize(body); }
+  });
+
   it.each(['wrong-id', 'wrong-op', 'empty-origin'])('fails closed on %s', async (mode) => {
     const socketPath = await mock((id) => mode === 'wrong-id' ? encodeOutcome('other', { ok: true, finalOrigin: intent.origin, submitted: false, screenshot: null }) :
       mode === 'wrong-op' ? encodeJsonFrame({ id, op: 'health', ok: true, ready: true }) :
