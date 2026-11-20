@@ -164,6 +164,8 @@ export const VAULT_ERROR_REASONS = [
   /** v1 builds spend but keeps it off (owner decision, form revision 2). */
   'spend_disabled',
   'import_disabled',
+  /** A metadata field (an item name, username or origin) looks like a secret. Metadata is stored in the clear, so the broker refuses it rather than store it. */
+  'secret_in_metadata',
   /** A pre-review cap: test secrets only, admins only, bounded item count. */
   'pre_review_limit',
   /** There is no reveal. The attempt is audited as suspicious and counts toward throttling (failure case 8). */
