@@ -1,6 +1,6 @@
 # Workflow: short chat and work-session titles
 
-Version: 1; reviewed against source 2026-11-20; status: Review.
+Version: 1; reviewed against source 2026-11-20; status: Approved.
 Open when changing automatic chat/session naming. This document specifies the
 single naming workflow; root integration owns its final review and deployment.
 

@@ -1,6 +1,6 @@
 # Workflow: explained attention triage
 
-Version: 1.1 · 2026-11-20 · Status: Draft pending integration review.
+Version: 1.1 · 2026-11-20 · Status: Approved after integration review.
 When to use: changing Needs you ordering, grouped request headlines, counts, or FYI visibility.
 Summary: one shared queue ranks outstanding action requests, explains its ordering, and offers a separate FYI view without changing resolution scope.
 Task: `01a1fa88-979a-7667-a9de-d4ef6ff744e8`.

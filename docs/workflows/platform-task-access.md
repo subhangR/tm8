@@ -1,6 +1,6 @@
 # Workflow: inspect a task's access
 
-Version 1 · 2026-11-21 · implementation specification
+Version 1 · 2026-11-20 · Approved after integration review
 
 ## Registry
 
