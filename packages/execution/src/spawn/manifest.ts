@@ -72,7 +72,7 @@ import {
   type AgentCredentialProvider,
 } from './agent-credentials.js';
 import { redactSecretsDeep } from './secret-redaction.js';
-import { assignMcpServerKeys } from '@tm8/contract';
+import { assignMcpServerKeys, shortIntentTitle } from '@tm8/contract';
 
 /** Fallback when neither the request nor the persona names a model. */
 export const DEFAULT_MODEL = 'sonnet';
@@ -2267,8 +2267,8 @@ export function resolveSessionTitle(
   const explicit = request.title?.trim();
   if (explicit) return explicit;
   const first = context.tasks[0];
-  if (first) return first.title;
-  return `${context.teamMember.name} session`;
+  if (first) return shortIntentTitle(first.title);
+  return shortIntentTitle(`${context.teamMember.name} session`);
 }
 
 /**

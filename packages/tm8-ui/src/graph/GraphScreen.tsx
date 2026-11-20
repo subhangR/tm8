@@ -37,6 +37,7 @@ import { gitSurfaceFor } from '../views/gitSurface';
 import { changesSurfaceFor } from '../views/changesSurface';
 import { mergePrPortFor } from '../views/mergePrPort';
 import { taskGitSectionFor } from '../views/taskGitSection';
+import { taskAccessSectionFor } from '../views/taskAccessSection';
 import { graphSurfaceFor } from '../views/graphSurface';
 import { storySurfaceFor } from '../views/storySurface';
 import { launchContextSurfaceFor } from '../views/launchContextSurface';
@@ -263,6 +264,7 @@ export function GraphScreen(props: GraphScreenProps) {
       gitSurface={gitSurfaceFor(data.seam, selectedId, data.livenessOf)}
       changesSurface={changesSurfaceFor(data.seam, selectedId, data.livenessOf)}
       taskGitSection={taskGitSectionFor(data.seam, detail ?? null, (id) => setSelectedId(id as EntityId))}
+      taskAccessSection={taskAccessSectionFor(data.seam, detail ?? null, (id) => setSelectedId(id as EntityId))}
       graphSurface={graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
         setSelectedId(id as EntityId),
       )}

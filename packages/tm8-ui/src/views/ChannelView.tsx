@@ -31,6 +31,7 @@ import { sessionContextSurfaceFor } from './sessionContextSurface';
 import { gitSurfaceFor } from './gitSurface';
 import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
+import { taskAccessSectionFor } from './taskAccessSection';
 import { graphSurfaceFor } from './graphSurface';
 import { storySurfaceFor } from './storySurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
@@ -277,6 +278,7 @@ export function ChannelView({
       gitSurface={gitSurfaceFor(data.seam, selectedId, data.livenessOf)}
       changesSurface={changesSurfaceFor(data.seam, selectedId, data.livenessOf)}
       taskGitSection={taskGitSectionFor(data.seam, selectedDetail ?? null, (id) => setSelectedId(id as EntityId))}
+      taskAccessSection={taskAccessSectionFor(data.seam, selectedDetail ?? null, (id) => setSelectedId(id as EntityId))}
       graphSurface={graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
         setSelectedId(id as EntityId),
       )}

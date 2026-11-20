@@ -50,17 +50,79 @@ describe('selectors (chapter 1)', () => {
     expect(countsOf(byRoot, null)).toEqual({ mine: 0, all: 3 });
   });
 
-  it('orders unseen first, then level, then points, then oldest', () => {
+  it('orders priority before seen, then points and oldest; FYI requires its explicit scope', () => {
     const rows = [
       req({ entityId: 'a', level: 'urgent', points: 95, seenByMe: true }),
       req({ entityId: 'b', level: 'fyi', points: 10 }),
       req({ entityId: 'c', level: 'high', points: 70 }),
       req({ entityId: 'd', level: 'high', points: 90 }),
       req({ entityId: 'e', level: 'high', points: 90, createdAt: '2026-09-26T09:00:00.000Z' }),
+      req({ entityId: 'normal', level: 'normal', points: 1000 }),
     ];
     const queue = buildQueue(groupByRoot(rows), { filter: 'all', viewerId: ME, names: new Map() });
-    expect(queue.map((r) => r.rootId)).toEqual(['e', 'd', 'c', 'b', 'a']);
-    expect(queue[4]!.seen).toBe(true);
+    expect(queue.map((r) => r.rootId)).toEqual(['a', 'e', 'd', 'c', 'normal']);
+    expect(queue[0]!.seen).toBe(true);
+    const fyi = buildQueue(groupByRoot(rows), { filter: 'all', viewerId: ME, names: new Map(), scope: 'fyi' });
+    expect(fyi.map((r) => r.rootId)).toEqual(['b']);
+  });
+
+  it('counts only assigned actions as Personal, retains FYI explicitly, and counts mixed roots once', () => {
+    const byRoot = groupByRoot([
+      req({ entityId: 'mixed', assigneeId: 'someone-else' as EntityId }),
+      req({ entityId: 'session', rootId: 'mixed' as EntityId, level: 'fyi', assigneeId: ME as EntityId }),
+      req({ entityId: 'only-fyi', level: 'fyi', assigneeId: ME as EntityId }),
+      req({ entityId: 'my-action', assigneeId: ME as EntityId, status: 'acknowledged' }),
+      req({ entityId: 'closed', assigneeId: ME as EntityId, level: 'urgent', status: 'resolved' }),
+    ]);
+    expect(countsOf(byRoot, ME)).toEqual({ mine: 1, all: 2 });
+    expect(countsOf(byRoot, ME, 'fyi')).toEqual({ mine: 2, all: 2 });
+    expect(countsOf(byRoot, ME, 'all')).toEqual({ mine: 3, all: 3 });
+    expect(buildQueue(byRoot, { filter: 'mine', viewerId: ME, names: new Map() }).map(r => r.rootId)).toEqual(['my-action']);
+  });
+
+  it('heads a mixed root with its older urgent request and retains the newest request and complete inventory', () => {
+    const urgent = req({ id: 'urgent', entityId: 'task', level: 'urgent', points: 95, seenByMe: true, reason: 'Restore service',
+      sourceWorkSessionId: 'urgent-session' as EntityId, actionType: 'approve', createdAt: '2026-09-25T09:00:00.000Z' });
+    const normal = req({ id: 'normal', entityId: 'task', points: 40, createdAt: '2026-09-26T09:00:00.000Z' });
+    const fyi = req({ id: 'fyi', entityId: 'task', level: 'fyi', points: 1000, reason: 'New information', createdAt: '2026-09-26T11:00:00.000Z' });
+    const byRoot = groupByRoot([normal, fyi, urgent]);
+    const options = { filter: 'all' as const, viewerId: ME, names: new Map() };
+    const [row] = buildQueue(byRoot, options);
+    expect(row!.primary).toEqual(urgent);
+    expect(row!.latest).toEqual(fyi);
+    expect(row!.requests.map(r => r.id)).toEqual(['fyi', 'normal', 'urgent']);
+    expect(row!.chip).toMatchObject({ level: 'urgent', totalPoints: 135, pendingCount: 2 });
+    expect(row!.chip.latestReason).toBe('Restore service');
+    expect(buildQueue(byRoot, { ...options, scope: 'fyi' })[0]!.primary).toEqual(fyi);
+    expect(buildQueue(byRoot, { ...options, scope: 'all' })[0]!.requests).toHaveLength(3);
+  });
+
+  it('Personal headlines and ranks the viewer\'s request while retaining other assignees in the root inventory', () => {
+    const mine = req({ id: 'mine', entityId: 'task', level: 'high', points: 40, assigneeId: ME as EntityId,
+      reason: 'My approval', sourceWorkSessionId: 'my-session' as EntityId });
+    const theirs = req({ id: 'theirs', entityId: 'task', level: 'high', points: 95,
+      assigneeId: 'another-member' as EntityId, reason: 'Their review' });
+    const byRoot = groupByRoot([theirs, mine]);
+    const options = { viewerId: ME, names: new Map() };
+    const [personal] = buildQueue(byRoot, { ...options, filter: 'mine' });
+    expect(personal!.primary).toEqual(mine);
+    expect(personal!.chip).toMatchObject({ pendingCount: 1, totalPoints: 40, latestReason: 'My approval' });
+    expect(personal!.requests).toHaveLength(2);
+    expect(buildQueue(byRoot, { ...options, filter: 'all' })[0]!.primary).toEqual(theirs);
+  });
+
+  it('keeps FYI points and unseen state out of actionable ranking, with deterministic age and id ties', () => {
+    const rows = [
+      req({ id: 'a', entityId: 'a', level: 'high', points: 70, seenByMe: true }),
+      req({ id: 'noise', entityId: 'a', level: 'fyi', points: 1000 }),
+      req({ id: 'b', entityId: 'b', level: 'high', points: 70 }),
+      req({ id: 'c', entityId: 'c', level: 'high', points: 70 }),
+      req({ id: 'd', entityId: 'd', level: 'high', points: 70, createdAt: '2026-09-25T09:00:00.000Z' }),
+    ];
+    const queue = buildQueue(groupByRoot(rows), { filter: 'all', viewerId: ME, names: new Map() });
+    expect(queue.map(r => r.rootId)).toEqual(['d', 'b', 'c', 'a']);
+    expect(queue[3]!.seen).toBe(true);
+    expect(queue[3]!.chip.totalPoints).toBe(70);
   });
 
   it('a roll-up root combines own and rolled-up requests', () => {

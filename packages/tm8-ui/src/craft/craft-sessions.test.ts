@@ -80,6 +80,10 @@ describe('+ New session spawn input', () => {
     expect(input.aboutEntityId).toBe(CRAFT);
     expect(input.projectId).toBe('p-1');
     expect(input.title).toBe('Launch plan');
+    expect(craftSpawnInput({
+      spaceId: 'sp', craftId: CRAFT, teammates: roster, projects,
+      title: 'Please fix the login bug in the new Safari version. Keep every reproduction step.',
+    })!.title).toBe('fix the login bug');
   });
 
   it('falls back to scratch when the default project cannot host it, and to nothing without a teammate', () => {

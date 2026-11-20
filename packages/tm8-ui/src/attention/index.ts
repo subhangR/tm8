@@ -15,6 +15,7 @@ export type {
   AttentionCounts,
   AttentionFilter,
   AttentionQueueRow,
+  AttentionScope,
 } from './attention-selectors';
 export { formatAge, PENDING_STATUSES } from './attention-selectors';
 export { UNDO_WINDOW_MS } from './attention-commands';

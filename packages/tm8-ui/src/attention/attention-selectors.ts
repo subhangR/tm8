@@ -10,10 +10,10 @@
  * - A request counts against its ROLL-UP ROOT (`rootId`, else its own entity).
  *   An entity's chip covers requests rolled up to it AND requests pinned on it,
  *   the same rule as `attention_badges` (migration 255).
- * - COUNTS are distinct roots. `all` is every root; `mine` is roots with a
- *   request assigned to the viewer. Unassigned is never mine. FYI counts. Seen
- *   never reduces either number.
- * - ORDER is unseen-by-me first, then level (urgent > high > normal > fyi),
+ * - COUNTS are distinct roots in the selected scope (actionable by default).
+ *   `mine` needs an eligible request assigned to the viewer. FYI is available
+ *   explicitly; unassigned is never mine. Seen never reduces either number.
+ * - ORDER is level (urgent > high > normal > fyi), then unseen-by-me first,
  *   then total points desc, then oldest first.
  */
 import type {
@@ -130,11 +130,20 @@ export function chipFromBadge(
 }
 
 export type AttentionFilter = 'mine' | 'all';
+export type AttentionScope = 'actionable' | 'fyi' | 'all';
+
+export function isActionable(row: Pick<AttentionRequest, 'level'>): boolean {
+  return levelOf(row) !== 'fyi';
+}
+
+function inScope(row: AttentionRequest, scope: AttentionScope): boolean {
+  return scope === 'all' || (scope === 'actionable' ? isActionable(row) : !isActionable(row));
+}
 
 export interface AttentionCounts {
-  /** Roots with a pending request assigned to the viewer. */
+  /** Roots with an eligible pending request assigned to the viewer. */
   mine: number;
-  /** Every root with a pending request. */
+  /** Every root with a pending request in the selected scope. */
   all: number;
 }
 
@@ -147,9 +156,11 @@ export interface AttentionQueueRow {
   chip: AttentionChip;
   /** Newest first. */
   requests: readonly AttentionRequest[];
-  /** The most recently raised request: its reason, type and source head the row. */
+  /** The most recently raised request, retained for consumers needing chronology. */
   latest: AttentionRequest;
-  /** Every request on the row has been seen by the viewer (the row dims). */
+  /** Highest priority request in the selected scope: reason, action and Open agree. */
+  primary: AttentionRequest;
+  /** Every eligible request has been seen by the viewer (the row dims). */
   seen: boolean;
   /** At least one request is assigned to the viewer. */
   mine: boolean;
@@ -164,6 +175,14 @@ export interface EntityName {
 
 function newestFirst(a: AttentionRequest, b: AttentionRequest): number {
   return b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id);
+}
+
+function priorityFirst(a: AttentionRequest, b: AttentionRequest): number {
+  return LEVEL_RANK[levelOf(b)] - LEVEL_RANK[levelOf(a)]
+    || Number(a.seenByMe === true) - Number(b.seenByMe === true)
+    || b.points - a.points
+    || a.createdAt.localeCompare(b.createdAt)
+    || a.id.localeCompare(b.id);
 }
 
 /** Group pending rows by roll-up root. Settled roots are excluded by the caller. */
@@ -187,10 +206,17 @@ export function isMine(rows: readonly AttentionRequest[], viewerId: string | nul
 export function countsOf(
   byRoot: ReadonlyMap<EntityId, readonly AttentionRequest[]>,
   viewerId: string | null | undefined,
+  scope: AttentionScope = 'actionable',
 ): AttentionCounts {
   let mine = 0;
-  for (const rows of byRoot.values()) if (isMine(rows, viewerId)) mine += 1;
-  return { mine, all: byRoot.size };
+  let all = 0;
+  for (const rows of byRoot.values()) {
+    const eligible = rows.filter((row) => inScope(row, scope));
+    if (eligible.length === 0) continue;
+    all += 1;
+    if (isMine(eligible, viewerId)) mine += 1;
+  }
+  return { mine, all };
 }
 
 /** The queue in chapter 1's order, optionally narrowed to the viewer's own. */
@@ -200,30 +226,36 @@ export function buildQueue(
     filter: AttentionFilter;
     viewerId: string | null | undefined;
     names: ReadonlyMap<EntityId, EntityName>;
+    scope?: AttentionScope;
   },
 ): AttentionQueueRow[] {
   const out: AttentionQueueRow[] = [];
   for (const [rootId, group] of byRoot) {
-    const chip = chipFromRows(group);
+    const eligible = group.filter((row) => inScope(row, options.scope ?? 'actionable')
+      && (options.filter !== 'mine' || (options.viewerId != null && row.assigneeId === options.viewerId)));
+    const chip = chipFromRows(eligible);
     if (!chip) continue;
-    const mine = isMine(group, options.viewerId);
+    const mine = isMine(eligible, options.viewerId);
     if (options.filter === 'mine' && !mine) continue;
     const requests = [...group].sort(newestFirst);
+    const primary = [...eligible].sort(priorityFirst)[0]!;
     const name = options.names.get(rootId);
     out.push({
       rootId,
       title: name?.title ?? null,
       kind: name?.kind ?? null,
-      chip,
+      // Queue accessibility text describes the same request as the headline.
+      chip: { ...chip, latestReason: primary.reason },
       requests,
       latest: requests[0]!,
-      seen: requests.every((row) => row.seenByMe === true),
+      primary,
+      seen: eligible.every((row) => row.seenByMe === true),
       mine,
       rolledUp: requests.filter((row) => row.entityId !== rootId).length,
     });
   }
-  return out.sort((a, b) => Number(a.seen) - Number(b.seen)
-    || LEVEL_RANK[b.chip.level] - LEVEL_RANK[a.chip.level]
+  return out.sort((a, b) => LEVEL_RANK[b.chip.level] - LEVEL_RANK[a.chip.level]
+    || Number(a.seen) - Number(b.seen)
     || b.chip.totalPoints - a.chip.totalPoints
     || a.chip.oldestRequestedAt.localeCompare(b.chip.oldestRequestedAt)
     || a.rootId.localeCompare(b.rootId));

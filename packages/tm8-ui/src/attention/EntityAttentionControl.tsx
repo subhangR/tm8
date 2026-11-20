@@ -15,7 +15,7 @@ export function EntityAttentionControl({ entityId, onOpenEntity }: {
   onOpenEntity?: (id: string) => void;
 }) {
   const api = useAttentionOptional();
-  const rows = api?.queue('all').filter(row =>
+  const rows = api?.queue('all', 'all').filter(row =>
     row.rootId === entityId || row.requests.some(request =>
       request.entityId === entityId || request.sourceWorkSessionId === entityId),
   ) ?? [];

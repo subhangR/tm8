@@ -62,6 +62,7 @@ import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import { ledger } from '../discovery/availability.js';
+import { canResumeUpload, retryUploadStage } from '../upload-retry.js';
 import {
   assertKnownOptions, HEADER_TEXT_OPTIONS, headerTextOptions, requireArg, summaryLine, warningLines, withActor,
 } from './entity.js';
@@ -338,6 +339,14 @@ async function artifactPublish(cmd: CommandContext): Promise<ExitCode> {
 
   const client = clientFor(cmd.ctx);
   const clientMutationId = resolveMutationId(cmd.options.value('mutation-id'));
+  const publish = async (operation: 'artifacts.create' | 'artifacts.publish', body: Record<string, unknown>, params?: { artifactId: string }): Promise<unknown> => {
+    try {
+      return await retryUploadStage(cmd, operation, () => observedInvoke<unknown>(client, operation, { body, ...(params ? { params } : {}) }));
+    } catch (error) {
+      if (canResumeUpload(error)) cmd.out.note(`Publish paused. Retry unchanged source with --mutation-id ${clientMutationId} to recover the original result.`);
+      throw error;
+    }
+  };
 
   if (artifactId !== undefined) {
     if (expectedVersion === undefined || expectedVersion <= 0) {
@@ -349,10 +358,7 @@ async function artifactPublish(cmd: CommandContext): Promise<ExitCode> {
       clientMutationId, expectedVersion, manifest, files: inlineFiles,
       ...(header === undefined ? {} : { header }),
     });
-    const data = await observedInvoke<unknown>(client, 'artifacts.publish', {
-      params: { artifactId },
-      body,
-    });
+    const data = await publish('artifacts.publish', body, { artifactId });
     cmd.out.data(data, renderArtifactMutation);
     return EXIT_OK;
   }
@@ -369,9 +375,7 @@ async function artifactPublish(cmd: CommandContext): Promise<ExitCode> {
   if (description !== undefined) body.description = description;
   if (header !== undefined) body.header = header;
 
-  const data = await observedInvoke<unknown>(client, 'artifacts.create', {
-    body: withActor(cmd, body),
-  });
+  const data = await publish('artifacts.create', withActor(cmd, body));
   cmd.out.data(data, renderArtifactMutation);
   return EXIT_OK;
 }

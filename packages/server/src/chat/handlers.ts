@@ -4,6 +4,7 @@ import { SpawnError } from '@tm8/execution';
 import { resolve as pathResolve } from 'node:path';
 import {
   CollabError,
+  shortIntentTitle,
   isHumanAuthKind,
   launchModel,
   chatCredentialProviderForModel,
@@ -156,7 +157,7 @@ function startChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler
         input.projectId ?? null,
         nativeSessionId,
         scratchCwd,
-        input.title ?? null,
+        input.title?.trim() || shortIntentTitle(input.body, 'New chat'),
         input.body,
         input.attachmentIds ?? [],
         input.aboutId ?? null,

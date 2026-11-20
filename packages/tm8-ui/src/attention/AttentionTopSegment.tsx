@@ -3,7 +3,7 @@
  * `Personal n` and `Team n`. Personal counts roll-up roots with a request
  * assigned to the viewer (the member running the session that raised it);
  * Team counts every pending root in the space — everyone can see every
- * request. Both include FYI and ignore Seen.
+ * request requiring action. FYI is an explicit list view; Seen changes no count.
  *
  * A section with anything waiting GLOWS (a slow pulse, still under
  * prefers-reduced-motion): Personal in the colour of its loudest request,
@@ -42,6 +42,7 @@ export function AttentionTopSegment({ onOpenEntity, nameOf }: AttentionTopSegmen
   // A failed read is NOT an all-clear: it has its own face, never a 0.
   const failed = api.status === 'error';
   const loading = api.status === 'loading';
+  const stale = Boolean(api.refreshError);
   const sections: { key: AttentionFilter; name: string; count: number; tone: string }[] = [
     { key: 'mine', name: 'Personal', count: counts.mine, tone: counts.mine > 0 ? loudest?.tone ?? 'wait' : 'clear' },
     { key: 'all', name: 'Team', count: counts.all, tone: counts.all > 0 ? 'team' : 'clear' },
@@ -64,9 +65,10 @@ export function AttentionTopSegment({ onOpenEntity, nameOf }: AttentionTopSegmen
         </button>
       ) : (
         sections.map((section) => {
-          const label = loading
+          const label = (loading
             ? `Loading ${section.name.toLowerCase()} attention`
-            : `${section.name} attention: ${section.count === 0 ? 'nothing waiting' : `${section.count} waiting`}`;
+            : `${section.name} attention: ${section.count === 0 ? 'no action needed' : `${section.count} work items need action`}`)
+            + (stale ? '. Refresh failed; counts are from the last load.' : '');
           return (
             <button
               key={section.key}
@@ -85,7 +87,7 @@ export function AttentionTopSegment({ onOpenEntity, nameOf }: AttentionTopSegmen
             >
               <span className="att-top__name">{section.name}</span>
               <span className="att-top__count" data-testid={`attention-top-${section.key}-count`}>
-                {loading ? '…' : section.count}
+                {loading ? '…' : stale ? `${section.count}?` : section.count}
               </span>
             </button>
           );

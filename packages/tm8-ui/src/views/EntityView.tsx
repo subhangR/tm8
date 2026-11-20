@@ -105,6 +105,7 @@ import { sessionContextSurfaceFor } from './sessionContextSurface';
 import { gitSurfaceFor } from './gitSurface';
 import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
+import { taskAccessSectionFor } from './taskAccessSection';
 import { graphSurfaceFor } from './graphSurface';
 import { storySurfaceFor } from './storySurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
@@ -943,6 +944,7 @@ export function EntityView(props: EntityViewProps) {
       gitSurface={detail ? gitSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       changesSurface={detail ? changesSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       taskGitSection={taskGitSectionFor(data.seam, detail, (id) => openRelated(id as EntityId))}
+      taskAccessSection={taskAccessSectionFor(data.seam, detail, (id) => openRelated(id as EntityId))}
       storySurface={
         detail
           ? storySurfaceFor(data.seam, selectedId, (id) => openRelated(id as EntityId), data.launch.teammates, {
@@ -1623,4 +1625,3 @@ function auxCrumb(aux: AuxTarget, title: string | undefined): string {
 function auxSheetSize(aux: AuxTarget | null): 'default' | 'full' {
   return aux?.sort === 'tab' && aux.tab === 'discussion' ? 'full' : 'default';
 }
-

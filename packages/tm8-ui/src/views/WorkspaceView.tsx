@@ -72,6 +72,7 @@ import { sessionContextSurfaceFor } from './sessionContextSurface';
 import { gitSurfaceFor } from './gitSurface';
 import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
+import { taskAccessSectionFor } from './taskAccessSection';
 import { graphSurfaceFor } from './graphSurface';
 import { storySurfaceFor } from './storySurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
@@ -532,6 +533,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                     gitSurface={gitSurfaceFor(data.seam, id, data.livenessOf)}
                     changesSurface={changesSurfaceFor(data.seam, id, data.livenessOf)}
                     taskGitSection={taskGitSectionFor(data.seam, detail, openEntity)}
+                    taskAccessSection={taskAccessSectionFor(data.seam, detail, openEntity)}
                     graphSurface={graphSurfaceFor(data.seam, id, data.livenessOf, openEntity)}
                     crossSpaceRefsSurface={crossSpaceRefsSurfaceFor(data.seam, id)}
                     storySurface={storySurfaceFor(data.seam, id, openEntity, data.launch.teammates)}

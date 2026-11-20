@@ -63,6 +63,7 @@ import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { deriveMutationId, refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import { ledger } from '../discovery/availability.js';
+import { canResumeFileTransfer, canResumeUpload, retryUploadStage } from '../upload-retry.js';
 import type { CommandContext, CommandModule } from '../run.js';
 
 /** The contract's own default when a caller declares no media type. */
@@ -202,16 +203,22 @@ async function transferBytes(
       signal: controller.signal,
     });
   } catch (err) {
+    clearTimeout(timer);
     throw new TransportError(
       `PUT ${url.pathname} failed: ${err instanceof Error ? err.message : String(err)}`,
       err,
     );
+  }
+
+  if (res.status < 400) { clearTimeout(timer); return; }
+  let text: string;
+  try {
+    text = await res.text();
+  } catch (err) {
+    throw new TransportError('The upload response could not be read.', err);
   } finally {
     clearTimeout(timer);
   }
-
-  if (res.status < 400) return;
-  const text = await res.text();
   let parsed: unknown;
   try {
     parsed = text ? (JSON.parse(text) as unknown) : undefined;
@@ -290,12 +297,18 @@ async function fileUpload(cmd: CommandContext): Promise<ExitCode> {
   };
   if (cmd.ctx.actor) initBody.actorId = cmd.ctx.actor.value;
 
-  const grant = await observedInvoke<FileUploadGrant>(client, 'files.uploadInit', { body: initBody });
+  const paused = () => cmd.out.note(`Upload paused. Retry unchanged source with --mutation-id ${root} to resume.`);
+  const grant = await retryUploadStage(cmd, 'files.uploadInit',
+    () => observedInvoke<FileUploadGrant>(client, 'files.uploadInit', { body: initBody })).catch((error: unknown) => {
+      if (canResumeUpload(error)) paused();
+      throw error;
+    });
 
   try {
-    await transferBytes(cmd, grant, bytes);
+    await retryUploadStage(cmd, 'file transfer', () => transferBytes(cmd, grant, bytes), canResumeFileTransfer);
   } catch (err) {
-    await abortAfterFailure(cmd, grant.uploadId, abortId);
+    if (canResumeFileTransfer(err)) paused();
+    else await abortAfterFailure(cmd, grant.uploadId, abortId);
     throw err;
   }
 
@@ -305,12 +318,13 @@ async function fileUpload(cmd: CommandContext): Promise<ExitCode> {
 
   let result: unknown;
   try {
-    result = await observedInvoke<unknown>(client, 'files.uploadComplete', {
+    result = await retryUploadStage(cmd, 'files.uploadComplete', () => observedInvoke<unknown>(client, 'files.uploadComplete', {
       params: { uploadId: grant.uploadId },
       body: completeBody,
-    });
+    }));
   } catch (err) {
-    await abortAfterFailure(cmd, grant.uploadId, abortId);
+    if (canResumeUpload(err)) paused();
+    else await abortAfterFailure(cmd, grant.uploadId, abortId);
     throw err;
   }
 

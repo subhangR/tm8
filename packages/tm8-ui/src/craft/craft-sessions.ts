@@ -19,7 +19,7 @@
 import type { EntityId, EntityKind, EntitySummary, ExecutionSpawnInput } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { defaultChatTeammateId } from '../chat-home/default-teammate';
-import { buildSpawnInput, defaultConfigFor, newLaunchMutationId, type LaunchProject, type LaunchTeammate } from '../domain/launch';
+import { buildSpawnInput, defaultConfigFor, launchTitleFor, newLaunchMutationId, type LaunchProject, type LaunchTeammate } from '../domain/launch';
 
 export interface CraftSessionRow {
   id: EntityId;
@@ -110,7 +110,7 @@ export function craftSpawnInput(args: {
     config,
     // Any kind: the server derives the task anchor (064).
     taskIds: [args.craftId],
-    ...(args.title ? { title: args.title } : {}),
+    ...(args.title ? { title: launchTitleFor({ title: args.title }) } : {}),
   });
   return { ...input, aboutEntityId: args.craftId };
 }

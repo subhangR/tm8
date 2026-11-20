@@ -135,6 +135,7 @@ import { claimsFor, commandEnvelope, requireUuidParam } from './context.js';
 import { refuseLinkBearerSpawn } from '../identity/link-bearer.js';
 import { LIVE_CHAT_COUNTS_SQL, type LiveChatCountRow } from './live-counts.js';
 import { projectLaunchContext } from './launch-context.js';
+import { projectConnectorAccounts } from './launch-access.js';
 import { loadContextV2 } from './services/w2/feed-context-v2.js';
 import { loadStoryContextForTask, putDerivedTasksInStories } from './spawn-story.js';
 import { loadDesignContextForTask } from './spawn-design.js';
@@ -3889,6 +3890,7 @@ function registerHandlers(
       recordedAt:
         row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       launchContext: manifest ? await projectLaunchContext(db, claims, manifest) : null,
+      connectorAccounts: await projectConnectorAccounts(db, claims, sessionId),
       ...launchReceiptOf(manifest, row.launched_by),
     };
     return json(result);

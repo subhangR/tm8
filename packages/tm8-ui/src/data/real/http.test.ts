@@ -11,6 +11,7 @@ import {
   TM8_CLIENT_HEADER,
   TM8_CLIENT_HEADER_VALUE,
   bindPath,
+  retryUpload,
 } from '@tm8/contract';
 import { DEFAULT_REQUEST_TIMEOUT_MS, SLOW_OPERATION_TIMEOUT_MS, createHttpClient } from './http';
 import { fakeFetch } from './test-support';
@@ -91,6 +92,32 @@ describe('http: S6 client header', () => {
 });
 
 describe('http: envelope unwrap', () => {
+  it('recovers an interrupted completion receipt after headers with the same body', async () => {
+    const bodies: unknown[] = [];
+    const http = createHttpClient({ fetch: async (_url, init) => {
+      bodies.push(init?.body);
+      if (bodies.length === 1) {
+        const response = new Response('', { status: 200 });
+        response.text = async () => { throw new TypeError('terminated midway through body'); };
+        return response;
+      }
+      return new Response(JSON.stringify({ data: { entity: { id: 'file-original' } }, requestId: 'r' }));
+    } });
+    const body = { clientMutationId: 'original-completion' };
+    const result = await retryUpload(() => http.call<{ entity: { id: string } }>('files.uploadComplete', {
+      params: { uploadId: 'original-grant' }, body,
+    }), { sleep: async () => {} });
+    expect(result.entity.id).toBe('file-original');
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toBe(bodies[0]);
+  });
+
+  it('treats an incomplete success envelope as an unknown receipt', async () => {
+    const http = createHttpClient({ fetch: async () => new Response('{}') });
+    await expect(http.call('files.uploadComplete', { params: { uploadId: 'grant' }, body: {} }))
+      .rejects.toMatchObject({ code: 'upstream_unavailable', retryable: true });
+  });
+
   it('returns data and never leaks the envelope', async () => {
     const f = fakeFetch(() => ({ data: { identityId: 'i-1', username: 'ada' } }));
     const http = createHttpClient({ fetch: f.fetch });

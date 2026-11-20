@@ -47,6 +47,7 @@ import { sessionContextSurfaceFor } from './sessionContextSurface';
 import { gitSurfaceFor } from './gitSurface';
 import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
+import { taskAccessSectionFor } from './taskAccessSection';
 import { graphSurfaceFor } from './graphSurface';
 import { storySurfaceFor } from './storySurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
@@ -160,6 +161,7 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose, panelHos
       gitSurface={gitSurfaceFor(data.seam, entityId, data.livenessOf)}
       changesSurface={changesSurfaceFor(data.seam, entityId, data.livenessOf)}
       taskGitSection={taskGitSectionFor(data.seam, detail, (id) => onOpenEntity(id as EntityId))}
+      taskAccessSection={taskAccessSectionFor(data.seam, detail, (id) => onOpenEntity(id as EntityId))}
       graphSurface={graphSurfaceFor(data.seam, entityId, data.livenessOf, (id) =>
         onOpenEntity(id as EntityId),
       )}

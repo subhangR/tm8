@@ -69,6 +69,7 @@ function fakeApi(requests: AttentionRequest[], over: Partial<AttentionApi> = {})
     chip: chip({ pendingCount: requests.length }),
     requests,
     latest: requests[0]!,
+    primary: requests[0]!,
     seen: false,
     mine: true,
     rolledUp: requests.filter((r) => r.entityId !== TASK).length,
@@ -376,8 +377,8 @@ describe('SessionWaitingBanner (tab 4)', () => {
         ];
         const doc = [request({ id: 'mine-doc', entityId: DOC, rootId: DOC, createdAt: new Date(Date.now() - 5 * HOUR).toISOString() })];
         return [
-          { rootId: TASK, title: 'Wire refund webhook', kind: 'task', chip: chip(), requests: reqs, latest: reqs[0]!, seen: false, mine: true, rolledUp: 0 },
-          { rootId: DOC, title: 'Runbook', kind: 'doc', chip: chip(), requests: doc, latest: doc[0]!, seen: false, mine: true, rolledUp: 0 },
+          { rootId: TASK, title: 'Wire refund webhook', kind: 'task', chip: chip(), requests: reqs, latest: reqs[0]!, primary: reqs[0]!, seen: false, mine: true, rolledUp: 0 },
+          { rootId: DOC, title: 'Runbook', kind: 'doc', chip: chip(), requests: doc, latest: doc[0]!, primary: doc[0]!, seen: false, mine: true, rolledUp: 0 },
         ];
       },
     });

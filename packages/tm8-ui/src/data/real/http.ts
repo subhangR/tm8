@@ -366,9 +366,10 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
       try {
         text = await res.text();
       } catch (cause) {
-        if (!guard.timedOut()) throw cause;
         onTransport?.(false);
-        throw new CollabError('upstream_unavailable', `the tm8 node did not answer within ${timeoutMs}ms`, {
+        throw new CollabError('upstream_unavailable', guard.timedOut()
+          ? `the tm8 node did not answer within ${timeoutMs}ms`
+          : 'the tm8 response was interrupted before its receipt could be read', {
           retryable: true,
           details: { url },
         });
@@ -386,6 +387,10 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
       }
 
       if (!res.ok) throw toCollabError(res.status, parsed);
+      if ((op === 'files.uploadInit' || op === 'files.uploadComplete')
+        && (parsed === null || typeof parsed !== 'object' || !Object.hasOwn(parsed, 'data'))) {
+        throw new CollabError('upstream_unavailable', 'the tm8 response did not contain a receipt', { retryable: true });
+      }
 
       return (parsed as { data?: T } | undefined)?.data as T;
     } finally {
@@ -520,6 +525,7 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
         signal: guard.signal,
       });
     } catch (cause) {
+      guard.disarm();
       onTransport?.(false);
       throw new CollabError(
         'upstream_unavailable',
@@ -528,14 +534,19 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
           : `cannot reach the upload target: ${String(cause)}`,
         { retryable: true, details: { url } },
       );
-    } finally {
-      guard.disarm();
     }
 
     onTransport?.(true);
-    if (res.ok) return;
+    if (res.ok) { guard.disarm(); return; }
 
-    const text = await res.text();
+    let text: string;
+    try {
+      text = await res.text();
+    } catch {
+      throw new CollabError('upstream_unavailable', 'the upload response could not be read', { retryable: true });
+    } finally {
+      guard.disarm();
+    }
     let parsed: unknown;
     try {
       parsed = text === '' ? undefined : JSON.parse(text);

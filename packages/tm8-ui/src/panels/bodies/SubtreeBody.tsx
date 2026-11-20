@@ -97,6 +97,8 @@ export interface SubtreeBodyProps {
    * because this body is presentational and never reaches for the seam.
    */
   gitSection?: ReactNode;
+  /** Host-composed access reading; no permissions are derived by this body. */
+  accessSection?: ReactNode;
   /** Wired ⇒ `＋ add child…` is live; absent ⇒ it renders disabled (R7). */
   onAddChild?: () => void;
   /** Current staged value; undefined means use the persisted description. */
@@ -212,6 +214,7 @@ export function SubtreeBody({
   memoryAuthoring,
   membershipAuthoring,
   gitSection,
+  accessSection,
   skillOptions,
   attach,
   onAttached,
@@ -324,6 +327,11 @@ export function SubtreeBody({
          */
         <CollapsibleSection id="git" label="GIT" empty={false} defaultOpen>
           {gitSection}
+        </CollapsibleSection>
+      ) : null}
+      {accessSection ? (
+        <CollapsibleSection id="access" label="ACCESS" empty={false} defaultOpen>
+          {accessSection}
         </CollapsibleSection>
       ) : null}
       {/* RUNS FOLLOW THE WORK on the two-column page (mockup r6): the main

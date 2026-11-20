@@ -161,6 +161,13 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
     }
   });
 
+  it.each(hosts)('%s passes the shared task access surface at every mount', (_label, file) => {
+    for (const { block } of mounts.filter((m) => m.file === file)) {
+      expect(block.includes('taskAccessSection={taskAccessSectionFor('),
+        `${file} must expose the same task access reading in every panel host`).toBe(true);
+    }
+  });
+
   it.each(hosts)('%s passes graphSurface at every mount', (_label, file) => {
     for (const { block } of mounts.filter((m) => m.file === file)) {
       expect(
