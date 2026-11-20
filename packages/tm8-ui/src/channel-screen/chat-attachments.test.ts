@@ -103,7 +103,9 @@ describe('canonical Chat attachment upload task', () => {
     });
 
     await expect(task.result).rejects.toThrow('s3://private-bucket/token');
-    expect(h.files.abort).toHaveBeenCalledWith('upload-1', { clientMutationId: 'mutation-2' });
+    // Init, complete and abort reserve separate stable IDs before any retry.
+    expect(h.files.abort).toHaveBeenCalledWith('upload-1', { clientMutationId: 'mutation-3' });
+    expect(h.files.complete).not.toHaveBeenCalled();
     expect(safeUploadReason(await task.result.catch((error) => error))).toBe('Upload failed. Try again.');
   });
 
