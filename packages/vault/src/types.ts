@@ -244,6 +244,8 @@ export type PasteKind =
   | 'tm8_token'
   | 'jwt'
   | 'connection_string'
+  /** A webhook URL whose path carries its own bearer secret (Discord, Teams and the like). Slack hooks stay `slack_token`. */
+  | 'webhook_url'
   | 'card_number'
   | 'password_assignment'
   | 'generic_secret_assignment'
