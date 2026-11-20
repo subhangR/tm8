@@ -1,0 +1,9 @@
+{
+  "name": "@tm8/vault-capture-page",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "vitest run"
+  }
+}
