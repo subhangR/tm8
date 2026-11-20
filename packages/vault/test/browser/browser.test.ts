@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { chromium } from 'playwright-core';
 import { randomUUID } from 'node:crypto';
 import { PlaywrightFillDriver } from '../../src/browser/playwright-driver.js';
 import { RemoteFillDriver } from '../../src/browser/remote-driver.js';
@@ -7,10 +6,9 @@ import { SecretMaterial, zeroize } from '../../src/secret-material.js';
 import type { FillOutcome } from '../../src/types.js';
 import { E2E_REASON, descendants, e2eEnabled, inspectBrowserProcesses, localServer, loginPage, pngPixel, until } from './fixtures.js';
 
-describe.skipIf(!e2eEnabled)(`browser fill acceptance 2, 3, 4, 6, 7 — ${E2E_REASON}`, () => {
+describe.skipIf(!e2eEnabled)(`browser acceptance 2, 3, 4, 6, 7 (test-only single-process, no sandbox) — ${E2E_REASON}`, () => {
   let first: Awaited<ReturnType<typeof localServer>>;
   let second: Awaited<ReturnType<typeof localServer>>;
-  let sandboxAvailable = false;
   let passwordEvents = 0;
   let collected = 0;
   let submitted = 0;
@@ -19,8 +17,6 @@ describe.skipIf(!e2eEnabled)(`browser fill acceptance 2, 3, 4, 6, 7 — ${E2E_RE
 
   beforeAll(async () => {
     process.env.TMPDIR = '/dev/shm';
-    try { const browser = await chromium.launch({ headless: true, chromiumSandbox: true }); await browser.close(); sandboxAvailable = true; }
-    catch { sandboxAvailable = false; }
     second = await localServer((request, response) => {
       if (request.url?.startsWith('/collect')) collected += 1;
       response.end('<!doctype html><body>Destination</body>');
@@ -67,13 +63,13 @@ describe.skipIf(!e2eEnabled)(`browser fill acceptance 2, 3, 4, 6, 7 — ${E2E_RE
     if (originalTmpdir === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = originalTmpdir;
   });
 
-  function driver() { return new PlaywrightFillDriver({ timeoutMs: 10_000, testOnlyDisableSandbox: !sandboxAvailable }); }
+  function driver() { return new PlaywrightFillDriver({ timeoutMs: 10_000, testOnlyDisableSandbox: true }); }
   async function fill(path: string, submit = false, startOrigin = first.origin): Promise<FillOutcome> {
     const browser = driver();
     const password = SecretMaterial.fromUtf8(['canary', randomUUID(), '%"\\雪'].join('-'));
     try {
       const result = await browser.fill({ intent: { operationId: randomUUID(), itemId: 'fixture-login', origin: first.origin,
-        startUrl: `${startOrigin}${path}`, submit, devMode: true }, material: { username: 'fixture-user', password, totp: null } });
+        startUrl: `${startOrigin}${path}`, submit, devMode: true }, material: { username: ['fixture-user', 'example.invalid'].join('@'), password, totp: null } });
       expect(password.disposed).toBe(false);
       return result;
     } finally { password.dispose(); await browser.close(); }

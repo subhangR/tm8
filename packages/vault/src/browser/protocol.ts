@@ -48,6 +48,10 @@ export class FrameReader {
           this.#body = null;
           this.#finished = true;
           zeroize(this.#header);
+          if (offset !== chunk.length) {
+            zeroize(body);
+            throw new Error('invalid worker frame');
+          }
           this.receive(body);
         }
       }

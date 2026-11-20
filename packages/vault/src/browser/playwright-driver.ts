@@ -1,11 +1,9 @@
-import { statfs } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { chromium, type Browser, type BrowserContext, type Frame, type Locator, type Page, type Request } from 'playwright-core';
+import { type Browser, type BrowserContext, type Frame, type Locator, type Page, type Request } from 'playwright-core';
 import type { FillDriver, FillIntent, FillOutcome, FillRefusalCode, LoginMaterial, MaskedScreenshot } from '../types.js';
 import { sameOrigin } from '../origin/normalize.js';
 import { zeroize } from '../secret-material.js';
-import { CHROMIUM_FLAGS } from './chromium-flags.js';
+import { launchIsolatedBrowser, type BrowserOptions } from './browser-session.js';
 import { checkFormAction, checkNavigationChain, checkPasswordFieldLocation, checkTopFrameUrl, observedOrigin } from './policy.js';
 import { DEFAULT_FILL_TIMEOUT_MS } from './protocol.js';
 
@@ -18,12 +16,7 @@ export class PlaywrightFillDriver implements FillDriver {
   #closed = false;
   #busy = false;
 
-  constructor(private readonly options: {
-    executablePath?: string;
-    timeoutMs?: number;
-    /** Test-host escape hatch only; the production worker always uses the sandbox. */
-    testOnlyDisableSandbox?: boolean;
-  } = {}) {}
+  constructor(private readonly options: BrowserOptions = {}) {}
 
   async fill(input: { intent: FillIntent; material: LoginMaterial; signal?: AbortSignal }): Promise<FillOutcome> {
     if (this.#closed || this.#busy) return failed('browser_unavailable');
@@ -50,20 +43,7 @@ export class PlaywrightFillDriver implements FillDriver {
     signal?.addEventListener('abort', stop, { once: true });
 
     try {
-      // Playwright creates a disposable profile. Refuse a disk-backed temp root.
-      // The service mounts TMPDIR as tmpfs; tests use /dev/shm.
-      const filesystem = await statfs(tmpdir());
-      if (Number(filesystem.type) !== 0x01021994) return failed('browser_unavailable');
-      this.#browser = await chromium.launch({
-        headless: true,
-        chromiumSandbox: !this.options.testOnlyDisableSandbox,
-        ignoreDefaultArgs: ['--disable-dev-shm-usage'],
-        args: [...CHROMIUM_FLAGS],
-        executablePath: this.options.executablePath,
-        timeout: timeoutMs,
-        // No inherited Playwright logging, tracing, debugger, or NODE_OPTIONS.
-        env: { ...process.env, DEBUG: '', PWDEBUG: '0', NODE_OPTIONS: '' },
-      });
+      this.#browser = await launchIsolatedBrowser({ ...this.options, timeoutMs });
       if (timedOut) return failed('timeout');
       launchFailed = false;
       context = await this.#browser.newContext({

@@ -19,10 +19,21 @@ until the separate security review and penetration test pass.
    Never use a browser or binary in an agent-writable directory.
 3. Verify unprivileged Chromium sandbox/user namespaces work for the dedicated
    account under `NoNewPrivileges`. Production always enables the sandbox; the
-   in-process test option to disable it is unavailable through the socket/CLI.
+   in-process test option to disable it is unavailable through the socket/CLI or
+   environment. Also run a protection-key allocate/use/free probe on the broker
+   VM: this build host advertises protection keys but Chromium child processes
+   fault when using them. If the VM has the same quirk, an operator must verify a
+   seccomp rule returning `ENOSPC` for `pkey_alloc` in the unit. A conditional
+   systemd drop-in can use `SystemCallFilter=~pkey_alloc` together with
+   `SystemCallErrorNumber=ENOSPC`; validate that policy and the sandbox on that VM.
+   These settings use systemd's documented [system call filtering](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#SystemCallFilter=).
+   Do not apply the single-process test workaround to the production unit.
+   The worker runs a separate sandbox AND blank-page renderer probe at startup.
+   If it fails or exceeds five seconds, health stays unready and every fill
+   returns `browser_unavailable` until the worker is restarted successfully.
 4. Install the unit, `systemctl daemon-reload`, then enable/start it only after
    approval. No TCP listener is created. The socket is `/run/tm8-vault/fill.sock`,
-   owner `tm8-vault-fill`, group `tm8-vault`, mode `0660` from creation.
+   owner `tm8-vault-fill`, group `tm8-vault`, mode `0660` after an owner-only creation window.
    A stale socket after SIGKILL is deliberately not unlinked by runtime code:
    stop the unit, verify no worker holds it, remove that socket, then restart.
 5. Point the broker's `RemoteFillDriver` at that socket. Authorization, approval,
@@ -84,6 +95,23 @@ external crash collectors. The unit adds `LimitCORE=0`, `MemorySwapMax=0`, tmpfs
 discarded process output and cgroup teardown; independent review must verify
 those controls in the deployed environment. Same-uid agents or root compromise
 are outside this local isolation claim; use the separate uid/VM boundary.
+
+On this build host, run the opt-in suite with the existing library bundle:
+
+```sh
+LD_LIBRARY_PATH=/home/tm8/chromedeps/root/usr/lib/x86_64-linux-gnu \
+  TM8_VAULT_BROWSER_E2E=1 npx vitest run test/browser
+```
+
+Tests 2/3/4/6/7/13 explicitly use the in-process test-only option selecting
+`--no-sandbox --single-process --no-zygote --disable-gpu`. Each fill still launches
+a fresh browser (single-process Chromium only supports one context lifetime on
+this host). These tests exercise origin and mechanism behavior; they do not
+validate the production Chromium sandbox or protection-key seccomp policy.
+Production-entry tests use a fake executable to prove CLI/env test switches are
+ignored/refused, sandbox flags are retained, failed probes never report ready,
+and fills fail closed. Test configuration reaches disposable children only over
+an inherited private IPC channel, never through the broker socket or environment.
 
 ## Browser policy details
 

@@ -55,6 +55,11 @@ describe('private fill protocol', () => {
     const chunk = Buffer.alloc(4); chunk.writeUInt32BE(11);
     try { expect(() => reader.push(chunk)).toThrow('invalid worker frame'); expect(chunk.every((x) => x === 0)).toBe(true); }
     finally { reader.dispose(); }
+    const trailingReader = new FrameReader(100, () => { throw new Error('must not dispatch a trailing frame'); });
+    const valid = encodeJsonFrame({ id: 'test', op: 'health' });
+    const combined = Buffer.concat([valid, Buffer.from([0])]);
+    try { expect(() => trailingReader.push(combined)).toThrow('invalid worker frame'); expect(combined.every((x) => x === 0)).toBe(true); }
+    finally { zeroize(valid, combined); trailingReader.dispose(); }
   });
 
   it.each([
