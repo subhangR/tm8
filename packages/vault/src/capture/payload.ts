@@ -27,6 +27,8 @@ export const LoginPayloadSchema = z
     password: z.string().min(1).max(4096),
     /** otpauth:// URI or a base32 secret. TOTP autofill itself is v2 (MSG 15). */
     totp: z.string().max(2048).optional(),
+    /** Free-text notes. They often hold recovery codes or security answers, so they are SECRET: stored encrypted, never in metadata. */
+    notes: z.string().min(1).max(65536).optional(),
     devMode: z.boolean().optional(),
   })
   .strict();
@@ -128,6 +130,8 @@ export interface ItemMetadata {
   expYear?: number;
   connector?: string;
   hasTotp?: boolean;
+  /** Logins: true when encrypted notes are stored. The notes themselves never leave the broker. */
+  hasNotes?: boolean;
   /** Identity items: field NAMES only. */
   fieldNames?: string[];
 }
@@ -176,8 +180,15 @@ export function parseCapturePayload(plaintext: Buffer, expectedType: VaultItemTy
           ...(payload.devMode ? { devMode: true } : {}),
           ...(payload.username !== undefined ? { username: payload.username } : {}),
           hasTotp: payload.totp !== undefined,
+          ...(payload.notes !== undefined ? { hasNotes: true } : {}),
         },
-        secret: SecretMaterial.fromUtf8(canonicalJson({ password: payload.password, ...(payload.totp !== undefined ? { totp: payload.totp } : {}) })),
+        secret: SecretMaterial.fromUtf8(
+          canonicalJson({
+            password: payload.password,
+            ...(payload.totp !== undefined ? { totp: payload.totp } : {}),
+            ...(payload.notes !== undefined ? { notes: payload.notes } : {}),
+          }),
+        ),
       };
     }
     case 'api_key':

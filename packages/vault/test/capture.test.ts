@@ -93,6 +93,17 @@ describe('capture payload (R1, R9)', () => {
     expect(JSON.parse(parsed.secret.utf8())).toEqual({ password: CANARY });
   });
 
+  it('keeps login notes in the secret part only', () => {
+    const notes = `recovery ${CANARY}`;
+    const body = { type: 'login', name: 'GitHub', origin: 'https://github.com', password: 'pw-value-1', notes };
+    const parsed = parseCapturePayload(Buffer.from(JSON.stringify(body)), 'login');
+    expect(parsed.metadata.hasNotes).toBe(true);
+    expect(JSON.stringify(parsed.metadata)).not.toContain(CANARY);
+    expect(JSON.parse(parsed.secret.utf8())).toEqual({ password: 'pw-value-1', notes });
+    parsed.secret.dispose();
+    expect(() => parseCapturePayload(Buffer.from(JSON.stringify({ ...body, notes: '' })), 'login')).toThrow(/invalid_payload/);
+  });
+
   it.each(['cvv', 'CVC', 'cvv2', 'security_code', 'securityCode', 'card-verification-value'])('refuses a card with %s', (key) => {
     const card = { type: 'card', name: 'Visa', pan: '4242 4242 4242 4242', expMonth: 12, expYear: 2030, [key]: '123' };
     const error = (() => {
