@@ -22,22 +22,13 @@ function observedOrigin(input: string | null, item: ItemRecord): string | null {
 }
 
 /**
- * Temporary requester-visible history: grantees cannot see other requesters,
- * and 200 intervening events can hide the previous attempt. OPEN: WS-A owns
- * replacing ONLY this body with tx.audit.fillFailureStreak(itemId, origin), a
- * count-only aggregate across ALL callers, plus grantee/event-burst tests.
- * Call AFTER the completion append: its head lock serializes concurrent
- * completions, and the returned count includes the event just appended.
+ * A count-only aggregate across ALL callers (store `audit.fillFailureStreak`),
+ * so failures spread over several grantees, or behind a burst of other events,
+ * still alert. Call AFTER the completion append: its head lock serializes
+ * concurrent completions, and the returned count includes the event just appended.
  */
 async function failureStreak(tx: VaultTx, itemId: string, origin: string): Promise<number> {
-  const recent = await tx.audit.listForItem(itemId, '1970-01-01T00:00:00.000Z', 200);
-  let failures = 0;
-  for (const event of recent) {
-    if (event.params.origin !== origin || event.params.attempted !== true) continue;
-    if (event.action === 'fill.done') break;
-    if (event.action === 'fill.refused') failures++;
-  }
-  return failures;
+  return tx.audit.fillFailureStreak(itemId, origin);
 }
 
 export const fill: VaultHandler<'vault.fill'> = async (ctx, { params, input }) => {

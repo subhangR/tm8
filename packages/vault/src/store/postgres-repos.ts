@@ -96,12 +96,12 @@ export function sqlColumn(name: string): string {
 }
 const camel =(name: string): string => name.replace(/_([a-z])/g, (_, part: string) => part.toUpperCase());
 const JSON_FIELDS = new Set(['createdBy','revokedBy','constraints','boundParams','requestedBy','decidedBy','lookalike','spend','actor','result','injection','evidence','registration']);
-const READ_METHODS = new Set(['get','list','listForItem','countActive','countOwned','activeForCaller','countPending','findPending','findUsable','currentSecret','getByCredentialId','getByTokenHash','getByApproval','listForMember','listUnknown','listUnused','countUnused','listUsable','getUsable','head','range','latestCheckpoint']);
+const READ_METHODS = new Set(['get','list','listForItem','countActive','countOwned','activeForCaller','countPending','findPending','findUsable','currentSecret','getByCredentialId','getByTokenHash','getByApproval','listForMember','listUnknown','listUnused','countUnused','listUsable','getUsable','head','range','latestCheckpoint','fillFailureStreak']);
 const AUTH_REPOS = new Set(['passkeys', 'sessions', 'challenges', 'recoveryCodes', 'enrollmentCodes']);
 const ID_FIELDS = new Set(['id','itemId','memberId','ownerMemberId','spaceId','operationId','approvalId','consumedByOperationId','sessionId','passkeyId','codeId','requesterMemberId','granteeId']);
 const POSITIONAL_IDS: Record<string, number[]> = {
   get: [0], update: [0], setProperties: [0], addOrigin: [0], replaceSecret: [0], currentSecret: [0], tombstone: [0],
-  set: [0], listForItem: [0], revoke: [0], activeForCaller: [0], countActive: [0], findPending: [0], findUsable: [0],
+  set: [0], listForItem: [0], fillFailureStreak: [0], revoke: [0], activeForCaller: [0], countActive: [0], findPending: [0], findUsable: [0],
   decide: [0], consume: [0], countPending: [0], complete: [0], resolveUnknown: [0, 1], getByApproval: [0],
   markExecuted: [0], recordUse: [0], touch: [0], revokeForPasskey: [0], markUsed: [0], getUsable: [0], markOpened: [0],
 };
@@ -1496,6 +1496,13 @@ class Audit implements AuditRepo {
     const memberId = c.scope.kind === 'member' ? c.scope.memberId : null;
     const rows = await c.query('select * from vault.audit_events where item_id = $1 and at >= $2 and ($3::boolean or actor->>\'memberId\' = $4) order by seq desc limit $5', [item.id, iso(since, 'since'), owner, memberId, clampLimit(limit)]);
     return rows.map((row) => decode<AuditEventRecord>(row));
+  }
+  async fillFailureStreak(itemId: string, origin: string): Promise<number> {
+    const c = this.c; c.enter();
+    const item = await c.visibleItem(itemId);
+    // A SECURITY DEFINER count: RLS would show a grantee only its own events, and only the integer comes back.
+    const rows = await c.query('select vault.fill_failure_streak($1, $2) as streak', [item.id, text(origin, 'origin', 2048)]);
+    return int(rows[0]?.streak, 'streak', 0);
   }
   async head(): Promise<{ seq: number; hash: string }> {
     const row = (await this.c.query('select seq, hash from vault.audit_head where singleton'))[0]!;

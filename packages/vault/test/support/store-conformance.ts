@@ -705,6 +705,54 @@ export function describeStoreConformance(name: string, makeHarness: () => Promis
         expect((await as(otherCaller, (tx) => tx.audit.listForItem(item.id, since, 10))).map((row) => row.seq)).toEqual([2]);
       });
 
+      it('fillFailureStreak counts every caller\'s attempted refusals for one origin, back to the last attempted done', async () => {
+        const item = await seed();
+        await share(item.id);
+        await share(item.id, 'member', { granteeId: third.memberId });
+        const origin = 'https://login.example.test';
+        const other = 'https://other.example.test';
+        const record = (caller: VaultCaller, action: string, params: AuditBody['params']) =>
+          as(caller, (tx) => tx.audit.append({ ...event(caller, action, item.id, params), subjectMemberId: OWNER_ID }));
+        const streak = (caller: VaultCaller, at = origin) => as(caller, (tx) => tx.audit.fillFailureStreak(item.id, at));
+        expect(await streak(testCaller)).toBe(0);
+
+        await record(otherCaller, 'fill.refused', { origin, attempted: true, code: 'fields_not_found' });
+        await record(third, 'fill.refused', { origin, attempted: true, code: 'timeout' });
+        // None of these counts, and none of them ends the streak.
+        await record(otherCaller, 'fill.refused', { origin, attempted: false, code: 'grant_constraint' });
+        await record(third, 'fill.done', { origin: other, attempted: true });
+        await record(third, 'fill.done', { origin, attempted: false });
+        await record(otherCaller, 'fill.started', { origin });
+        await record(third, 'fill.refused', { origin: other, attempted: true, code: 'timeout' });
+        // Each grantee sees only its own events, yet both count the other's refusal.
+        expect((await as(otherCaller, (tx) => tx.audit.listForItem(item.id, h.clock.iso(-MINUTE), 50)))
+          .every((row) => row.actor.memberId === otherCaller.memberId)).toBe(true);
+        expect(await streak(otherCaller)).toBe(2);
+        expect(await streak(third)).toBe(2);
+        expect(await streak(testCaller)).toBe(2);
+        expect(await streak(testCaller, other)).toBe(1);
+
+        // A burst of 200 other events hides nothing (the old 200-event window would).
+        await as(testCaller, async (tx) => {
+          for (let index = 0; index < 200; index += 1) {
+            await tx.audit.append(event(testCaller, 'fill.refused', item.id, { origin, attempted: false, code: 'grant_constraint' }));
+          }
+        });
+        await record(third, 'fill.refused', { origin, attempted: true, code: 'navigation_failed' });
+        expect(await streak(otherCaller)).toBe(3);
+
+        await record(otherCaller, 'fill.done', { origin, attempted: true });
+        expect(await streak(third)).toBe(0);
+        expect(await streak(testCaller, other)).toBe(1);
+        await record(third, 'fill.refused', { origin, attempted: true, code: 'timeout' });
+        expect(await streak(testCaller)).toBe(1);
+
+        // A caller who cannot see the item reads it exactly as a missing one.
+        await expect(as(outsiderCaller, (tx) => tx.audit.fillFailureStreak(item.id, origin))).rejects.toBeInstanceOf(notFound);
+        await expect(as(testCaller, (tx) => tx.audit.fillFailureStreak(randomUUID(), origin))).rejects.toBeInstanceOf(notFound);
+        await expect(as(testCaller, (tx) => tx.audit.fillFailureStreak(item.id, 'x'.repeat(2049)))).rejects.toBeInstanceOf(TypeError);
+      });
+
       it('event time never runs backwards along the chain, whatever the clock does', async () => {
         const first = await as(testCaller, (tx) => tx.audit.append(event(testCaller, 'session.signed_in')));
         h.clock.advance(-5 * MINUTE);

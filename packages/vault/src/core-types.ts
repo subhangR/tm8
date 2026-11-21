@@ -878,6 +878,18 @@ export interface AuditRepo {
    * `actor.memberId` is them, so a grantee never learns how others use the item.
    */
   listForItem(itemId: string, since: IsoTime, limit: number): Promise<AuditEventRecord[]>;
+  /**
+   * Count-only and global for one visible item and origin: the number of
+   * `fill.refused` events with `params.attempted === true` and this exact
+   * `params.origin`, newest first, back to the latest attempted `fill.done`
+   * for the same origin. It counts EVERY caller's events, which `listForItem`
+   * would hide from a grantee, and it has no window, so neither failures
+   * spread over several requesters nor a burst of other events can keep the
+   * repeated-failure alert from firing. Only the integer leaves the store.
+   * Call it after the completion append: the head lock serializes concurrent
+   * completions, and the count includes the event just appended.
+   */
+  fillFailureStreak(itemId: string, origin: string): Promise<number>;
   /** Global head. `{seq: 0, hash: AUDIT_GENESIS_HASH}` for an empty chain. */
   head(): Promise<{ seq: number; hash: string }>;
   /** System scope. Ascending, inclusive. */

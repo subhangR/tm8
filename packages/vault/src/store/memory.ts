@@ -1585,6 +1585,22 @@ class Audit implements AuditRepo {
     return rows;
   }
 
+  async fillFailureStreak(itemId: string, origin: string): Promise<number> {
+    const c = this.c;
+    c.enter();
+    const item = c.visibleItem(itemId);
+    const wanted = text(origin, 'origin', 2048);
+    let failures = 0;
+    // Every caller's events, deliberately: only the count leaves this method.
+    for (let index = c.s.audit.length - 1; index >= 0; index -= 1) {
+      const event = c.s.audit[index];
+      if (!event || event.itemId !== item.id || event.params.origin !== wanted || event.params.attempted !== true) continue;
+      if (event.action === 'fill.done') break;
+      if (event.action === 'fill.refused') failures += 1;
+    }
+    return failures;
+  }
+
   async head(): Promise<{ seq: number; hash: string }> {
     this.c.enter();
     const head = this.#head();

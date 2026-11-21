@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { AGENT_ACTION_OPS, actorOf } from '../../src/core-types.js';
-import { otherCaller, RecordingAlertSink, scopeOf, testCaller } from '../support/kit.js';
+import { makeCaller, otherCaller, RecordingAlertSink, scopeOf, testCaller } from '../support/kit.js';
 import { NEW_ORIGIN, ORIGIN, apiKey, approve, events, fillInput, handlers, harness, invoke, login, share } from './fixtures.js';
 
 describe('agent fills', () => {
@@ -110,6 +110,38 @@ describe('agent fills', () => {
     for (let i = 0; i < 3; i++) await invoke(broker, 'vault.fill', { itemId: item.id }, fillInput());
     expect((await events(broker)).filter((event) => event.action === 'fill.repeated_failures')).toHaveLength(2);
     expect((broker.components.alerts as RecordingAlertSink).kinds().filter((kind) => kind === 'fill_repeated_failures')).toHaveLength(2);
+  });
+
+  it('counts failures across every grantee and through a burst of 200 other events', async () => {
+    const { broker, fill } = harness();
+    const item = await login(broker);
+    const third = makeCaller({ memberId: randomUUID(), name: 'Third member', isSpaceAdmin: false });
+    await share(broker, item.id, otherCaller);
+    await share(broker, item.id, third);
+    fill.mockResolvedValue({ ok: false, code: 'fields_not_found', observedOrigin: ORIGIN, screenshot: null });
+    const alerts = () => (broker.components.alerts as RecordingAlertSink).kinds().filter((kind) => kind === 'fill_repeated_failures');
+    await invoke(broker, 'vault.fill', { itemId: item.id }, fillInput(), { caller: otherCaller });
+    await invoke(broker, 'vault.fill', { itemId: item.id }, fillInput(), { caller: otherCaller });
+    // A requester-visible count would give the third member a streak of 1 here.
+    await invoke(broker, 'vault.fill', { itemId: item.id }, fillInput(), { caller: third });
+    expect(alerts()).toHaveLength(1);
+    expect((await events(broker)).filter((event) => event.action === 'fill.repeated_failures')).toHaveLength(1);
+
+    fill.mockResolvedValueOnce({ ok: true, finalOrigin: ORIGIN, submitted: false, screenshot: null });
+    await invoke(broker, 'vault.fill', { itemId: item.id }, fillInput(), { caller: third });
+    await invoke(broker, 'vault.fill', { itemId: item.id }, fillInput(), { caller: otherCaller });
+    await invoke(broker, 'vault.fill', { itemId: item.id }, fillInput(), { caller: third });
+    // More intervening events than the old 200-event window held.
+    await broker.store.transaction(scopeOf(testCaller), async (tx) => {
+      for (let index = 0; index < 200; index += 1) {
+        await tx.audit.append({ action: 'fill.started', actor: actorOf(testCaller), itemId: item.id,
+          subjectMemberId: testCaller.memberId, spaceId: testCaller.spaceId, params: { origin: ORIGIN } });
+      }
+    });
+    expect(alerts()).toHaveLength(1);
+    await invoke(broker, 'vault.fill', { itemId: item.id }, fillInput(), { caller: otherCaller });
+    expect(alerts()).toHaveLength(2);
+    expect((await events(broker)).filter((event) => event.action === 'fill.repeated_failures')).toHaveLength(2);
   });
 
   it('test 12 at use: a revoked grant refuses the next fill', async () => {

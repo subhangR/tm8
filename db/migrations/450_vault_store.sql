@@ -194,6 +194,20 @@ set search_path = pg_catalog, vault as $$
 $$;
 create function vault.hash_in_use(p_hash text) returns boolean language sql stable security definer
 set search_path = pg_catalog, vault as $$ select exists (select 1 from vault.session_hashes where hash = p_hash) $$;
+-- Count-only and global for the repeated-fill-failure alert. RLS shows a grantee
+-- only its own audit events, so a read through it would let failures spread over
+-- several requesters stay under the threshold. Only the integer leaves; an item
+-- the caller cannot see counts 0.
+create function vault.fill_failure_streak(p_item uuid, p_origin text) returns integer language sql stable security definer
+set search_path = pg_catalog, vault as $$
+  select case when not vault.sees_item(p_item) then 0 else (
+    select count(*)::integer from vault.audit_events e
+    where e.item_id = p_item and e.action = 'fill.refused'
+      and e.params->>'origin' = p_origin and e.params->'attempted' = 'true'::jsonb
+      and e.seq > coalesce((select max(d.seq) from vault.audit_events d
+        where d.item_id = p_item and d.action = 'fill.done'
+          and d.params->>'origin' = p_origin and d.params->'attempted' = 'true'::jsonb), 0)) end
+$$;
 
 create function vault.sync_session_hashes() returns trigger language plpgsql security definer
 set search_path = pg_catalog, vault as $$
@@ -372,7 +386,7 @@ grant select on vault.audit_events to tm8_vault_broker;
 grant select on vault.audit_head to tm8_vault_broker;
 grant usage on sequence vault.checkpoints_ordinal_seq to tm8_vault_broker;
 revoke all on all functions in schema vault from public, tm8_app;
-grant execute on function vault.member_id(), vault.space_id(), vault.scope_time(), vault.is_system(), vault.owns_item(uuid), vault.sees_item(uuid), vault.sees_approval(uuid), vault.hash_in_use(text) to tm8_vault_broker;
+grant execute on function vault.member_id(), vault.space_id(), vault.scope_time(), vault.is_system(), vault.owns_item(uuid), vault.sees_item(uuid), vault.sees_approval(uuid), vault.hash_in_use(text), vault.fill_failure_streak(uuid, text) to tm8_vault_broker;
 -- Audit writer needs no RLS bypass: its insert policy is narrow and has no read grant.
 create policy audit_writer_insert on vault.audit_events for insert to tm8_vault_audit_writer with check (true);
 reset role;
