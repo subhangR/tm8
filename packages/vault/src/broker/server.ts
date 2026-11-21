@@ -125,11 +125,14 @@ export async function createBrokerServer(options: BrokerServerOptions): Promise<
       if (!header) throw new AttestationError('missing');
       const cap = vaultBodyLimit(route?.row.name);
       const body = await readBody(req, cap);
-      caller = verifier.verify(header, { method: req.method ?? '', ...target, body });
+      const verified = verifier.verify(header, { method: req.method ?? '', ...target, body });
+      caller = verified.caller;
       attested = true;
       // Claims have been signature/schema/replay checked. Never inspect this payload before verify succeeds.
       requestId = verifiedRequestId(header as string);
-      const result = await dispatch({ method: req.method ?? '', ...target, body, headers: req.headers, caller, requestId, signal: abort.signal });
+      // The origin is the attested one. An Origin header on this socket is not authenticated, so it is never passed on.
+      const result = await dispatch({ method: req.method ?? '', ...target, body, headers: req.headers, caller,
+        origin: verified.origin, requestId, signal: abort.signal });
       status = result.status;
       write(res, result, requestId, true);
     } catch (error) {

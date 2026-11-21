@@ -42,6 +42,13 @@ export interface BrokerRequest {
   body: Buffer;
   headers: Readonly<Record<string, string | string[] | undefined>>;
   caller: VaultCaller;
+  /**
+   * The browser origin from the relay's signed attestation, or null. Human-only
+   * commands decide on this and never on `headers.origin`: anything that can
+   * reach the broker's socket can write that header, and the relay does not
+   * forward it (independent review F04).
+   */
+  origin: string | null;
   requestId: string;
   signal: AbortSignal;
 }
@@ -153,8 +160,9 @@ export function createBrokerDispatcher(deps: BrokerDependencies): (request: Brok
       limiter.take(request.caller, rateClass(row.name, row.kind === 'read'));
       if (row.authority !== 'member' && request.caller.kind === 'agent') throw new VaultError('forbidden');
       if ('humanOnly' in row && row.humanOnly && row.kind === 'command') {
-        const origin = request.headers.origin;
-        if (typeof origin !== 'string' || !config.webauthn.origins.includes(origin)) throw new VaultError('forbidden');
+        // The relay attests an origin only for a browser session whose Origin the tm8 server accepted. The broker
+        // still requires that origin to be one of its exact WebAuthn origins, so the check is not weakened.
+        if (request.origin === null || !config.webauthn.origins.includes(request.origin)) throw new VaultError('forbidden');
       }
       if (row.name.startsWith('vault.imports.') && (config.mode === 'pre_review' || !config.features.import)) throw VaultError.reason('import_disabled');
       if (row.name.startsWith('vault.spend.')) throw VaultError.reason('spend_disabled');

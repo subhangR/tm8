@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   ATTESTATION_DEFAULT_TTL_SECONDS,
   ATTESTATION_MAX_HEADER_CHARS,
+  ATTESTATION_MAX_ORIGIN_CHARS,
   AttestationError,
   AttestationTooLargeError,
   AttestationVerifier,
   VAULT_ATTESTATION_HEADER,
   exportAttestationKeyPair,
   generateAttestationKeyPair,
+  isCanonicalBrowserOrigin,
   loadAttestationPrivateKey,
   loadAttestationPublicKey,
   signAttestation,
@@ -22,7 +24,9 @@ import { FixedClock, T0, agentOf, makeCaller, testCaller } from '../support/kit.
  * test: the relay and the broker deploy separately, and a silent format change
  * would lock every caller out.
  */
-const SIGNING_PREFIX = 'tm8-vault-attest|v1|';
+const SIGNING_PREFIX = 'tm8-vault-attest|v2|';
+const V1_PREFIX = 'tm8-vault-attest|v1|';
+const ORIGIN = 'https://tm8.example.test';
 
 const REQUEST: AttestedRequest = { method: 'POST', path: '/v2/vault/items', query: 'limit=2', body: '{"name":"Test item"}' };
 
@@ -35,6 +39,11 @@ function decodeClaims(header: string): Record<string, unknown> {
   return JSON.parse(Buffer.from(header.split('.')[0]!, 'base64url').toString('utf8')) as Record<string, unknown>;
 }
 
+/** What verify returns: the caller, and the attested origin (null unless the relay attested one). */
+function verified(caller: VaultCaller, origin: string | null = null) {
+  return { caller: { ...caller }, origin };
+}
+
 function code(fn: () => unknown): string {
   try {
     fn();
@@ -44,6 +53,15 @@ function code(fn: () => unknown): string {
   }
   return 'accepted';
 }
+
+/** What a browser never sends as Origin, or what URL parsing would have to normalise. None of them may be attested. */
+const NON_CANONICAL_ORIGINS: readonly unknown[] = [
+  '', 'null', 'https://tm8.example.test/', 'https://TM8.example.test', 'HTTPS://tm8.example.test', 'https://tm8.example.test/path',
+  'https://tm8.example.test?x=1', 'https://tm8.example.test#x', 'https://user:pw@tm8.example.test', 'https://tm8.example.test:443',
+  'http://tm8.example.test:80', 'javascript:alert(1)', 'data:text/html,x', 'file:///etc/passwd', 'ftp://tm8.example.test',
+  'chrome-extension://abcdefghijklmnop', ' https://tm8.example.test', 'https://tm8.example.test ', 'https://tm8.example.test, https://other.example.test',
+  `https://${'a'.repeat(ATTESTATION_MAX_ORIGIN_CHARS)}.example.test`, 42, true, {},
+];
 
 describe('relay attestation', () => {
   let keys: { privateKey: KeyObject; publicKey: KeyObject };
@@ -58,13 +76,14 @@ describe('relay attestation', () => {
     verifier = new AttestationVerifier(keys.publicKey, { clock: brokerClock });
   });
 
-  const attest = (caller: VaultCaller = testCaller, request: AttestedRequest = REQUEST, ttlSeconds?: number) =>
-    signAttestation({ privateKey: keys.privateKey, caller, request, clock: relayClock, ...(ttlSeconds === undefined ? {} : { ttlSeconds }) });
+  const attest = (caller: VaultCaller = testCaller, request: AttestedRequest = REQUEST, ttlSeconds?: number, origin?: string | null) =>
+    signAttestation({ privateKey: keys.privateKey, caller, request, clock: relayClock, ...(ttlSeconds === undefined ? {} : { ttlSeconds }),
+      ...(origin === undefined ? {} : { origin }) });
   const rawClaims = (overrides: Record<string, unknown> = {}) => {
     const iat = Math.floor(relayClock.now().getTime() / 1000);
     return {
-      v: 1, rid: randomUUID(), iat, exp: iat + 15, method: REQUEST.method, path: REQUEST.path, query: REQUEST.query,
-      bodySha256: createHash('sha256').update(REQUEST.body).digest('hex'),
+      v: 2, rid: randomUUID(), iat, exp: iat + 15, method: REQUEST.method, path: REQUEST.path, query: REQUEST.query,
+      bodySha256: createHash('sha256').update(REQUEST.body).digest('hex'), origin: null,
       caller: { kind: 'member', memberId: testCaller.memberId, spaceId: testCaller.spaceId, sessionId: null, name: testCaller.name, isSpaceAdmin: true, ip: testCaller.ip },
       ...overrides,
     };
@@ -75,28 +94,31 @@ describe('relay attestation', () => {
   });
 
   it('round-trips exactly the caller, for a member and for an agent', () => {
-    expect(verifier.verify(attest(), REQUEST)).toEqual({ ...testCaller });
+    expect(verifier.verify(attest(), REQUEST)).toEqual(verified(testCaller));
     const agent = agentOf(testCaller, randomUUID());
     const result = verifier.verify(attest(agent), REQUEST);
-    expect(result).toEqual({ ...agent });
-    expect(Object.keys(result).sort()).toEqual(['ip', 'isSpaceAdmin', 'kind', 'memberId', 'name', 'sessionId', 'spaceId']);
+    expect(result).toEqual(verified(agent));
+    expect(Object.keys(result).sort()).toEqual(['caller', 'origin']);
+    expect(Object.keys(result.caller).sort()).toEqual(['ip', 'isSpaceAdmin', 'kind', 'memberId', 'name', 'sessionId', 'spaceId']);
   });
 
   it('carries only the documented claims, and lives 15 seconds by default', () => {
     const claims = decodeClaims(attest());
-    expect(Object.keys(claims).sort()).toEqual(['bodySha256', 'caller', 'exp', 'iat', 'method', 'path', 'query', 'rid', 'v']);
-    expect(claims).toMatchObject({ v: 1, iat: Date.parse(T0) / 1000, exp: Date.parse(T0) / 1000 + ATTESTATION_DEFAULT_TTL_SECONDS });
+    expect(Object.keys(claims).sort()).toEqual(['bodySha256', 'caller', 'exp', 'iat', 'method', 'origin', 'path', 'query', 'rid', 'v']);
+    // No origin unless the relay passes one: a caller that is not a browser session gets null, never a default.
+    expect(claims).toMatchObject({ v: 2, origin: null, iat: Date.parse(T0) / 1000, exp: Date.parse(T0) / 1000 + ATTESTATION_DEFAULT_TTL_SECONDS });
     expect(claims.bodySha256).toBe(createHash('sha256').update(REQUEST.body).digest('hex'));
   });
 
   it('accepts a header built by hand from the documented format', () => {
-    expect(verifier.verify(signRaw(keys.privateKey, rawClaims()), REQUEST)).toEqual({ ...testCaller });
+    expect(verifier.verify(signRaw(keys.privateKey, rawClaims()), REQUEST)).toEqual(verified(testCaller));
+    expect(verifier.verify(signRaw(keys.privateKey, rawClaims({ origin: ORIGIN })), REQUEST)).toEqual(verified(testCaller, ORIGIN));
   });
 
   it('returns ids lowercase and keys the replay check on the lowercase request id', () => {
     const rid = randomUUID();
     const upper = rawClaims({ rid: rid.toUpperCase(), caller: { ...rawClaims().caller, memberId: testCaller.memberId.toUpperCase(), spaceId: testCaller.spaceId.toUpperCase(), sessionId: rid.toUpperCase() } });
-    expect(verifier.verify(signRaw(keys.privateKey, upper), REQUEST)).toMatchObject({ memberId: testCaller.memberId, spaceId: testCaller.spaceId, sessionId: rid });
+    expect(verifier.verify(signRaw(keys.privateKey, upper), REQUEST).caller).toMatchObject({ memberId: testCaller.memberId, spaceId: testCaller.spaceId, sessionId: rid });
     expect(code(() => verifier.verify(signRaw(keys.privateKey, { ...upper, rid }), REQUEST))).toBe('replayed');
   });
 
@@ -119,11 +141,11 @@ describe('relay attestation', () => {
     ]) {
       expect(code(() => verifier.verify(header, other))).toBe('request_mismatch');
     }
-    expect(verifier.verify(header, { ...REQUEST, body: Buffer.from(REQUEST.body as string) })).toEqual({ ...testCaller });
+    expect(verifier.verify(header, { ...REQUEST, body: Buffer.from(REQUEST.body as string) })).toEqual(verified(testCaller));
     const bytes = new Uint8Array(Buffer.from(REQUEST.body as string));
-    expect(verifier.verify(attest(), { ...REQUEST, body: bytes })).toEqual({ ...testCaller });
+    expect(verifier.verify(attest(), { ...REQUEST, body: bytes })).toEqual(verified(testCaller));
     const get: AttestedRequest = { method: 'GET', path: '/v2/vault/items', query: '', body: '' };
-    expect(verifier.verify(attest(testCaller, get), { ...get, body: Buffer.alloc(0) })).toEqual({ ...testCaller });
+    expect(verifier.verify(attest(testCaller, get), { ...get, body: Buffer.alloc(0) })).toEqual(verified(testCaller));
   });
 
   it('refuses a header from another key, an edited payload, or a signature without the domain prefix', () => {
@@ -133,7 +155,11 @@ describe('relay attestation', () => {
     const edited = Buffer.from(JSON.stringify({ ...decodeClaims(`${payload}.x`), caller: { ...(decodeClaims(`${payload}.x`).caller as object), isSpaceAdmin: false } })).toString('base64url');
     expect(code(() => verifier.verify(`${edited}.${signature}`, REQUEST))).toBe('bad_signature');
     expect(code(() => verifier.verify(signRaw(keys.privateKey, rawClaims(), ''), REQUEST))).toBe('bad_signature');
-    expect(code(() => verifier.verify(signRaw(keys.privateKey, rawClaims(), 'tm8-vault-attest|v2|'), REQUEST))).toBe('bad_signature');
+    expect(code(() => verifier.verify(signRaw(keys.privateKey, rawClaims(), 'tm8-vault-attest|v3|'), REQUEST))).toBe('bad_signature');
+    // A v1 header, as the previous relay signed it (no origin claim), is refused by its prefix: no downgrade.
+    const { origin: _none, ...v1 } = rawClaims({ v: 1 });
+    expect(code(() => verifier.verify(signRaw(keys.privateKey, v1, V1_PREFIX), REQUEST))).toBe('bad_signature');
+    expect(code(() => verifier.verify(signRaw(keys.privateKey, rawClaims({ v: 1 }), V1_PREFIX), REQUEST))).toBe('bad_signature');
   });
 
   it('refuses a malformed or malleable header before checking anything else', () => {
@@ -154,14 +180,15 @@ describe('relay attestation', () => {
     ]) {
       expect(code(() => verifier.verify(bad, REQUEST))).toBe('malformed');
     }
-    expect(verifier.verify(header, REQUEST)).toEqual({ ...testCaller });
+    expect(verifier.verify(header, REQUEST)).toEqual(verified(testCaller));
   });
 
   it('refuses signed claims the schema refuses', () => {
     const base = rawClaims();
     for (const claims of [
       { ...base, extra: true },
-      { ...base, v: 2 },
+      { ...base, v: 1 },
+      { ...base, v: 3 },
       { ...base, path: '/v1/vault/items' },
       { ...base, path: '/v2/vault/items?x=1' },
       { ...base, rid: 'not-a-uuid' },
@@ -173,7 +200,17 @@ describe('relay attestation', () => {
     ]) {
       expect(code(() => verifier.verify(signRaw(keys.privateKey, claims), REQUEST))).toBe('malformed');
     }
-    const notJson = Buffer.from('{"v":1,').toString('base64url');
+    // The origin claim is required (null is explicit), and only a canonical browser origin is accepted.
+    const { origin: _absent, ...withoutOrigin } = base;
+    expect(code(() => verifier.verify(signRaw(keys.privateKey, withoutOrigin), REQUEST))).toBe('malformed');
+    for (const origin of NON_CANONICAL_ORIGINS) {
+      expect(code(() => verifier.verify(signRaw(keys.privateKey, rawClaims({ origin })), REQUEST)), JSON.stringify(origin)).toBe('malformed');
+    }
+    // An agent is never a browser session: a signed agent claim with an origin is refused, not trusted.
+    const agentCaller = { ...base.caller, kind: 'agent', sessionId: randomUUID() };
+    expect(code(() => verifier.verify(signRaw(keys.privateKey, rawClaims({ caller: agentCaller, origin: ORIGIN })), REQUEST))).toBe('malformed');
+    expect(code(() => verifier.verify(signRaw(keys.privateKey, rawClaims({ caller: agentCaller, origin: null })), REQUEST))).toBe('accepted');
+    const notJson = Buffer.from('{"v":2,').toString('base64url');
     expect(code(() => verifier.verify(`${notJson}.${sign(null, Buffer.from(SIGNING_PREFIX + notJson, 'ascii'), keys.privateKey).toString('base64url')}`, REQUEST))).toBe('malformed');
   });
 
@@ -196,7 +233,7 @@ describe('relay attestation', () => {
     const long: AttestedRequest = { ...REQUEST, query: `cursor=${'q'.repeat(3000)}` };
     expect(() => attest(testCaller, long)).toThrow(AttestationTooLargeError);
     const fits: AttestedRequest = { ...REQUEST, query: `cursor=${'q'.repeat(1500)}` };
-    expect(verifier.verify(attest(testCaller, fits), fits)).toEqual({ ...testCaller });
+    expect(verifier.verify(attest(testCaller, fits), fits)).toEqual(verified(testCaller));
     // Validly signed and schema-valid, but over the cap: refused before the signature is checked.
     const oversized = signRaw(keys.privateKey, rawClaims({ query: long.query }));
     expect(oversized.length).toBeGreaterThan(ATTESTATION_MAX_HEADER_CHARS);
@@ -222,6 +259,31 @@ describe('relay attestation', () => {
     for (const caller of [makeCaller({ memberId: 'not-a-uuid' }), makeCaller({ name: 'x'.repeat(201) }), makeCaller({ kind: 'system' as VaultCaller['kind'] })]) {
       expect(() => attest(caller)).toThrow(TypeError);
     }
+    for (const origin of NON_CANONICAL_ORIGINS) expect(() => attest(testCaller, REQUEST, undefined, origin as string), JSON.stringify(origin)).toThrow(TypeError);
+    expect(() => attest(agentOf(testCaller, randomUUID()), REQUEST, undefined, ORIGIN)).toThrow(TypeError);
+  });
+
+  it('carries the browser origin the relay accepted, signed, and only that (F04)', () => {
+    const header = attest(testCaller, REQUEST, undefined, ORIGIN);
+    expect(decodeClaims(header).origin).toBe(ORIGIN);
+    expect(verifier.verify(header, REQUEST)).toEqual(verified(testCaller, ORIGIN));
+    // The claim is signed: swapping it for another allowed-looking origin breaks the signature.
+    const [payload, signature] = attest(testCaller, REQUEST, undefined, ORIGIN).split('.') as [string, string];
+    const swapped = Buffer.from(JSON.stringify({ ...decodeClaims(`${payload}.x`), origin: 'https://attacker.example.test' })).toString('base64url');
+    expect(code(() => verifier.verify(`${swapped}.${signature}`, REQUEST))).toBe('bad_signature');
+    const dropped = Buffer.from(JSON.stringify({ ...decodeClaims(`${payload}.x`), origin: null })).toString('base64url');
+    expect(code(() => verifier.verify(`${dropped}.${signature}`, REQUEST))).toBe('bad_signature');
+    // Explicit null and an omitted origin are the same claim.
+    expect(verifier.verify(attest(testCaller, REQUEST, undefined, null), REQUEST)).toEqual(verified(testCaller));
+    // Loopback http origins are browser origins too, with their port.
+    expect(verifier.verify(attest(testCaller, REQUEST, undefined, 'http://127.0.0.1:5173'), REQUEST)).toEqual(verified(testCaller, 'http://127.0.0.1:5173'));
+  });
+
+  it('recognises exactly the canonical browser origins', () => {
+    for (const origin of ['https://tm8.example.test', 'http://localhost:5173', 'https://tm8.example.test:8443', 'http://[::1]:4000', 'https://xn--bcher-kva.example']) {
+      expect(isCanonicalBrowserOrigin(origin), origin).toBe(true);
+    }
+    for (const origin of NON_CANONICAL_ORIGINS) expect(isCanonicalBrowserOrigin(origin), JSON.stringify(origin)).toBe(false);
   });
 
   it('accepts Ed25519 keys of the right half only, and round-trips them through PEM', () => {
@@ -236,7 +298,7 @@ describe('relay attestation', () => {
     expect(pem.publicPem.split('\n')[0]).toBe('-----BEGIN PUBLIC KEY-----');
     const relayKey = loadAttestationPrivateKey(pem.privatePem);
     const brokerVerifier = new AttestationVerifier(loadAttestationPublicKey(pem.publicPem), { clock: brokerClock });
-    expect(brokerVerifier.verify(signAttestation({ privateKey: relayKey, caller: testCaller, request: REQUEST, clock: relayClock }), REQUEST)).toEqual({ ...testCaller });
+    expect(brokerVerifier.verify(signAttestation({ privateKey: relayKey, caller: testCaller, request: REQUEST, clock: relayClock }), REQUEST)).toEqual(verified(testCaller));
     expect(() => loadAttestationPrivateKey(rsa.privateKey.export({ type: 'pkcs8', format: 'pem' }))).toThrow(TypeError);
     expect(() => loadAttestationPublicKey(rsa.publicKey.export({ type: 'spki', format: 'pem' }))).toThrow(TypeError);
   });

@@ -17,6 +17,13 @@
  * (x-tm8-vault-caller) binds caller, method, path, query and a body digest for
  * at most 15 seconds, once.
  *
+ * THE ORIGIN (independent review F04). The client's Origin header is not
+ * forwarded either. For a browser session the attestation carries it instead,
+ * signed, once checkTransport has accepted it; for every other caller it
+ * carries null. The broker's human-only commands decide on that claim against
+ * its own exact WebAuthn origins, so the relay neither drops nor replaces the
+ * origin check: it is the one hop that can vouch for the header (attestableOrigin).
+ *
  * WHAT IT PASSES BACK. The status and the JSON body, the broker's own cookies
  * in the broker's exact shape (anything else is dropped), a numeric
  * Retry-After, and fixed no-store, nosniff and no-referrer headers. It strips
@@ -37,7 +44,7 @@ import { request as httpsRequest } from 'node:https';
 import { CollabError, VAULT_BASE_PATH, VAULT_SPACE_HEADER } from '@tm8/contract';
 import {
   AttestationTooLargeError, VAULT_ALERTS_HEADER, VAULT_ATTESTATION_HEADER, VAULT_COOKIE_NAMES,
-  decodeVaultAlerts, matchVaultRoute, signAttestation, vaultBodyLimit, type VaultAlertBatch,
+  decodeVaultAlerts, isCanonicalBrowserOrigin, matchVaultRoute, signAttestation, vaultBodyLimit, type VaultAlertBatch,
 } from '@tm8/vault/relay';
 
 import type { Db, DbClaims } from '../db/types.js';
@@ -178,10 +185,11 @@ export function createVaultRelay(options: VaultRelayOptions): VaultRelay {
       const body = await readBody(req, method, vaultBodyLimit(route.row.name));
       const claims = await supportClaims(deps, identity, requestId);
       const caller = await resolveCaller(deps.db, req, identity, claims);
+      const origin = attestableOrigin(req, identity);
 
       let attestation: string;
       try {
-        attestation = signAttestation({ privateKey: config.privateKey, caller, request: { method, path, query, body } });
+        attestation = signAttestation({ privateKey: config.privateKey, caller, request: { method, path, query, body }, origin });
       } catch (error) {
         if (error instanceof AttestationTooLargeError) throw new RelayRefusal(414, 'invalid_input', 'uri_too_long');
         throw new RelayRefusal(400, 'invalid_input', 'invalid_request');
@@ -260,6 +268,24 @@ export async function resolveCaller(
     isSpaceAdmin: row.admin === true,
     ip: ip !== 'unknown' && ip.length <= 64 ? ip : null,
   };
+}
+
+/**
+ * The Origin header to attest, or null. Exported for the relay tests.
+ *
+ * Only a browser session's: a browser sets Origin itself, and no page script can
+ * change it, which is what the broker's human-only check relies on. A CLI, an
+ * agent or a runtime credential gets null, whatever Origin it sends, so it can
+ * never pass that check. The value is the header checkTransport already
+ * accepted (this runs after it: S3 refuses a foreign, repeated or `null`
+ * Origin), and only in its canonical form. A non-canonical value gets null
+ * rather than a normalised one, so nothing is attested that the browser did
+ * not send. The broker then requires an exact match with its WebAuthn origins.
+ */
+export function attestableOrigin(req: IncomingMessage, identity: RequestIdentity): string | null {
+  if (identity.kind !== 'bearer' || identity.authKind !== 'browser') return null;
+  const value = req.headers.origin;
+  return isCanonicalBrowserOrigin(value) ? value : null;
 }
 
 async function readBody(req: IncomingMessage, method: string, limit: number): Promise<Buffer> {

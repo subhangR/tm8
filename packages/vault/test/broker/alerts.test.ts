@@ -154,11 +154,12 @@ describe('@tm8/vault/relay', () => {
     const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')) as { exports: Record<string, unknown> };
     expect(pkg.exports['./relay']).toEqual({ types: './dist/relay/index.d.ts', default: './dist/relay/index.js' });
     expect(Object.keys(await import('../../src/relay/index.js')).sort()).toEqual([
-      'ATTESTATION_DEFAULT_TTL_SECONDS', 'ATTESTATION_MAX_HEADER_CHARS', 'ATTESTATION_MAX_SKEW_SECONDS', 'ATTESTATION_MAX_TTL_SECONDS',
+      'ATTESTATION_DEFAULT_TTL_SECONDS', 'ATTESTATION_MAX_HEADER_CHARS', 'ATTESTATION_MAX_ORIGIN_CHARS', 'ATTESTATION_MAX_SKEW_SECONDS', 'ATTESTATION_MAX_TTL_SECONDS',
       'AttestationError', 'AttestationTooLargeError', 'AttestationVerifier', 'VAULT_ALERTS_HEADER', 'VAULT_ALERTS_HEADER_MAX_CHARS',
       'VAULT_ALERTS_MAX_PER_HEADER', 'VAULT_ALERT_KINDS', 'VAULT_ATTESTATION_HEADER', 'VAULT_BODY_LIMITS', 'VAULT_COOKIE_NAMES', 'VaultAlertHeaderError',
       'VaultAlertSchema', 'decodeVaultAlerts', 'encodeVaultAlerts', 'exportAttestationKeyPair', 'generateAttestationKeyPair',
-      'loadAttestationPrivateKey', 'loadAttestationPublicKey', 'matchVaultRoute', 'signAttestation', 'vaultBodyLimit',
+      // The relay and the broker share one canonical-origin rule for the signed origin claim (independent review F04).
+      'isCanonicalBrowserOrigin', 'loadAttestationPrivateKey', 'loadAttestationPublicKey', 'matchVaultRoute', 'signAttestation', 'vaultBodyLimit',
     ]);
     // The route table both ends match against is pure data over the contract: no fs, net or store import.
     const routes = await readFile(new URL('../../src/relay/routes.ts', import.meta.url), 'utf8');

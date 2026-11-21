@@ -15,6 +15,8 @@
  *     another space;
  *   - no tm8 credential, cookie or client header crosses to the broker, and
  *     only the broker's own two cookies come back;
+ *   - the Origin checkTransport accepted reaches the broker only as the signed
+ *     attestation claim, and only for a browser session (independent review F04);
  *   - alerts reach public.notifications through 451's internal.vault_notify
  *     as tm8_app, one row per burst, never for a non-member.
  *
@@ -54,7 +56,7 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 240_000 });
 
-type Caller = ReturnType<AttestationVerifier['verify']>;
+type Caller = ReturnType<AttestationVerifier['verify']>['caller'];
 
 interface Seen {
   readonly method: string;
@@ -62,6 +64,8 @@ interface Seen {
   readonly headers: IncomingHttpHeaders;
   readonly body: Buffer;
   readonly caller: Caller | null;
+  /** The attested origin. Undefined when the attestation was refused. */
+  readonly origin: string | null | undefined;
   readonly refusal: string | null;
   aborted: boolean;
 }
@@ -118,10 +122,10 @@ describe('vault relay on a real node', () => {
     identityId, authKind: 'browser', nodeAdmin: false, requestId: `vault-relay-${randomUUID()}`,
   });
 
-  async function mintBrowser(identityId: string, accountId: string): Promise<string> {
+  async function mintBrowser(identityId: string, accountId: string, kind: 'browser' | 'cli' = 'browser'): Promise<string> {
     const secret = generateSecret();
     const row = await db.tx(claims(identityId), (q) => q.rpc<{ id: string }>('issue_auth_session', [
-      accountId, hashToken(secret), 'browser', new Date(Date.now() + 3_600_000).toISOString(), null, 'vault-relay browser',
+      accountId, hashToken(secret), kind, new Date(Date.now() + 3_600_000).toISOString(), null, `vault-relay ${kind}`,
     ]));
     return formatToken(row.id, secret);
   }
@@ -232,15 +236,16 @@ describe('vault relay on a real node', () => {
         const body = Buffer.concat(chunks);
         const url = new URL(req.url ?? '/', 'http://broker.invalid');
         let caller: Caller | null = null;
+        let origin: string | null | undefined;
         let refusal: string | null = null;
         try {
-          caller = verifier.verify(req.headers[VAULT_ATTESTATION_HEADER], {
+          ({ caller, origin } = verifier.verify(req.headers[VAULT_ATTESTATION_HEADER], {
             method: req.method ?? '', path: url.pathname, query: url.search.slice(1), body,
-          });
+          }));
         } catch (error) {
           refusal = error instanceof AttestationError ? error.code : 'unexpected';
         }
-        const entry: Seen = { method: req.method ?? '', url: req.url ?? '', headers: req.headers, body, caller, refusal, aborted: false };
+        const entry: Seen = { method: req.method ?? '', url: req.url ?? '', headers: req.headers, body, caller, origin, refusal, aborted: false };
         seen.push(entry);
         res.on('close', () => { if (!res.writableFinished) entry.aborted = true; });
         reply(entry, res);
@@ -353,6 +358,44 @@ describe('vault relay on a real node', () => {
     const away = await call('GET', '/v2/vault/items', { ...bearer(token), [VAULT_SPACE_HEADER]: f.spaceB });
     expect([away.status, reasonOf(away)]).toEqual([403, 'space_forbidden']);
     expect(seen).toHaveLength(1);
+  });
+
+  it('attests the Origin the server accepted for a browser session only, and never forwards the raw header (F04)', async () => {
+    const browser = await mintBrowser(f.identityH2, f.accountH2);
+    const cli = await mintBrowser(f.identityH2, f.accountH2, 'cli');
+    const agent = await mintAgent();
+    const origin = 'http://localhost:5173';
+    const json = { 'content-type': 'application/json', [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE };
+
+    // A browser session, by bearer and by the tm8 cookie a page sends: the origin is attested, signed.
+    expect((await call('POST', '/v2/vault/session/end', { ...bearer(browser), ...json, origin }, '{}')).status).toBe(200);
+    expect((await call('POST', '/v2/vault/session/end', { cookie: `${TM8_SESSION_COOKIE}=${browser}`, ...json, origin }, '{}')).status).toBe(200);
+    // The same browser session without an Origin: nothing to attest.
+    expect((await call('POST', '/v2/vault/session/end', { ...bearer(browser), ...json }, '{}')).status).toBe(200);
+    // A CLI and an agent can write any Origin they like, so theirs is never attested.
+    expect((await call('POST', '/v2/vault/session/end', { ...bearer(cli), ...json, origin }, '{}')).status).toBe(200);
+    expect((await call('POST', '/v2/vault/session/end', { ...bearer(agent), ...json, origin }, '{}')).status).toBe(200);
+    // A non-canonical value the hostname check lets through is attested as null, never normalised into an origin.
+    expect((await call('POST', '/v2/vault/session/end', { ...bearer(browser), ...json, origin: `${origin}/` }, '{}')).status).toBe(200);
+
+    expect(seen.map((entry) => [entry.refusal, entry.caller?.kind, entry.origin])).toEqual([
+      [null, 'member', origin],
+      [null, 'member', origin],
+      [null, 'member', null],
+      [null, 'member', null],
+      [null, 'agent', null],
+      [null, 'member', null],
+    ]);
+    // The broker learns the origin from the signed claim only: no Origin header crosses.
+    for (const entry of seen) expect(entry.headers.origin).toBeUndefined();
+
+    // The server's own origin checks still run first and are not relaxed: a foreign or opaque Origin never reaches the broker.
+    const foreign = await call('POST', '/v2/vault/session/end', { ...bearer(browser), ...json, origin: 'https://attacker.example.test' }, '{}');
+    const opaque = await call('POST', '/v2/vault/session/end', { ...bearer(browser), ...json, origin: 'null' }, '{}');
+    // Two Origin lines. The capitalised key is the index-signature one, which may hold a list.
+    const twice = await call('POST', '/v2/vault/session/end', { ...bearer(browser), ...json, Origin: [origin, origin] }, '{}');
+    expect([foreign.status, opaque.status, twice.status]).toEqual([403, 403, 403]);
+    expect(seen).toHaveLength(6);
   });
 
   it('forwards only the two vault cookies and passes back only Set-Cookie in the broker exact shape', async () => {

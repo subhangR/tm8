@@ -133,6 +133,12 @@ export interface SendOptions {
   query?: string;
   body?: Buffer;
   attestation?: string | null;
+  /**
+   * The origin the relay attests. By default what the relay would: ORIGIN for a
+   * member (a browser session) and null for an agent. No raw Origin header is
+   * sent unless `headers` names one, because the relay never forwards it.
+   */
+  origin?: string | null;
   signedRequest?: { method?: string; path?: string; query?: string; body?: Buffer };
   beforeSend?: (header: string) => void;
 }
@@ -153,10 +159,12 @@ export async function harness(options: { realCore?: boolean; handlers?: VaultHan
     const query = settings.query ?? target.split('?').slice(1).join('?');
     const body = settings.body ?? (method === 'GET' ? Buffer.alloc(0) : Buffer.from(JSON.stringify(settings.input ?? {})));
     const signed = settings.signedRequest ?? {};
-    const header = settings.attestation === undefined ? signAttestation({ privateKey: pair.privateKey, caller: settings.caller ?? testCaller, clock: broker.clock,
+    const caller = settings.caller ?? testCaller;
+    const origin = settings.origin !== undefined ? settings.origin : caller.kind === 'agent' ? null : ORIGIN;
+    const header = settings.attestation === undefined ? signAttestation({ privateKey: pair.privateKey, caller, clock: broker.clock, origin,
       request: { method: signed.method ?? method, path: signed.path ?? path, query: signed.query ?? query, body: signed.body ?? body } }) : settings.attestation;
     if (header) settings.beforeSend?.(header);
-    const headers: Record<string, string> = { 'content-type': 'application/json', origin: ORIGIN, cookie: 'tm8_vault_session=test-session-cookie' };
+    const headers: Record<string, string> = { 'content-type': 'application/json', cookie: 'tm8_vault_session=test-session-cookie' };
     if (header !== null) headers['x-tm8-vault-caller'] = header;
     for (const [key, value] of Object.entries(settings.headers ?? {})) { if (value === undefined) delete headers[key]; else headers[key] = value; }
     const started = performance.now();

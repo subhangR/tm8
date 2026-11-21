@@ -159,6 +159,15 @@ it only over mutual TLS:
 - The relay signs every request with an Ed25519 key (`TM8_VAULT_RELAY_PRIVATE_KEY_FILE`).
   The broker holds only the public half (`TM8_VAULT_RELAY_PUBLIC_KEY_FILE`).
 - The relay refuses to boot unless its key files are `chmod 600` and owned by the server's user.
+- **The browser origin travels inside the signature (attestation v2).** The relay forwards no
+  `Origin` header. For a browser session only, it signs into the attestation the `Origin` that
+  the server's own Origin and CSRF checks accepted. A CLI or agent session never gets one. The
+  broker serves a human-only command only when that signed origin is exactly one of
+  `TM8_VAULT_WEBAUTHN_ORIGINS`, and it ignores any raw `Origin` header. So:
+  - set `TM8_VAULT_WEBAUTHN_ORIGINS` to the origins browsers load tm8 from;
+  - set `TM8_ALLOWED_ORIGINS` on the server to the same list, so both sides match origins exactly.
+- **Upgrade the relay and the broker together.** The version is signed. A broker refuses a v1
+  attestation with `bad_signature`, and a v1 broker refuses a v2 relay the same way.
 
 **Unix socket (`TM8_VAULT_BROKER_SOCKET`).** The broker always listens on it, in production
 too, next to the mTLS listener. It refuses to start unless the socket's directory is

@@ -11,7 +11,7 @@ import { BROKER_BODY_LIMITS, createBrokerServer } from '../../src/broker/server.
 import { startBroker } from '../../src/broker/start.js';
 import { buildCanarySet } from '../../src/canary/index.js';
 import { RecordingAlertSink, fakeStepUpProof, newLogin, seedItem, testBroker, testCaller } from '../support/kit.js';
-import { ID, harness, stubHandlers, validInput, withoutRequestId, type Harness } from './support.js';
+import { ID, ORIGIN, harness, stubHandlers, validInput, withoutRequestId, type Harness } from './support.js';
 
 const opened: Harness[] = [];
 afterEach(async () => { for (const h of opened.splice(0)) await h.close(); });
@@ -106,11 +106,22 @@ describe('authority, modes and output boundary', () => {
     const response = await h.send(row.name, { caller: { ...testCaller, kind: 'agent', sessionId: randomUUID() } });
     expect(response.status).toBe(403);
   });
-  it('requires an allowed Origin for every human-only command', async () => {
+  it('requires an attested allowed origin for every human-only command, and never trusts a raw Origin header (F04)', async () => {
     const h = await setup({ realCore: false });
-    for (const row of VAULT_OPERATIONS.filter((row) => 'humanOnly' in row && row.kind === 'command')) {
-      expect((await h.send(row.name, { headers: { origin: undefined } })).status).toBe(403);
-      expect((await h.send(row.name, { headers: { origin: 'https://foreign.example.com' } })).status).toBe(403);
+    const humanOnly = VAULT_OPERATIONS.filter((row) => 'humanOnly' in row && row.kind === 'command');
+    expect(humanOnly.length).toBeGreaterThanOrEqual(20);
+    const refusedForOrigin = (response: Awaited<ReturnType<Harness['send']>>) =>
+      response.status === 403 && response.json?.error?.code === 'forbidden' && response.json.error.details === undefined;
+    for (const row of humanOnly) {
+      // No attested origin: a CLI, an agent, or a relay that lost it.
+      expect(refusedForOrigin(await h.send(row.name, { origin: null })), row.name).toBe(true);
+      // An attested origin the broker's WebAuthn origins do not include.
+      expect(refusedForOrigin(await h.send(row.name, { origin: 'https://foreign.example.com' })), row.name).toBe(true);
+      // Anything that reaches the socket can write Origin. The allowed value in that header never substitutes for the claim.
+      expect(refusedForOrigin(await h.send(row.name, { origin: null, headers: { origin: ORIGIN } })), row.name).toBe(true);
+      // The attested allowed origin passes, and a raw header that disagrees changes nothing.
+      expect(refusedForOrigin(await h.send(row.name, { headers: { origin: 'https://foreign.example.com' } })), row.name).toBe(false);
+      expect(refusedForOrigin(await h.send(row.name)), row.name).toBe(false);
       h.clock.advanceSeconds(60);
     }
   });

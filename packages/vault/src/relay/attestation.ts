@@ -21,6 +21,15 @@ import { digestEquals } from '../intent/hash.js';
  * never sees a tm8 credential. What it proves is the `member` authority level
  * and nothing more. Owner authority still needs a passkey (core-types.ts).
  *
+ * THE ORIGIN CLAIM (v2, independent review F04). The broker's human-only
+ * commands require the browser origin, but the relay forwards no client
+ * header, so v1 lost it and every such command answered 403 through the relay.
+ * v2 carries `origin`: the Origin header the tm8 server already accepted
+ * (http/security.ts checkOrigin) on a request from a browser session, or null
+ * for any other caller. It is signed with the rest of the claims, so the broker
+ * trusts it and never the raw Origin header on its own socket. The broker still
+ * checks it against its exact WebAuthn origins (broker/dispatcher.ts).
+ *
  * Known limit for the independent review: on a host where agent sessions run
  * as the same uid as the tm8 server, an agent can read the signing key file.
  * That is one reason `pre_review` holds test secrets only.
@@ -37,11 +46,29 @@ export const ATTESTATION_MAX_SKEW_SECONDS = 5;
  */
 export const ATTESTATION_MAX_HEADER_CHARS = 4096;
 
-const SIGNING_PREFIX = 'tm8-vault-attest|v1|';
+/** An attested origin is at most this long. A browser origin is a scheme, a host and a port. */
+export const ATTESTATION_MAX_ORIGIN_CHARS = 256;
+
+/** v2 adds `origin`. A v1 header fails the signature check, because the prefix is signed. */
+const SIGNING_PREFIX = 'tm8-vault-attest|v2|';
 const B64URL = /^[A-Za-z0-9_-]+$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const IdSchema = z.string().regex(UUID);
+
+/**
+ * One canonical browser origin, exactly as `new URL(value).origin` writes it:
+ * http or https, lowercase, no path, query, fragment, credentials or trailing
+ * slash, and never the opaque `null`. The relay attests only such a value, and
+ * the broker's schema refuses anything else.
+ */
+export function isCanonicalBrowserOrigin(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > ATTESTATION_MAX_ORIGIN_CHARS) return false;
+  let parsed: URL;
+  try { parsed = new URL(value); } catch { return false; }
+  return (parsed.protocol === 'https:' || parsed.protocol === 'http:') && parsed.origin === value;
+}
+
 const CallerSchema = z.object({
   kind: z.enum(['member', 'agent']),
   memberId: IdSchema,
@@ -53,7 +80,7 @@ const CallerSchema = z.object({
 }).strict();
 
 const ClaimsSchema = z.object({
-  v: z.literal(1),
+  v: z.literal(2),
   rid: IdSchema,
   iat: z.number().int().nonnegative(),
   exp: z.number().int().positive(),
@@ -63,10 +90,24 @@ const ClaimsSchema = z.object({
   /** The raw query string without the leading `?`; empty when there is none. */
   query: z.string().max(4096).regex(/^[\x21-\x7e]*$/).refine((query) => !query.includes('#')),
   bodySha256: z.string().regex(/^[0-9a-f]{64}$/),
+  /** The browser origin the relay accepted, for a browser session only. Null for a CLI, an agent or a runtime. */
+  origin: z.string().refine(isCanonicalBrowserOrigin).nullable(),
   caller: CallerSchema,
-}).strict();
+}).strict()
+  // An agent is never a browser session: the signer refuses to attest one with an origin, and so does the broker.
+  .refine((claims) => claims.caller.kind !== 'agent' || claims.origin === null);
 
 export type AttestationClaims = z.infer<typeof ClaimsSchema>;
+
+/** What the broker learns from a verified header. */
+export interface VerifiedAttestation {
+  readonly caller: VaultCaller;
+  /**
+   * The browser origin the relay attested, or null. It is the only origin the
+   * broker may trust: an Origin header on the broker's socket is not authenticated.
+   */
+  readonly origin: string | null;
+}
 
 /** The request as the relay forwards it and as the broker receives it. */
 export interface AttestedRequest {
@@ -158,6 +199,8 @@ export function signAttestation(input: {
   privateKey: KeyObject;
   caller: VaultCaller;
   request: AttestedRequest;
+  /** The browser origin the relay accepted, or null (the default) when the caller is not a browser session. */
+  origin?: string | null;
   clock?: Clock;
   ttlSeconds?: number;
 }): string {
@@ -166,7 +209,7 @@ export function signAttestation(input: {
   if (!Number.isInteger(ttl) || ttl < 1 || ttl > ATTESTATION_MAX_TTL_SECONDS) throw new TypeError('attestation ttl must be 1..30 seconds');
   const iat = Math.floor((input.clock ?? systemClock).now().getTime() / 1000);
   const parsed = ClaimsSchema.safeParse({
-    v: 1,
+    v: 2,
     rid: randomUUID(),
     iat,
     exp: iat + ttl,
@@ -174,6 +217,7 @@ export function signAttestation(input: {
     path: input.request.path,
     query: input.request.query,
     bodySha256: bodyDigest(input.request.body),
+    origin: input.origin ?? null,
     caller: {
       kind: input.caller.kind,
       memberId: input.caller.memberId,
@@ -206,7 +250,7 @@ export class AttestationVerifier {
     this.#maxEntries = options.maxReplayEntries ?? 100_000;
   }
 
-  verify(header: string | readonly string[] | undefined, request: AttestedRequest): VaultCaller {
+  verify(header: string | readonly string[] | undefined, request: AttestedRequest): VerifiedAttestation {
     if (header === undefined || header === '') throw new AttestationError('missing');
     // Two headers is never the relay. Refuse instead of picking one.
     if (typeof header !== 'string' || header.length > ATTESTATION_MAX_HEADER_CHARS) throw new AttestationError('malformed');
@@ -253,13 +297,16 @@ export class AttestationVerifier {
 
     const caller = claims.caller;
     return {
-      kind: caller.kind,
-      memberId: caller.memberId.toLowerCase(),
-      spaceId: caller.spaceId.toLowerCase(),
-      sessionId: caller.sessionId === null ? null : caller.sessionId.toLowerCase(),
-      name: caller.name,
-      isSpaceAdmin: caller.isSpaceAdmin,
-      ip: caller.ip,
+      caller: {
+        kind: caller.kind,
+        memberId: caller.memberId.toLowerCase(),
+        spaceId: caller.spaceId.toLowerCase(),
+        sessionId: caller.sessionId === null ? null : caller.sessionId.toLowerCase(),
+        name: caller.name,
+        isSpaceAdmin: caller.isSpaceAdmin,
+        ip: caller.ip,
+      },
+      origin: claims.origin,
     };
   }
 
