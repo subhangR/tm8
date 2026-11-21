@@ -1,17 +1,21 @@
-import { createPrivateKey, sign, type KeyObject } from 'node:crypto';
+import { createPrivateKey, createPublicKey, sign, verify, type KeyObject } from 'node:crypto';
 import { constants, closeSync, fstatSync, openSync, readFileSync } from 'node:fs';
-import { mkdir, open } from 'node:fs/promises';
+import { mkdir, open, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { systemClock, type CheckpointRecord, type CheckpointSigner, type CheckpointSink, type Clock, type VaultStore } from '../core-types.js';
+import {
+  CheckpointReadError, systemClock, type CheckpointRecord, type CheckpointSigner, type CheckpointSink, type CheckpointVerifier,
+  type Clock, type RetainedCheckpoint, type VaultStore,
+} from '../core-types.js';
 import type { VaultMode } from '../types.js';
-import { checkpointSigningInput } from './chain.js';
+import { RETAINED_CHECKPOINT_MAX_BYTES, checkpointSigningInput, parseRetainedCheckpoint } from './chain.js';
 
 type SignedCheckpoint = Parameters<CheckpointSink['put']>[0];
 
 /** Reads an operator-provided Ed25519 private key; never generates or writes one. */
-export class LocalEd25519CheckpointSigner implements CheckpointSigner {
+export class LocalEd25519CheckpointSigner implements CheckpointSigner, CheckpointVerifier {
   readonly keyId: string;
   readonly #key: KeyObject;
+  readonly #public: KeyObject;
 
   constructor(options: { name: string; keyFile: string; mode: VaultMode }) {
     if (options.mode !== 'dev' && options.mode !== 'pre_review') throw new Error('vault checkpoint: local signer refused');
@@ -26,6 +30,7 @@ export class LocalEd25519CheckpointSigner implements CheckpointSigner {
       bytes = readFileSync(fd);
       this.#key = createPrivateKey(bytes);
       if (this.#key.asymmetricKeyType !== 'ed25519') throw new Error();
+      this.#public = createPublicKey(this.#key);
     } catch {
       throw new Error('vault checkpoint: signing key unavailable');
     } finally {
@@ -38,13 +43,23 @@ export class LocalEd25519CheckpointSigner implements CheckpointSigner {
     try { return sign(null, input, this.#key); }
     catch { throw new Error('vault checkpoint: signing failed'); }
   }
+
+  /** Only its own key: a local signer cannot vouch for any other. */
+  async verify(keyId: string, input: Buffer, signature: Buffer): Promise<boolean> {
+    if (keyId !== this.keyId) return false;
+    try { return verify(null, input, this.#public, signature); } catch { return false; }
+  }
 }
 
 export class OffCheckpointSink implements CheckpointSink {
   readonly kind = 'off' as const;
   async put(_checkpoint: SignedCheckpoint): Promise<{ anchored: boolean; location: null }> { return { anchored: false, location: null }; }
   async health(): Promise<{ ok: boolean; retention: 'not_applicable' }> { return { ok: true, retention: 'not_applicable' }; }
+  async latest(_from?: number): Promise<RetainedCheckpoint | null> { return null; }
 }
+
+/** `${seq}-${headHash}.json`, exactly as put writes it: no leading zeros, lowercase hex. */
+const CHECKPOINT_FILE = /^(0|[1-9][0-9]{0,14})-([0-9a-f]{64})\.json$/;
 
 export class FileCheckpointSink implements CheckpointSink {
   readonly kind = 'file' as const;
@@ -74,6 +89,49 @@ export class FileCheckpointSink implements CheckpointSink {
       await directory.close();
       return { ok: true, retention: 'not_applicable' };
     } catch { return { ok: false, retention: 'not_applicable' }; }
+  }
+
+  /**
+   * Read back from the directory, never from the database (review F01). A
+   * missing or unreadable directory is `unavailable`, not "no checkpoints";
+   * two files for one seq are a fork wherever they are in the history.
+   */
+  async latest(from = 0): Promise<RetainedCheckpoint | null> {
+    let names: string[];
+    try {
+      const directory = await open(this.#directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+      await directory.close();
+      names = await readdir(this.#directory);
+    } catch { throw new CheckpointReadError('unavailable'); }
+    const heads = new Map<number, string>();
+    for (const name of names) {
+      const match = CHECKPOINT_FILE.exec(name);
+      if (!match) continue;
+      const seq = Number(match[1]);
+      if (heads.has(seq)) throw new CheckpointReadError('conflict');
+      heads.set(seq, match[2]!);
+    }
+    let best = -1;
+    for (const seq of heads.keys()) if (seq >= from && seq > best) best = seq;
+    if (best < 0) return null;
+    const headHash = heads.get(best)!;
+    const location = join(this.#directory, `${best}-${headHash}.json`);
+    let bytes: Buffer;
+    try {
+      // O_NONBLOCK: a FIFO planted under a checkpoint name must not hang the verification.
+      const file = await open(location, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      try {
+        const stat = await file.stat();
+        if (!stat.isFile() || stat.size > RETAINED_CHECKPOINT_MAX_BYTES) throw new CheckpointReadError('invalid');
+        bytes = await file.readFile();
+      } finally { await file.close(); }
+    } catch (error) {
+      if (error instanceof CheckpointReadError) throw error;
+      // A symlink planted under a checkpoint name is evidence, not an outage.
+      if ((error as NodeJS.ErrnoException).code === 'ELOOP') throw new CheckpointReadError('invalid');
+      throw new CheckpointReadError('unavailable');
+    }
+    return parseRetainedCheckpoint(bytes, { seq: best, headHash }, location);
   }
 }
 

@@ -1,9 +1,10 @@
 import { createHash, generateKeyPairSync, sign, verify, type KeyObject } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { CheckpointReadError } from '../../src/core-types.js';
 import { KmsRefusedError, KmsUnavailableError } from '../../src/crypto/kms.js';
 import { crc32c } from '../../src/gcp/crc32c.js';
 import { KmsCheckpointSigner, type CheckpointKeyAlgorithm } from '../../src/gcp/signer.js';
-import { expectSanitized, fakeToken, json, keyVersionName, loopbackSuite, rejected, tokens } from './fake.js';
+import { expectSanitized, fakeToken, json, keyName, keyVersionName, loopbackSuite, rejected, tokens } from './fake.js';
 
 describe('KmsCheckpointSigner', () => {
   const fake = loopbackSuite();
@@ -169,5 +170,89 @@ describe('KmsCheckpointSigner', () => {
     const error = await rejected(KmsCheckpointSigner.connect({ keyVersionName: keyVersionName.replace('/cryptoKeyVersions/1', ''), kmsBaseUrl: fixture.server.baseUrl, tokens }));
     expect(error).toBeInstanceOf(KmsRefusedError);
     expect(fixture.server.requests).toHaveLength(0);
+  });
+});
+
+describe('KmsCheckpointSigner as the anchor verifier (review F01)', () => {
+  const fake = loopbackSuite();
+  const input = () => Buffer.from('tm8-vault-checkpoint|v1|test-only signing input');
+  const rotated = `${keyName}/cryptoKeyVersions/2`;
+  const pairOf = (algorithm: CheckpointKeyAlgorithm) => algorithm === 'EC_SIGN_ED25519'
+    ? generateKeyPairSync('ed25519')
+    : generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const signWith = (algorithm: CheckpointKeyAlgorithm, key: KeyObject) => sign(algorithm === 'EC_SIGN_ED25519' ? null : 'sha256', input(), key);
+
+  /** Serves the public key of each known version; signing is never needed to verify. */
+  async function versionsFake(algorithm: CheckpointKeyAlgorithm) {
+    const versions = new Map([[keyVersionName, pairOf(algorithm)], [rotated, pairOf(algorithm)]]);
+    const state = { status: new Map<string, number>(), algorithm: new Map<string, string>() };
+    const server = await fake((req, res) => {
+      const match = /^\/v1\/(.+)\/publicKey$/.exec(req.url.pathname);
+      const name = match ? match[1]! : '';
+      const status = state.status.get(name) ?? 200;
+      if (status !== 200) { json(res, { error: fakeToken }, status); return; }
+      const pair = versions.get(name);
+      if (req.method !== 'GET' || !pair) { json(res, {}, 404); return; }
+      const pem = pair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+      json(res, { pem, pemCrc32c: String(crc32c(Buffer.from(pem))), algorithm: state.algorithm.get(name) ?? algorithm, name });
+    });
+    const signer = await KmsCheckpointSigner.connect({ keyVersionName, kmsBaseUrl: server.baseUrl, tokens });
+    return { server, state, signer, privateKey: (name: string) => versions.get(name)!.privateKey };
+  }
+  const algorithms: CheckpointKeyAlgorithm[] = ['EC_SIGN_ED25519', 'EC_SIGN_P256_SHA256'];
+
+  it.each(algorithms)('verifies its own %s version locally, only over the exact bytes', async (algorithm) => {
+    const { server, signer, privateKey } = await versionsFake(algorithm);
+    const signature = signWith(algorithm, privateKey(keyVersionName));
+    expect(server.requests).toHaveLength(1);
+    expect(await signer.verify(keyVersionName, input(), signature)).toBe(true);
+    expect(await signer.verify(keyVersionName, Buffer.concat([input(), Buffer.from('x')]), signature)).toBe(false);
+    expect(await signer.verify(keyVersionName, input(), signature.subarray(1))).toBe(false);
+    expect(await signer.verify(keyVersionName, input(), signWith(algorithm, privateKey(rotated)))).toBe(false);
+    expect(server.requests).toHaveLength(1);
+  });
+
+  it.each(algorithms)('reads a rotated %s version of the same cryptoKey once, then reuses it', async (algorithm) => {
+    const { server, signer, privateKey } = await versionsFake(algorithm);
+    const signature = signWith(algorithm, privateKey(rotated));
+    expect(await signer.verify(rotated, input(), signature)).toBe(true);
+    expect(await signer.verify(rotated, input(), signature)).toBe(true);
+    expect(await signer.verify(rotated, input(), signWith(algorithm, privateKey(keyVersionName)))).toBe(false);
+    expect(server.requests.map((req) => `${req.method} ${req.url.pathname}`)).toEqual([
+      `GET /v1/${keyVersionName}/publicKey`, `GET /v1/${rotated}/publicKey`,
+    ]);
+  });
+
+  it('never vouches for another cryptoKey or a malformed key id, and does not ask KMS about one', async () => {
+    const { server, signer, privateKey } = await versionsFake('EC_SIGN_ED25519');
+    const signature = signWith('EC_SIGN_ED25519', privateKey(keyVersionName));
+    for (const keyId of [
+      keyVersionName.replace('/cryptoKeys/test-key/', '/cryptoKeys/other-key/'),
+      keyVersionName.replace('/keyRings/test-ring/', '/keyRings/other-ring/'),
+      keyName, `${keyName}/cryptoKeyVersions/0`, `${keyName}/cryptoKeyVersions/1/../2`, 'local-dev:test', '',
+    ]) expect(await signer.verify(keyId, input(), signature), keyId).toBe(false);
+    expect(server.requests).toHaveLength(1);
+  });
+
+  it.each([
+    ['an unsupported algorithm', (state: { algorithm: Map<string, string> }) => { state.algorithm.set(rotated, 'RSA_SIGN_PSS_2048_SHA256'); }],
+    ['403', (state: { status: Map<string, number> }) => { state.status.set(rotated, 403); }],
+    ['404', (state: { status: Map<string, number> }) => { state.status.set(rotated, 404); }],
+  ] as const)('a version KMS refuses (%s) is not vouched for', async (_name, refuse) => {
+    const { signer, state, privateKey } = await versionsFake('EC_SIGN_ED25519');
+    refuse(state as never);
+    expect(await signer.verify(rotated, input(), signWith('EC_SIGN_ED25519', privateKey(rotated)))).toBe(false);
+  });
+
+  it.each([429, 500, 503])('a version KMS cannot serve right now (%s) is an outage, and is retried later', async (status) => {
+    const { server, signer, state, privateKey } = await versionsFake('EC_SIGN_P256_SHA256');
+    state.status.set(rotated, status);
+    const error = await rejected(signer.verify(rotated, input(), signWith('EC_SIGN_P256_SHA256', privateKey(rotated))));
+    expect(error).toBeInstanceOf(CheckpointReadError);
+    expect((error as CheckpointReadError).code).toBe('unavailable');
+    expectSanitized(error);
+    state.status.delete(rotated);
+    expect(await signer.verify(rotated, input(), signWith('EC_SIGN_P256_SHA256', privateKey(rotated)))).toBe(true);
+    expect(server.requests).toHaveLength(3);
   });
 });

@@ -986,13 +986,22 @@ export interface DeletionLedger {
  * failure also stops them.
  */
 export interface AuditGate {
-  /** Throws VaultError(audit_unavailable) while the chain is known broken or an append failed in the last `cooldownMs`. */
+  /**
+   * Throws VaultError(audit_unavailable) while the chain is known broken, an
+   * append failed in the last `cooldownMs`, or (with an anchor, review F01) an
+   * event has stayed unanchored or the retained anchor unverified for longer
+   * than the anchor budget.
+   */
   assertHealthy(): void;
   /** The dispatcher calls this whenever a transaction failed with AuditUnavailableError. */
   reportAppendFailure(): void;
-  /** Verifies from the last verified seq to the head. A break trips the gate until an operator restarts the broker. */
+  /**
+   * Verifies from the last verified seq to the head, and with an anchor checks
+   * the head the sink itself retains. A break, a rollback, a conflict or an
+   * unverifiable anchor trips the gate until an operator restarts the broker.
+   */
   verifyIncremental(): Promise<AuditVerification>;
-  /** Full walk from seq 1 (`vault.audit.verify`). */
+  /** Full walk from seq 1 (`vault.audit.verify`, and the broker's periodic full verification). */
   verifyAll(): Promise<AuditVerification>;
   status(): 'ok' | 'unavailable' | 'disabled';
 }
@@ -1000,6 +1009,40 @@ export interface AuditGate {
 export interface CheckpointSigner {
   readonly keyId: string;
   sign(input: Buffer): Promise<Buffer>;
+}
+
+/**
+ * Checks a retained checkpoint's signature (review F01). A key the verifier
+ * does not hold or cannot vouch for is `false`, never an error: the gate
+ * treats that as an unverifiable anchor and fails closed.
+ */
+export interface CheckpointVerifier {
+  /** Throws CheckpointReadError('unavailable') only when the key cannot be fetched right now. */
+  verify(keyId: string, input: Buffer, signature: Buffer): Promise<boolean>;
+}
+
+/**
+ * A read on the anchor path failed. Only `unavailable` is transient; `conflict`
+ * (two retained checkpoints claim one seq) and `invalid` (a retained object is
+ * malformed) are evidence and trip the audit gate until a restart.
+ */
+export class CheckpointReadError extends Error {
+  constructor(readonly code: 'unavailable' | 'conflict' | 'invalid') {
+    super(`vault checkpoint read ${code}`);
+    this.name = 'CheckpointReadError';
+  }
+}
+
+/** A signed checkpoint as the sink itself retains it: read back, never taken from vault.checkpoints. */
+export interface RetainedCheckpoint {
+  seq: number;
+  headHash: string;
+  at: IsoTime;
+  keyId: string;
+  /** base64url, exactly as retained. */
+  signature: string;
+  /** Object name or file path. Never a signed URL. */
+  location: string;
 }
 
 /**
@@ -1012,6 +1055,12 @@ export interface CheckpointSink {
   readonly kind: CheckpointSinkKind;
   put(checkpoint: { seq: number; headHash: string; at: IsoTime; keyId: string; signature: string }): Promise<{ anchored: boolean; location: string | null }>;
   health(): Promise<{ ok: boolean; retention: 'locked' | 'unlocked' | 'none' | 'unknown' | 'not_applicable' }>;
+  /**
+   * The highest-seq checkpoint the sink retains with seq >= `from` (default 0),
+   * or null when it retains none. `from` only narrows a listing. Throws
+   * CheckpointReadError.
+   */
+  latest(from?: number): Promise<RetainedCheckpoint | null>;
 }
 
 // ---------------------------------------------------------------------------

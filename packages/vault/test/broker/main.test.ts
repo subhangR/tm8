@@ -1,16 +1,19 @@
 import { execFileSync } from 'node:child_process';
-import { generateKeyPairSync, randomUUID } from 'node:crypto';
+import { generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { request as httpRequest, type IncomingHttpHeaders } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { createServer as createNetServer, type AddressInfo } from 'node:net';
+import { createConnection, createServer as createNetServer, type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { VAULT_OPERATIONS } from '@tm8/contract';
 import { BROKER_ENV_KNOBS, BrokerConfigError } from '../../src/broker/config.js';
-import { BROKER_RUNTIME_ENV_KNOBS, composeBroker, createVaultHandlers, failureMessage, type ComposedBroker } from '../../src/broker/main.js';
-import { SYSTEM_ACTOR, VaultError, actorOf, systemClock, type VaultAlert, type VaultTx } from '../../src/core-types.js';
+import { AUDIT_GENESIS_HASH, checkpointSigningInput } from '../../src/audit/chain.js';
+import { VaultAuditGate } from '../../src/audit/gate.js';
+import { BROKER_RUNTIME_ENV_KNOBS, auditMaintenance, composeBroker, createVaultHandlers, failureMessage, type ComposedBroker } from '../../src/broker/main.js';
+import { SYSTEM_ACTOR, VaultError, actorOf, systemClock, type AuditVerification, type VaultAlert, type VaultTx } from '../../src/core-types.js';
+import { MemoryVaultStore } from '../../src/store/memory.js';
 import { crc32c } from '../../src/gcp/crc32c.js';
 import { VAULT_ALERTS_HEADER, decodeVaultAlerts } from '../../src/relay/alerts.js';
 import { exportAttestationKeyPair, generateAttestationKeyPair, signAttestation } from '../../src/relay/attestation.js';
@@ -116,6 +119,14 @@ describe('broker composition root: static refusals', () => {
     [{ TM8_VAULT_FILL_TIMEOUT_MS: '120001' }, 'TM8_VAULT_FILL_TIMEOUT_MS'],
     [{ TM8_VAULT_FILL_TIMEOUT_MS: '1e4' }, 'TM8_VAULT_FILL_TIMEOUT_MS'],
     [{ TM8_VAULT_CHECKPOINT_INTERVAL_MS: '9999' }, 'TM8_VAULT_CHECKPOINT_INTERVAL_MS'],
+    [{ TM8_VAULT_AUDIT_VERIFY_INTERVAL_MS: '59999' }, 'TM8_VAULT_AUDIT_VERIFY_INTERVAL_MS'],
+    [{ TM8_VAULT_AUDIT_VERIFY_INTERVAL_MS: '86400001' }, 'TM8_VAULT_AUDIT_VERIFY_INTERVAL_MS'],
+    [{ TM8_VAULT_AUDIT_VERIFY_INTERVAL_MS: 'hourly' }, 'TM8_VAULT_AUDIT_VERIFY_INTERVAL_MS'],
+    [{ TM8_VAULT_AUDIT_ANCHOR_BUDGET_MS: '19999' }, 'TM8_VAULT_AUDIT_ANCHOR_BUDGET_MS'],
+    [{ TM8_VAULT_AUDIT_ANCHOR_BUDGET_MS: '172800001' }, 'TM8_VAULT_AUDIT_ANCHOR_BUDGET_MS'],
+    // Review F01: one missed checkpoint must not fail closed, so the budget covers at least two periods.
+    [{ TM8_VAULT_CHECKPOINT_INTERVAL_MS: '600000' }, 'TM8_VAULT_AUDIT_ANCHOR_BUDGET_MS'],
+    [{ TM8_VAULT_CHECKPOINT_INTERVAL_MS: '20000', TM8_VAULT_AUDIT_ANCHOR_BUDGET_MS: '39999' }, 'TM8_VAULT_AUDIT_ANCHOR_BUDGET_MS'],
     [{ TM8_VAULT_BROKER_MTLS_LISTEN: '127.0.0.1' }, 'TM8_VAULT_BROKER_MTLS_LISTEN'],
     [{ TM8_VAULT_BROKER_MTLS_LISTEN: '127.0.0.1:0' }, 'TM8_VAULT_BROKER_MTLS_LISTEN'],
     [{ TM8_VAULT_BROKER_MTLS_LISTEN: '127.0.0.1:65536' }, 'TM8_VAULT_BROKER_MTLS_LISTEN'],
@@ -173,6 +184,97 @@ describe('broker composition root: static refusals', () => {
     expect(failureMessage(VaultError.reason('kms_unavailable'))).toBe('vault broker: refused (kms_unavailable)');
     expect(failureMessage(new Error(`connect ECONNREFUSED ${marker}`))).toBe('vault broker: start failed');
     expect(failureMessage('not an error')).toBe('vault broker: start failed');
+  });
+});
+
+describe('periodic audit verification (review F01)', () => {
+  const verification = (status: AuditVerification['status']): AuditVerification => ({ status, checkedThroughSeq: 0, headHash: AUDIT_GENESIS_HASH, firstBrokenSeq: null });
+  function maintained(options: { checkpoint?: () => Promise<void> } = {}) {
+    const calls: string[] = [];
+    const logs: Record<string, unknown>[] = [];
+    const results = { incremental: 'verified' as AuditVerification['status'], full: 'verified' as AuditVerification['status'], throws: false };
+    let time = 1_000;
+    const audit = {
+      verifyIncremental: async () => { calls.push('incremental'); if (results.throws) throw new Error('test-only'); return verification(results.incremental); },
+      verifyAll: async () => { calls.push('full'); if (results.throws) throw new Error('test-only'); return verification(results.full); },
+    };
+    const maintenance = auditMaintenance({ audit, verifyIntervalMs: 60_000, now: () => time, log: (record) => logs.push(record),
+      checkpoint: options.checkpoint ?? (async () => { calls.push('checkpoint'); }) });
+    return { maintenance, calls, logs, results, advance: (ms: number) => { time += ms; } };
+  }
+
+  it('anchors first, verifies incrementally each period and from seq 1 once the full period has passed', async () => {
+    const m = maintained();
+    await m.maintenance.tick();
+    m.advance(59_999);
+    await m.maintenance.tick();
+    m.advance(1);
+    await m.maintenance.tick();
+    await m.maintenance.tick();
+    m.advance(60_000);
+    await m.maintenance.tick();
+    expect(m.calls).toEqual(['checkpoint', 'incremental', 'checkpoint', 'incremental', 'checkpoint', 'full', 'checkpoint', 'incremental', 'checkpoint', 'full']);
+    expect(m.logs).toEqual([]);
+  });
+
+  it('logs every verification that is not verified, and a failed full walk comes round again a period later', async () => {
+    const m = maintained();
+    m.results.incremental = 'unverified';
+    await m.maintenance.tick();
+    m.advance(60_000);
+    m.results.full = 'broken';
+    await m.maintenance.tick();
+    m.results.throws = true;
+    await m.maintenance.tick();
+    m.advance(60_000);
+    await m.maintenance.tick();
+    expect(m.calls.filter((call) => call !== 'checkpoint')).toEqual(['incremental', 'full', 'incremental', 'full']);
+    expect(m.logs).toEqual([
+      { event: 'vault_audit_verification_failed', status: 'unverified', full: false },
+      { event: 'vault_audit_verification_failed', status: 'broken', full: true },
+      { event: 'vault_audit_verification_failed', status: 'unverified', full: false },
+      { event: 'vault_audit_verification_failed', status: 'unverified', full: true },
+    ]);
+  });
+
+  it('shares one run between overlapping ticks, never rejects, and close can wait for it', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const m = maintained({ checkpoint: async () => { m.calls.push('checkpoint'); await held; throw new Error('test-only checkpoint failure'); } });
+    const first = m.maintenance.tick();
+    expect(m.maintenance.tick()).toBe(first);
+    let idle = false;
+    const waiting = m.maintenance.idle().then(() => { idle = true; });
+    await Promise.resolve();
+    expect(idle).toBe(false);
+    release();
+    await expect(first).resolves.toBeUndefined();
+    await waiting;
+    expect(m.calls).toEqual(['checkpoint', 'incremental']);
+    expect(m.logs).toEqual([{ event: 'vault_checkpoint_failed' }]);
+    await expect(m.maintenance.idle()).resolves.toBeUndefined();
+  });
+
+  it('finds an old event edited in place, which incremental verification passes over, within one full period', async () => {
+    const store = new MemoryVaultStore();
+    const audit = new VaultAuditGate({ store });
+    for (let n = 1; n <= 3; n++) {
+      await store.transaction({ kind: 'system', purpose: 'audit' }, (tx) => tx.audit.append({ action: 'session.signed_in', actor: SYSTEM_ACTOR,
+        itemId: null, subjectMemberId: OWNER_ID, spaceId: SPACE_A, params: { n } }));
+    }
+    expect((await audit.verifyIncremental()).status).toBe('verified');
+    await store.testing.tamperAuditEvent(1, { params: { n: 9 } });
+    let time = 0;
+    const logs: Record<string, unknown>[] = [];
+    const maintenance = auditMaintenance({ audit, checkpoint: async () => undefined, verifyIntervalMs: 60_000, now: () => time, log: (record) => logs.push(record) });
+    await maintenance.tick();
+    expect(logs).toEqual([]);
+    expect(audit.status()).toBe('ok');
+    time = 60_000;
+    await maintenance.tick();
+    expect(logs).toEqual([{ event: 'vault_audit_verification_failed', status: 'broken', full: true }]);
+    expect(audit.status()).toBe('unavailable');
+    expect(await audit.verifyIncremental()).toMatchObject({ status: 'broken', firstBrokenSeq: 1 });
   });
 });
 
@@ -271,6 +373,59 @@ else describe('broker composition root over Postgres', () => {
     await expect(lstat(join(dir, 'broker.sock'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
+  it('review F01: a database restored to before the newest retained checkpoint is refused at start, though its own receipts agree', async () => {
+    const h = await database();
+    const dir = await temporary();
+    await writeRelayKey(dir);
+    await writeFile(join(dir, 'checkpoint.key'), generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
+    await mkdir(join(dir, 'checkpoints'), { mode: 0o700 });
+    const records: Record<string, unknown>[] = [];
+    const env = preReviewEnv(dir, { TM8_VAULT_DATABASE_URL: h.url, TM8_VAULT_AUDIT_SINK: 'file', TM8_VAULT_CHECKPOINT_DIR: join(dir, 'checkpoints'),
+      TM8_VAULT_CHECKPOINT_KEY_FILE: join(dir, 'checkpoint.key') });
+    const start = () => composeBroker(env, { log: (record) => records.push(record) });
+    const event = (n: number) => h.store.transaction(scopeOf(testCaller), (tx) => tx.audit.append({ action: 'session.signed_in', actor: actorOf(testCaller),
+      itemId: null, subjectMemberId: OWNER_ID, spaceId: SPACE_A, params: { n } }));
+
+    const first = (await start())!;
+    await event(1);
+    expect(await first.checkpointer!.checkpointIfAdvanced()).toMatchObject({ seq: 1, anchored: true });
+    const before = await h.dump();
+    await event(2);
+    await event(3);
+    expect(await first.checkpointer!.checkpointIfAdvanced()).toMatchObject({ seq: 3, anchored: true });
+    const after = await h.dump();
+    await first.close();
+    expect((await readdir(join(dir, 'checkpoints'))).map((name) => name.split('-')[0]).sort()).toEqual(['1', '3']);
+
+    // Control: the same database and sink start cleanly.
+    const control = (await start())!;
+    expect((await statusOverSocket(join(dir, 'broker.sock'), true)).status).toBe(200);
+    await control.close();
+
+    // Restored to before seq 3: the restored receipts agree with the restored chain; only the retained anchor disagrees.
+    await h.restoreDump(before);
+    expect((await h.admin.query('select max(seq)::int as seq from vault.audit_events')).rows[0].seq).toBe(1);
+    records.length = 0;
+    const error = await start().then(() => null, (reason: unknown) => reason);
+    expect(failureMessage(error)).toBe('vault broker: refused (audit_unavailable)');
+    expect(records).toContainEqual({ event: 'vault_audit_anchor_failed', reason: 'anchor_rollback' });
+    await expect(lstat(join(dir, 'broker.sock'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await readdir(join(dir, 'checkpoints'))).map((name) => name.split('-')[0]).sort()).toEqual(['1', '3']);
+
+    // The supported recovery: a restore that contains the anchored head.
+    await h.restoreDump(after);
+    const recovered = (await start())!;
+    brokers.push(recovered);
+    expect((await statusOverSocket(join(dir, 'broker.sock'), true)).status).toBe(200);
+    await recovered.close();
+
+    // An event a stopped broker never anchored is anchored at start, before the socket binds.
+    await event(4);
+    const anchored = (await start())!;
+    brokers.push(anchored);
+    expect((await readdir(join(dir, 'checkpoints'))).map((name) => name.split('-')[0]).sort()).toEqual(['1', '3', '4']);
+  }, 60_000);
+
   it('replays the ledger file before the socket binds: a grant a restore revived is revoked again, and a damaged line stops the start', async () => {
     const h = await database();
     const dir = await temporary();
@@ -320,19 +475,50 @@ else describe('broker composition root over Postgres', () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       return port;
     }
-    async function googleFake() {
+    /**
+     * KMS and a checkpoint bucket that already carries a retention policy (review F01). `objects` is what the
+     * bucket retains; the checkpoint key's private half is exposed only so a test can plant a signed anchor.
+     */
+    async function googleFake(options: { retention?: Record<string, unknown> | null; objects?: Map<string, Buffer> } = {}) {
       const signing = generateKeyPairSync('ed25519');
       const pem = signing.publicKey.export({ type: 'spki', format: 'pem' }).toString();
-      return fake((req, res) => {
+      const retention = options.retention === undefined ? { retentionPeriod: '86400', isLocked: false } : options.retention;
+      const objects = options.objects ?? new Map<string, Buffer>();
+      const listPath = `/storage/v1/b/${bucket}/o`;
+      const server = await fake((req, res) => {
         const path = req.url.pathname;
         if (req.method === 'GET' && path === `/v1/${keyName}`) return json(res, { purpose: 'ENCRYPT_DECRYPT', primary: { state: 'ENABLED', protectionLevel: 'HSM' } });
         if (req.method === 'GET' && path === `/v1/${keyVersionName}/publicKey`) {
           return json(res, { pem, pemCrc32c: String(crc32c(Buffer.from(pem))), algorithm: 'EC_SIGN_ED25519', name: keyVersionName });
         }
-        if (req.method === 'GET' && path === `/storage/v1/b/${bucket}`) return json(res, {});
+        if (req.method === 'GET' && path === `/storage/v1/b/${bucket}`) return json(res, retention === null ? {} : { retentionPolicy: retention });
+        if (req.method === 'GET' && path === listPath) {
+          const start = req.url.searchParams.get('startOffset') ?? '';
+          const names = [...objects.keys()].filter((name) => name.startsWith('checkpoints/') && name >= start).sort();
+          return json(res, names.length ? { items: names.map((name) => ({ name })) } : {});
+        }
+        const bytes = req.method === 'GET' && path.startsWith(`${listPath}/`) && req.url.searchParams.get('alt') === 'media'
+          ? objects.get(decodeURIComponent(path.slice(listPath.length + 1))) : undefined;
+        if (bytes) { res.end(bytes); return; }
         json(res, { error: { code: 404 } }, 404);
       });
+      return Object.assign(server, { signing });
     }
+    function productionEnv(dir: string, databaseUrl: string, port: number): Record<string, string | undefined> {
+      return {
+        ...preReviewEnv(dir), TM8_VAULT_MODE: 'production', TM8_VAULT_REVIEW_GATE: 'passed', TM8_VAULT_LOCAL_KEK_FILE: undefined,
+        TM8_VAULT_DATABASE_URL: databaseUrl, TM8_VAULT_PUBLIC_ORIGIN: 'https://tm8.example.test',
+        TM8_VAULT_KMS_KIND: 'gcp-kms', TM8_VAULT_GCP_KMS_KEY: keyName,
+        TM8_VAULT_AUDIT_SINK: 'gcs', TM8_VAULT_GCS_BUCKET: bucket, TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION: keyVersionName,
+        TM8_VAULT_BROKER_MTLS_LISTEN: `127.0.0.1:${port}`, TM8_VAULT_BROKER_TLS_KEY_FILE: file(dir, 'server.key'),
+        TM8_VAULT_BROKER_TLS_CERT_FILE: file(dir, 'server.crt'), TM8_VAULT_BROKER_TLS_CA_FILE: file(dir, 'ca.crt'),
+      };
+    }
+    const refusesConnections = (port: number) => new Promise<boolean>((resolve) => {
+      const socket = createConnection({ host: '127.0.0.1', port });
+      socket.once('connect', () => { socket.destroy(); resolve(false); });
+      socket.once('error', () => resolve(true));
+    });
 
     it('refuses any database login but a dedicated broker role, then serves only over pinned mTLS', async () => {
       const h = await database();
@@ -341,14 +527,7 @@ else describe('broker composition root over Postgres', () => {
       await certificates(dir);
       const google = await googleFake();
       const port = await freePort();
-      const env = (databaseUrl: string) => ({
-        ...preReviewEnv(dir), TM8_VAULT_MODE: 'production', TM8_VAULT_REVIEW_GATE: 'passed', TM8_VAULT_LOCAL_KEK_FILE: undefined,
-        TM8_VAULT_DATABASE_URL: databaseUrl, TM8_VAULT_PUBLIC_ORIGIN: 'https://tm8.example.test',
-        TM8_VAULT_KMS_KIND: 'gcp-kms', TM8_VAULT_GCP_KMS_KEY: keyName,
-        TM8_VAULT_AUDIT_SINK: 'gcs', TM8_VAULT_GCS_BUCKET: bucket, TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION: keyVersionName,
-        TM8_VAULT_BROKER_MTLS_LISTEN: `127.0.0.1:${port}`, TM8_VAULT_BROKER_TLS_KEY_FILE: file(dir, 'server.key'),
-        TM8_VAULT_BROKER_TLS_CERT_FILE: file(dir, 'server.crt'), TM8_VAULT_BROKER_TLS_CA_FILE: file(dir, 'ca.crt'),
-      });
+      const env = (databaseUrl: string) => productionEnv(dir, databaseUrl, port);
       const gcp = { tokens, kmsBaseUrl: google.baseUrl, gcsBaseUrl: google.baseUrl };
 
       // The trust-auth superuser ignores RLS (review finding HIGH): production never runs on it.
@@ -382,6 +561,53 @@ else describe('broker composition root over Postgres', () => {
         req.once('error', reject);
         req.end();
       })).rejects.toThrow();
+    }, 30_000);
+
+    it('review F01: refuses a checkpoint bucket with no retention policy, or one it cannot read, and never writes one', async () => {
+      const h = await database();
+      const dir = await temporary();
+      await writeRelayKey(dir);
+      await certificates(dir);
+      const port = await freePort();
+      const role = await loginRole(h, 'tm8_vault_broker');
+      for (const [retention, logged] of [[null, { ok: true, retention: 'none' }], [{ isLocked: 'yes' }, { ok: false, retention: 'unknown' }]] as const) {
+        const google = await googleFake({ retention });
+        const records: Record<string, unknown>[] = [];
+        const error = await composeBroker(productionEnv(dir, role, port), { gcp: { tokens, kmsBaseUrl: google.baseUrl, gcsBaseUrl: google.baseUrl },
+          log: (record) => records.push(record) }).then(() => null, (reason: unknown) => reason);
+        expect(failureMessage(error)).toBe('vault broker: refused (audit_unavailable)');
+        expect(records).toContainEqual({ event: 'vault_checkpoint_sink', sink: 'gcs', ...logged });
+        expect(google.requests.some((request) => request.method !== 'GET')).toBe(false);
+        expect(await refusesConnections(port)).toBe(true);
+      }
+    }, 30_000);
+
+    it('review F01: a signed checkpoint the bucket retains beyond the database is a rollback; one signed by another key is invalid', async () => {
+      const h = await database();
+      const dir = await temporary();
+      await writeRelayKey(dir);
+      await certificates(dir);
+      const port = await freePort();
+      const role = await loginRole(h, 'tm8_vault_broker');
+      const plant = (privateKey: Parameters<typeof sign>[2]) => {
+        const body = { seq: 5, headHash: 'b'.repeat(64), at: '2026-11-21T00:00:00.000Z', keyId: keyVersionName };
+        return new Map([['checkpoints/000000000005.json', Buffer.from(JSON.stringify({ ...body, signature: sign(null, checkpointSigningInput(body), privateKey).toString('base64url') }))]]);
+      };
+      const objects = new Map<string, Buffer>();
+      const google = await googleFake({ objects });
+      const cases = [[google.signing.privateKey, 'anchor_rollback'], [generateKeyPairSync('ed25519').privateKey, 'anchor_invalid']] as const;
+      for (const [privateKey, reason] of cases) {
+        objects.clear();
+        for (const [name, bytes] of plant(privateKey)) objects.set(name, bytes);
+        const records: Record<string, unknown>[] = [];
+        const error = await composeBroker(productionEnv(dir, role, port), { gcp: { tokens, kmsBaseUrl: google.baseUrl, gcsBaseUrl: google.baseUrl },
+          log: (record) => records.push(record) }).then(() => null, (reason: unknown) => reason);
+        expect(failureMessage(error)).toBe('vault broker: refused (audit_unavailable)');
+        expect(records).toContainEqual({ event: 'vault_audit_anchor_failed', reason });
+        expect(await refusesConnections(port)).toBe(true);
+      }
+      expect(google.requests.some((request) => request.method !== 'GET')).toBe(false);
+      expect(google.requests.filter((request) => request.url.searchParams.get('alt') === 'media')).toHaveLength(2);
     }, 30_000);
   });
 });

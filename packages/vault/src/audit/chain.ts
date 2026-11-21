@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { canonicalJson } from '../intent/hash.js';
-import type { AuditBody, AuditEventRecord, IsoTime } from '../core-types.js';
+import { CheckpointReadError, type AuditBody, type AuditEventRecord, type IsoTime, type RetainedCheckpoint } from '../core-types.js';
 
 /**
  * The tamper-evident audit chain (brief MSG 11, acceptance test 16). Pure
@@ -132,4 +132,30 @@ export function checkpointSigningInput(checkpoint: { seq: number; headHash: stri
     `${CHECKPOINT_PREFIX}${checkpoint.seq}|${checkHash(checkpoint.headHash)}|${checkAt(checkpoint.at)}|${checkpoint.keyId}`,
     'utf8',
   );
+}
+
+/** The largest retained checkpoint object either sink reads back; both write well under 1 KiB. */
+export const RETAINED_CHECKPOINT_MAX_BYTES = 4_096;
+const RETAINED_KEYS = ['at', 'headHash', 'keyId', 'seq', 'signature'];
+
+/**
+ * Parses a checkpoint object read back from a sink (review F01). Exactly the
+ * five fields the sinks write, a seq that matches the object's name, a
+ * well-formed signing input and a canonical base64url signature; anything
+ * else throws CheckpointReadError('invalid') and nothing is guessed.
+ */
+export function parseRetainedCheckpoint(bytes: Buffer, expected: { seq: number; headHash?: string }, location: string): RetainedCheckpoint {
+  const invalid = () => new CheckpointReadError('invalid');
+  if (bytes.length === 0 || bytes.length > RETAINED_CHECKPOINT_MAX_BYTES) throw invalid();
+  let value: unknown;
+  try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); } catch { throw invalid(); }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid();
+  const record = value as Record<string, unknown>;
+  if (Object.keys(record).sort().join(',') !== RETAINED_KEYS.join(',')) throw invalid();
+  const { seq, headHash, at, keyId, signature } = record;
+  if (seq !== expected.seq || typeof headHash !== 'string' || (expected.headHash !== undefined && headHash !== expected.headHash) ||
+      typeof at !== 'string' || typeof keyId !== 'string' || typeof signature !== 'string' ||
+      !/^[A-Za-z0-9_-]{1,1024}$/.test(signature) || Buffer.from(signature, 'base64url').toString('base64url') !== signature) throw invalid();
+  try { checkpointSigningInput({ seq, headHash, at, keyId }); } catch { throw invalid(); }
+  return { seq, headHash, at, keyId, signature, location };
 }

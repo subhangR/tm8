@@ -6,13 +6,14 @@ import { disabledSpendProcessor } from '../actions/disabled-spend.js';
 import { createAgentActionHandlers } from '../actions/handlers.js';
 import { markUnknownOperations, sweepExpiredApprovals } from '../actions/maintenance.js';
 import { AuditCheckpointer, FileCheckpointSink, LocalEd25519CheckpointSigner } from '../audit/checkpointer.js';
-import { VaultAuditGate } from '../audit/gate.js';
+import { VaultAuditGate, type AuditAnchorFailure } from '../audit/gate.js';
 import { DEFAULT_FILL_TIMEOUT_MS } from '../browser/protocol.js';
 import { RemoteFillDriver } from '../browser/remote-driver.js';
 import { buildCanarySet } from '../canary/index.js';
 import { CaptureKeyPair } from '../capture/seal.js';
 import {
-  VaultError, type BrokerComponents, type BrokerConfig, type CheckpointSigner, type CheckpointSink, type VaultHandlers,
+  VaultError, type AuditGate, type BrokerComponents, type BrokerConfig, type CheckpointSigner, type CheckpointSink, type CheckpointVerifier,
+  type VaultHandlers,
 } from '../core-types.js';
 import { LocalDevKms, type KmsProvider } from '../crypto/kms.js';
 import { createEgressExecutor } from '../egress/index.js';
@@ -72,7 +73,9 @@ export const BROKER_RUNTIME_ENV_KNOBS = [
   { name: 'TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION', default: '', meaning: 'Cloud KMS asymmetric-sign cryptoKeyVersion for checkpoint signatures' },
   { name: 'TM8_VAULT_CHECKPOINT_DIR', default: '', meaning: 'Checkpoint directory when TM8_VAULT_AUDIT_SINK=file' },
   { name: 'TM8_VAULT_GCS_BUCKET', default: '', meaning: 'Checkpoint bucket when TM8_VAULT_AUDIT_SINK=gcs; tm8 never sets, holds or locks its retention' },
-  { name: 'TM8_VAULT_CHECKPOINT_INTERVAL_MS', default: '300000', meaning: 'Checkpoint period, 10000..86400000' },
+  { name: 'TM8_VAULT_CHECKPOINT_INTERVAL_MS', default: '300000', meaning: 'Checkpoint period, 10000..86400000; each period also verifies the chain from its last verified seq against the retained anchor' },
+  { name: 'TM8_VAULT_AUDIT_VERIFY_INTERVAL_MS', default: '3600000', meaning: 'Full audit chain verification period (every event from seq 1, against the retained anchor), 60000..86400000' },
+  { name: 'TM8_VAULT_AUDIT_ANCHOR_BUDGET_MS', default: '900000', meaning: 'Longest an audit event may stay unanchored, or the retained anchor go unverified, before audited actions fail closed; 20000..172800000 and at least twice the checkpoint period' },
   { name: 'TM8_VAULT_DELETION_LEDGER', default: '', meaning: 'Append-only tombstone ledger file outside the database; required unless mode is off' },
   { name: 'TM8_VAULT_CANARY_FILE', default: '', meaning: 'Optional operator decoy values (0600), one per line, 12+ characters each' },
 ] as const;
@@ -219,13 +222,16 @@ async function buildKms(env: Env, mode: VaultMode, gcp: () => Required<Pick<GcpE
   throw new BrokerConfigError('TM8_VAULT_KMS_KIND');
 }
 
+/** The checkpointer and what the audit gate reads its anchor back with (review F01). */
+interface AuditAnchorParts { checkpointer: AuditCheckpointer; sink: CheckpointSink; verifier: CheckpointVerifier }
+
 async function buildCheckpointer(env: Env, config: BrokerConfig, store: PgVaultStore,
-  gcp: () => Required<Pick<GcpEndpoints, 'tokens'>> & GcpEndpoints): Promise<AuditCheckpointer | null> {
+  gcp: () => Required<Pick<GcpEndpoints, 'tokens'>> & GcpEndpoints, log: (record: Record<string, unknown>) => void): Promise<AuditAnchorParts | null> {
   if (config.auditSink === 'off') {
     if (config.mode === 'production') throw new BrokerConfigError('TM8_VAULT_AUDIT_SINK');
     return null;
   }
-  let signer: CheckpointSigner;
+  let signer: CheckpointSigner & CheckpointVerifier;
   const keyVersion = optional(env, 'TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION');
   if (keyVersion === null && config.mode === 'production') throw new BrokerConfigError('TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION');
   if (keyVersion !== null) {
@@ -250,10 +256,16 @@ async function buildCheckpointer(env: Env, config: BrokerConfig, store: PgVaultS
     try { sink = new GcsCheckpointSink({ bucket, tokens: endpoints.tokens, ...(endpoints.gcsBaseUrl === undefined ? {} : { gcsBaseUrl: endpoints.gcsBaseUrl }) }); }
     catch { throw new BrokerConfigError('TM8_VAULT_GCS_BUCKET'); }
   }
-  let healthy = false;
-  try { healthy = (await sink.health()).ok; } catch { healthy = false; }
-  if (!healthy) throw VaultError.reason('audit_unavailable');
-  return new AuditCheckpointer({ store, signer, sink });
+  let health: Awaited<ReturnType<CheckpointSink['health']>>;
+  try { health = await sink.health(); } catch { health = { ok: false, retention: 'unknown' }; }
+  log({ event: 'vault_checkpoint_sink', sink: sink.kind, ok: health.ok, retention: health.retention });
+  if (!health.ok) throw VaultError.reason('audit_unavailable');
+  // Review F01: a production anchor must outlive a compromised broker, so the bucket must already carry a
+  // retention policy. tm8 only reads it; setting or locking one is the bucket owner's decision.
+  if (config.mode === 'production' && sink.kind === 'gcs' && health.retention !== 'locked' && health.retention !== 'unlocked') {
+    throw VaultError.reason('audit_unavailable');
+  }
+  return { checkpointer: new AuditCheckpointer({ store, signer, sink }), sink, verifier: signer };
 }
 
 /**
@@ -306,6 +318,10 @@ export async function composeBroker(env: Env, options: { gcp?: GcpEndpoints; log
   const fillSocket = path(env, 'TM8_VAULT_FILL_SOCKET', DEFAULT_FILL_SOCKET, 100);
   const fillTimeoutMs = integer(env, 'TM8_VAULT_FILL_TIMEOUT_MS', DEFAULT_FILL_TIMEOUT_MS, 100, 120_000);
   const intervalMs = integer(env, 'TM8_VAULT_CHECKPOINT_INTERVAL_MS', 300_000, 10_000, 86_400_000);
+  const verifyIntervalMs = integer(env, 'TM8_VAULT_AUDIT_VERIFY_INTERVAL_MS', 3_600_000, 60_000, 86_400_000);
+  const anchorBudgetMs = integer(env, 'TM8_VAULT_AUDIT_ANCHOR_BUDGET_MS', 900_000, 20_000, 172_800_000);
+  // One missed checkpoint must not fail the broker closed; a stopped checkpointer must.
+  if (anchorBudgetMs < 2 * intervalMs) throw new BrokerConfigError('TM8_VAULT_AUDIT_ANCHOR_BUDGET_MS');
   const mtls = mtlsOptions(env, mode as VaultMode);
   const canaries = canarySet(env);
   let tokens: TokenSource | undefined = options.gcp?.tokens;
@@ -320,7 +336,8 @@ export async function composeBroker(env: Env, options: { gcp?: GcpEndpoints; log
   const store = new PgVaultStore({ connectionString, role: 'tm8_vault_broker' });
   let fillDriver: RemoteFillDriver | undefined;
   try {
-    const checkpointer = await buildCheckpointer(env, config, store, gcp);
+    const anchorParts = await buildCheckpointer(env, config, store, gcp, log);
+    const checkpointer = anchorParts?.checkpointer ?? null;
     const pasteDetector = createPasteDetector();
     const alerts = new RelayAlertQueue({ canaries });
     fillDriver = new RemoteFillDriver(fillSocket, { timeoutMs: fillTimeoutMs + 5_000 });
@@ -336,7 +353,16 @@ export async function composeBroker(env: Env, options: { gcp?: GcpEndpoints; log
       deletionLedger: new FileDeletionLedger(ledgerFile),
       alerts,
     };
-    const audit = new VaultAuditGate({ store });
+    // Review F01: with a sink, every verification reads the newest signed checkpoint back from the sink itself.
+    const audit = new VaultAuditGate({ store, ...(anchorParts ? { anchor: {
+      sink: anchorParts.sink, verifier: anchorParts.verifier, budgetMs: anchorBudgetMs,
+      onFailure: (reason: AuditAnchorFailure) => log({ event: 'vault_audit_anchor_failed', reason }),
+    } } : {}) });
+    const checkpoint = async (): Promise<void> => {
+      if (!checkpointer) return;
+      try { await checkpointer.checkpointIfAdvanced(); } catch { log({ event: 'vault_checkpoint_failed' }); }
+    };
+    const maintenance = auditMaintenance({ audit, checkpoint, verifyIntervalMs, log });
     const server = await startBroker({
       config, store, audit, components, handlers: createVaultHandlers(),
       auth: createOwnerAuth({ store, config }),
@@ -350,28 +376,20 @@ export async function composeBroker(env: Env, options: { gcp?: GcpEndpoints; log
         async () => { await markUnknownOperations(store); },
         async () => { await sweepExpiredApprovals(store); },
       ],
+      // Only a verified head is anchored, and startBroker verifies again, anchor included, before it binds.
+      afterVerify: checkpointer ? [checkpoint] : [],
     });
-    let running: Promise<unknown> | null = null;
-    const checkpoint = (): Promise<unknown> => {
-      if (!checkpointer || running) return running ?? Promise.resolve();
-      running = checkpointer.checkpointIfAdvanced()
-        .catch(() => log({ event: 'vault_checkpoint_failed' }))
-        .finally(() => { running = null; });
-      return running;
-    };
-    // After startBroker: the chain has been verified, so only a verified head is anchored.
-    await checkpoint();
-    const timer = checkpointer ? setInterval(() => { void checkpoint(); }, intervalMs) : null;
-    timer?.unref();
+    const timer = setInterval(() => { void maintenance.tick(); }, intervalMs);
+    timer.unref();
     let closing: Promise<void> | null = null;
     return {
       server, config, alerts, checkpointer, databaseRole,
       close() {
         closing ??= (async () => {
-          if (timer) clearInterval(timer);
+          clearInterval(timer);
           try { await server.close(); }
           finally {
-            await running?.catch(() => undefined);
+            await maintenance.idle();
             await fillDriver?.close().catch(() => undefined);
             await store.close();
           }
@@ -393,6 +411,37 @@ export async function enroll(env: Env, args: readonly string[], stdout: Pick<Nod
   const store = new PgVaultStore({ connectionString: databaseUrl(env), role: 'tm8_vault_broker' });
   try { await runEnrollmentCli(store, args, stdout); }
   finally { await store.close(); }
+}
+
+/**
+ * Review F01: the broker's periodic audit work. Each tick anchors a new head, then verifies the chain against the
+ * retained anchor: incrementally from the last verified seq, or, once `verifyIntervalMs` has passed since the last
+ * full walk was due, every event from seq 1, which also finds an old row edited in place. A full walk that cannot
+ * finish is logged and comes round again a period later; incremental verification still runs every tick. Overlapping
+ * ticks share one run. A failure trips the gate itself; this only logs it.
+ */
+export function auditMaintenance(options: {
+  audit: Pick<AuditGate, 'verifyIncremental' | 'verifyAll'>;
+  checkpoint: () => Promise<void>;
+  verifyIntervalMs: number;
+  log: (record: Record<string, unknown>) => void;
+  now?: () => number;
+}): { tick(): Promise<void>; idle(): Promise<void> } {
+  const now = options.now ?? Date.now;
+  // A tick runs from a timer, so nothing in it may reject: a log failure cannot change an outcome either.
+  const log = (record: Record<string, unknown>): void => { try { options.log(record); } catch { /* ignored */ } };
+  let running: Promise<void> | null = null;
+  let fullDueAt = now() + options.verifyIntervalMs;
+  const tick = (): Promise<void> => running ??= (async () => {
+    try { await options.checkpoint(); } catch { log({ event: 'vault_checkpoint_failed' }); }
+    const full = now() >= fullDueAt;
+    if (full) fullDueAt = now() + options.verifyIntervalMs;
+    let status: string;
+    try { status = (full ? await options.audit.verifyAll() : await options.audit.verifyIncremental()).status; }
+    catch { status = 'unverified'; }
+    if (status !== 'verified') log({ event: 'vault_audit_verification_failed', status, full });
+  })().finally(() => { running = null; });
+  return { tick, idle: async () => { await running?.catch(() => undefined); } };
 }
 
 export function failureMessage(error: unknown): string {

@@ -265,4 +265,41 @@ describe('startup', () => {
     await expect(startBroker(deps)).rejects.toThrow('audit_unavailable');
     await expect(lstat(h.socketPath)).rejects.toMatchObject({ code: 'ENOENT' });
   });
+  it('review F01: anchors only a verified head, then verifies again, anchor included, before listening', async () => {
+    const h = await setup();
+    await h.server.close();
+    const order: string[] = [];
+    h.components.kms.health = async () => { order.push('kms'); return { ok: true }; };
+    h.store.health = async () => { order.push('store'); return { ok: true }; };
+    h.audit.verifyIncremental = async () => { order.push('audit'); return h.audit.verification; };
+    const server = await startBroker({ ...h, config: undefined, env: {}, handlers: h.handlers, relayPublicKeyFile: h.publicKeyFile,
+      beforeServe: [async () => { order.push('replay'); }],
+      afterVerify: [async () => { order.push('checkpoint'); await expect(lstat(h.socketPath)).rejects.toMatchObject({ code: 'ENOENT' }); }] });
+    expect(order).toEqual(['kms', 'store', 'replay', 'audit', 'checkpoint', 'audit']);
+    expect(server.http.listening).toBe(true);
+    await server.close();
+  });
+  it('review F01: refuses to listen when the post-anchor verification fails, or the gate is unhealthy after it', async () => {
+    const h = await setup();
+    await h.server.close();
+    const deps = { ...h, handlers: h.handlers, relayPublicKeyFile: h.publicKeyFile };
+    const checkpointed: string[] = [];
+    // A checkpoint that reveals a rollback: the second verification is the one that fails.
+    let calls = 0;
+    h.audit.verifyIncremental = async () => ({ ...h.audit.verification, status: ++calls === 1 ? 'verified' : 'broken' });
+    await expect(startBroker({ ...deps, afterVerify: [async () => { checkpointed.push('first'); }] })).rejects.toThrow('audit_unavailable');
+    expect(calls).toBe(2);
+    await expect(lstat(h.socketPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    // A verified chain whose anchor is stale (the checkpoint failed) is not served either.
+    h.audit.verifyIncremental = async () => ({ ...h.audit.verification, status: 'verified' });
+    h.audit.state = 'unavailable';
+    await expect(startBroker({ ...deps, afterVerify: [async () => { checkpointed.push('second'); }] })).rejects.toThrow('audit_unavailable');
+    await expect(lstat(h.socketPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    // A failing first verification never reaches the anchoring step.
+    h.audit.state = 'ok';
+    h.audit.verifyIncremental = async () => ({ ...h.audit.verification, status: 'unverified' });
+    await expect(startBroker({ ...deps, afterVerify: [async () => { checkpointed.push('third'); }] })).rejects.toThrow('audit_unavailable');
+    expect(checkpointed).toEqual(['first', 'second']);
+    await expect(lstat(h.socketPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
 });

@@ -222,6 +222,60 @@ same uid can connect.
   tm8 writes create-only objects. It never sets, holds or locks a bucket's retention.
   **Do not enable Bucket Lock or any irreversible retention** until the owner decides so
   explicitly.
+
+  **The sink is the audit chain's independent anchor (review F01).** The database's own
+  record of what was anchored is only a hint. On every verification the broker:
+  - reads the newest signed checkpoint back from the sink itself;
+  - checks its signature with the checkpoint key;
+  - requires the chain to contain that exact head.
+
+  Startup runs in this order: verify, anchor anything left unanchored, verify again, check
+  freshness. Only then does it bind. Each `TM8_VAULT_CHECKPOINT_INTERVAL_MS` the broker
+  anchors a new head and verifies from its last verified seq. Each
+  `TM8_VAULT_AUDIT_VERIFY_INTERVAL_MS` (default one hour) it walks every event from seq 1,
+  which also finds an old event edited in place.
+
+  A failure is logged as `vault_audit_anchor_failed` with one of these reasons:
+
+  | Reason | Meaning | Effect |
+  | --- | --- | --- |
+  | `anchor_rollback` | The sink holds a signed head beyond the database's chain, for example a database restored from an older backup. | Fails closed until an operator restarts the broker on a good database. |
+  | `anchor_conflict` | The sink's head is not in the chain (a fork or a rewritten event), or a file sink holds two heads for one seq. | Same. |
+  | `anchor_missing` | A head the database recorded as anchored, or that this process saw retained, is gone from the sink. | Same. |
+  | `anchor_invalid` | The retained object is malformed, or its signature does not verify: another key, or KMS refusing the version (destroyed or disabled). | Same. |
+  | `anchor_unavailable` | The sink or KMS cannot be read right now. | Audited actions continue only within the budget below. |
+  | `anchor_stale` | An event has stayed unanchored, or the anchor unverified, for longer than `TM8_VAULT_AUDIT_ANCHOR_BUDGET_MS` (default 15 minutes). | Audited actions fail closed until a checkpoint and a verification cover it. |
+
+  The budget must be at least twice the checkpoint period, so one missed checkpoint does not
+  fail the broker closed. A start is refused when its sink cannot be read. It is also refused
+  when it cannot anchor events that have stayed unanchored for longer than the budget.
+
+  Operating rules that follow from this:
+  - **Production GCS needs a retention policy on the bucket before the broker starts.** It
+    may be locked or unlocked. The broker only reads it, logs it as
+    `vault_checkpoint_sink {retention}`, and refuses to start without one
+    (`audit_unavailable`).
+  - **Give the bucket no lifecycle rule that deletes or rewrites objects under
+    `checkpoints/`.**
+  - **Grant the broker's service account no more than this:** `storage.objects.create`,
+    `storage.objects.get` and `storage.objects.list` on the bucket, plus
+    `storage.buckets.get` to read the retention policy. Give it no delete and no update.
+  - **Keep a KMS checkpoint key version enabled while it signed the newest retained
+    checkpoint.** After rotating `TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION`, the old version
+    stays the newest signer until the chain advances and the next checkpoint is anchored.
+    The broker accepts another version of the same cryptoKey only.
+  - **A local checkpoint key (`dev` and `pre_review` only) vouches only for itself.**
+    Rotating it needs a fresh checkpoint directory.
+  - **A new, empty database needs a fresh bucket or directory.** An old sink holds heads
+    the new chain never had, so it is reported as `anchor_rollback`.
+  - **No knob bypasses a rollback.** The supported recovery is to restore a database that
+    contains the newest anchored head. Starting over with a new database and a new sink is
+    an owner decision; keep the old sink as evidence. A database that recorded anchors in
+    a sink, pointed at a new, empty one, fails with `anchor_missing`, as intended.
+  - **A checkpoint written to the sink whose database record then failed is not lost.** The
+    next verification reads it back from the sink, so the anchor stays fresh. Until the chain
+    advances, each attempt to anchor that same head again fails and logs
+    `vault_checkpoint_failed`.
 - **Keys and the canary file:** mode `0600`, owned by the service user.
   - `TM8_VAULT_CANARY_FILE` holds operator decoy values, one per line, 12+ characters each.
   - The planting of canaries in production is still open.
@@ -332,6 +386,22 @@ on `01a1fa87` holds the full set with severities. The headline items:
 - Paste detection, including the chat paste guard's limits (plan `01a1fab7` §10).
 
 **Durability and alerts**
+- Audit anchor (review F01). The broker reads its anchor back from the sink, as §5 describes.
+  Still open:
+  - No test has run against a real retained GCS bucket. This lane has no credentials and adds
+    no paid service. The GCS paths are tested against a local HTTP fake that lists, reads and
+    refuses like GCS. The rollback is tested against a real `pg_dump` restore, with a real
+    file sink and a real broker start.
+  - `vault.audit.verify` still reports the database's receipt in its `checkpoint` field,
+    because the strict contract has no field for the retained anchor. Its `status` is the
+    anchored verdict.
+  - Events after the newest anchor are only as trustworthy as the database until the next
+    checkpoint covers them. The budget bounds that window for a running broker, and a stopped
+    broker anchors them at its next start.
+  - A `file` sink is a witness on the same host. Whoever can write its directory can delete
+    from it, and a database restore plus a deletion of the newer files goes unseen unless the
+    process saw them first. Whether production may use it is an owner decision. So are
+    locking the bucket's retention, and the recovery path after a rollback.
 - The ledger needs separate media.
 - Relay alerts queued in the broker are lost on a broker restart.
 - Canaries have no production planting.
