@@ -58,7 +58,7 @@ export class VaultAuditGate implements AuditGate {
         if (target.seq < cursor.seq) return broken(target.seq + 1);
         if (cursor.seq > 0) {
           const boundary = await tx.audit.range(cursor.seq, cursor.seq);
-          if (boundary.length !== 1 || boundary[0]!.entryHash !== cursor.hash) return broken(cursor.seq);
+          if (boundary.length !== 1 || boundary[0]!.entryHash !== cursor.hash || !verifyAuditRun({ seq: cursor.seq - 1, hash: boundary[0]!.prevHash }, boundary).ok) return broken(cursor.seq);
         }
         const checkpoint = await tx.audit.latestCheckpoint();
         if (checkpoint && checkpoint.seq > target.seq) return broken(target.seq + 1);

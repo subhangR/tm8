@@ -86,6 +86,8 @@ type TableKey = keyof typeof TABLES;
 const snake = (name: string): string => name.replace(/[A-Z]/g, (part) => `_${part.toLowerCase()}`);
 const camel = (name: string): string => name.replace(/_([a-z])/g, (_, part: string) => part.toUpperCase());
 const JSON_FIELDS = new Set(['createdBy','revokedBy','constraints','boundParams','requestedBy','decidedBy','lookalike','spend','actor','result','injection','evidence','registration']);
+const READ_METHODS = new Set(['get','list','listForItem','countActive','countOwned','activeForCaller','countPending','findPending','findUsable','currentSecret','getByCredentialId','getByTokenHash','getByApproval','listForMember','listUnknown','listUnused','countUnused','listUsable','getUsable','head','range','latestCheckpoint']);
+const AUTH_REPOS = new Set(['passkeys', 'sessions', 'challenges', 'recoveryCodes', 'enrollmentCodes']);
 const ID_FIELDS = new Set(['id','itemId','memberId','ownerMemberId','spaceId','operationId','approvalId','consumedByOperationId','sessionId','passkeyId','codeId','requesterMemberId','granteeId']);
 const POSITIONAL_IDS: Record<string, number[]> = {
   get: [0], update: [0], setProperties: [0], addOrigin: [0], replaceSecret: [0], currentSecret: [0], tombstone: [0],
@@ -140,9 +142,16 @@ class SqlMap<T> {
     return this.key === 'supersededRefresh' ? { hash: key, sessionId: value } : value as Record<string, unknown>;
   }
   async get(key: string): Promise<T | undefined> {
-    // A logical row lock also covers absent rows (reserve/create races).
-    await this.c.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [`vault:${this.#table}:${key}`]);
-    const rows = await this.c.query(`select * from vault.${this.#table} where ${this.#where()}`, this.#parts(key));
+    let rows = await this.c.query(`select * from vault.${this.#table} where ${this.#where()}`, this.#parts(key));
+    // Invisible and missing rows take the identical path and never wait for
+    // another tenant's logical row lock. A visible row is re-read AFTER the
+    // lock so an intervening revoke/state change cannot leave a stale result.
+    // Operations also lock absent keys: their (member,id) key is private to
+    // that member, and concurrent reserve must return the first result.
+    if (this.c.lockRows && (rows.length || this.key === 'operations')) {
+      await this.c.advisory(`vault:${this.#table}:${key}`);
+      rows = await this.c.query(`select * from vault.${this.#table} where ${this.#where()}`, this.#parts(key));
+    }
     const value = rows[0] ? this.#view(rows[0]) : undefined;
     this.#cache.set(key, value);
     return value;
@@ -212,6 +221,10 @@ export class PgCtx {
   closed = false;
   dead: 'audit' | 'store' | null = null;
   #tail: Promise<unknown> = Promise.resolve();
+  #auditAppending = false;
+  readonly #heldLocks = new Set<string>();
+  #auditStarted = false;
+  lockRows = false;
   readonly s = {
     items: new SqlMap<ItemRecord>(this, 'items'), policies: new SqlMap<PolicyRecord>(this, 'policies'),
     grants: new SqlMap<GrantRecord>(this, 'grants'), approvals: new SqlMap<ApprovalRecord>(this, 'approvals'),
@@ -256,23 +269,41 @@ export class PgCtx {
     try { return (await this.client.query(sql, values)).rows as Record<string, unknown>[]; }
     catch (error) {
       const code = (error as { code?: string }).code;
+      if (code === '40P01' || code === '40001') { this.kill('store'); throw this.deadError(); }
       if (code === '23505') throw new StoreDuplicateError();
       if (code === '23503' || code === '42501') throw new StoreNotFoundError();
       if (code === '23514') throw new StoreStateError('constraint');
-      this.kill('store');
+      const connectionError = !code || code.startsWith('08') || ['57P01','57P02','57P03','ECONNRESET','EPIPE','ENOTFOUND','ECONNREFUSED','ETIMEDOUT'].includes(code);
+      this.kill(this.#auditAppending && !connectionError ? 'audit' : 'store');
       throw this.deadError();
     }
   }
   async #call<T>(repo: string, method: string, args: unknown[], fn: () => Promise<T>): Promise<T> {
     this.enter();
     const audit = repo === 'audit' && method === 'append';
+    this.lockRows = !READ_METHODS.has(method);
     try { preflight(repo, method, args); }
     catch (error) { if (audit) { this.kill('audit'); throw this.deadError(); } throw error; }
+    if (AUTH_REPOS.has(repo)) {
+      const target = this.scope.kind === 'member' ? this.scope.memberId
+        : repo === 'enrollmentCodes' && method === 'create' ? (args[0] as EnrollmentCodeRecord).memberId.toLowerCase() : null;
+      if (target) await this.advisory(`tm8-vault/member-auth/${target}`);
+    }
+    if (repo === 'approvals') {
+      const itemId = method === 'list' ? (args[0] as { itemId?: string }).itemId
+        : method === 'create' ? (args[0] as NewApproval).itemId
+          : ['findPending', 'findUsable', 'countPending'].includes(method) ? args[0] as string : null;
+      if (itemId) await this.advisory(`tm8-vault/approvals/${uuid(itemId, 'itemId')}`);
+    }
     for (const map of Object.values(this.s)) if (map instanceof SqlMap) map.clear();
     if (audit) {
+      this.#auditStarted = true;
+      this.#auditAppending = true;
       try { return await fn(); }
       catch { this.kill('audit'); throw this.deadError(); }
+      finally { this.#auditAppending = false; }
     }
+    const locksBefore = new Set(this.#heldLocks);
     await this.query('savepoint vault_repo');
     try {
       const result = await fn();
@@ -282,8 +313,17 @@ export class PgCtx {
       if (this.dead) throw this.deadError();
       try { await this.client.query('rollback to savepoint vault_repo'); await this.client.query('release savepoint vault_repo'); }
       catch { this.kill('store'); throw this.deadError(); }
+      for (const key of this.#heldLocks) if (!locksBefore.has(key)) this.#heldLocks.delete(key);
       throw error;
     }
+  }
+  /** Acquire before the first append; audit holds its head row until commit. */
+  async advisory(key: string): Promise<void> {
+    this.enter();
+    if (this.#heldLocks.has(key)) return;
+    if (this.#auditStarted) { this.kill('store'); throw this.deadError(); }
+    await this.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [key]);
+    this.#heldLocks.add(key);
   }
   member(): { memberId: string; spaceId: string } { if (this.scope.kind !== 'member') throw new StoreScopeError('member'); return this.scope; }
   system(purpose?: Extract<StoreScope, { kind: 'system' }>['purpose']): void {
@@ -483,8 +523,9 @@ class Items implements ItemsRepo {
       ownerMemberId: uuid(entry.ownerMemberId, 'ownerMemberId'),
       tombstonedAt: iso(entry.tombstonedAt, 'tombstonedAt'),
     };
-    let changed = (await c.tombstoneEffects(checked, SYSTEM_ACTOR));
+    // Serialize with rotation and grant creation before deleting their rows.
     const item = (await c.s.items.get(checked.itemId));
+    let changed = (await c.tombstoneEffects(checked, SYSTEM_ACTOR));
     if (item && item.state !== 'tombstoned') {
       (await c.bumpItem(item, { state: 'tombstoned', tombstonedAt: checked.tombstonedAt }));
       changed = true;

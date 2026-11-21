@@ -529,6 +529,10 @@ export function describeStoreConformance(name: string, makeHarness: () => Promis
     });
 
     // -----------------------------------------------------------------------
+    // Member-auth transactions must serialize per member so countActive +
+    // create/revoke and code consume/replace cannot race. Memory gets this
+    // automatically because it serializes every transaction; Postgres holds
+    // a member-scoped advisory transaction lock (see postgres-auth-lock.test.ts).
     describe('owner authentication rows', () => {
       const passkey = (caller: VaultCaller, counter = 0, credentialId = `Y3JlZC0${randomUUID().slice(0, 8)}`) => as(caller, (tx) => tx.passkeys.create({
         id: randomUUID(), credentialId, publicKey: 'dGVzdC1wdWJsaWMta2V5', counter, transports: ['internal'], backedUp: false,

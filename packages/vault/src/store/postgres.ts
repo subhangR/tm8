@@ -9,16 +9,21 @@ export interface PgVaultStoreOptions {
   pool?: pg.Pool;
   poolOptions?: PoolConfig;
   clock?: Clock;
-  /** SET LOCAL ROLE is useful with a migration/test login. Normal broker logins already have this role. */
+  /** Always enforced with SET LOCAL ROLE, including migration/test connections. */
   role?: 'tm8_vault_broker';
 }
 
-/** READ COMMITTED; each repository call has its own savepoint, never an external side effect. */
+/**
+ * READ COMMITTED; each repository call has its own savepoint.
+ * Advisory locks precede the first audit append, whose head row stays locked
+ * until commit. A new advisory key after append fails closed. SQL deadlocks
+ * (40P01) and serialization failures (40001) kill the transaction as unavailable.
+ */
 export class PgVaultStore implements VaultStore {
   readonly #pool: pg.Pool;
   readonly #ownsPool: boolean;
   readonly #clock: Clock;
-  readonly #role: 'tm8_vault_broker' | undefined;
+  readonly #role: 'tm8_vault_broker';
   readonly #inTransaction = new AsyncLocalStorage<true>();
   #closed = false;
   /** Deterministic outage injection; production code never enables these. */
@@ -28,7 +33,7 @@ export class PgVaultStore implements VaultStore {
     this.#pool = options.pool ?? new pg.Pool({ ...options.poolOptions, connectionString: options.connectionString });
     this.#ownsPool = options.pool === undefined;
     this.#clock = options.clock ?? systemClock;
-    this.#role = options.role;
+    this.#role = options.role ?? 'tm8_vault_broker';
     this.#pool.on('connect', (client) => client.on('error', () => undefined));
     this.#pool.on('error', () => { /* No raw driver errors or connection data reach logs. */ });
   }
@@ -36,7 +41,9 @@ export class PgVaultStore implements VaultStore {
   async transaction<T>(scope: StoreScope, fn: (tx: VaultTx) => Promise<T>): Promise<T> {
     if (this.#inTransaction.getStore()) throw new Error('vault store: nested transaction');
     const checked = checkScope(scope);
-    const now = iso(this.#clock.now().toISOString(), 'clock');
+    let now: string;
+    try { now = iso(this.#clock.now().toISOString(), 'clock'); }
+    catch { throw new TypeError('vault store: invalid clock'); }
     if (this.#closed || this.faults.unavailable) throw new StoreUnavailableError();
     let client: PoolClient;
     try { client = await this.#pool.connect(); }

@@ -355,7 +355,7 @@ create policy capture_links_update on vault.capture_links for update to tm8_vaul
 create policy capture_links_delete on vault.capture_links for delete to tm8_vault_broker using (vault.is_system() or (member_id = vault.member_id() and space_id = vault.space_id()));
 grant select, insert, update, delete on vault.capture_links to tm8_vault_broker;
 alter table vault.deletion_ledger enable row level security;
-create policy deletion_ledger_read on vault.deletion_ledger for select to tm8_vault_broker using (vault.is_system());
+create policy deletion_ledger_read on vault.deletion_ledger for select to tm8_vault_broker using (vault.is_system() or (space_id = vault.space_id() and owner_member_id = vault.member_id()));
 create policy deletion_ledger_insert on vault.deletion_ledger for insert to tm8_vault_broker with check (vault.is_system() or vault.owns_item(item_id));
 create policy deletion_ledger_update on vault.deletion_ledger for update to tm8_vault_broker using (vault.is_system() or vault.owns_item(item_id)) with check (vault.is_system() or vault.owns_item(item_id));
 create policy deletion_ledger_delete on vault.deletion_ledger for delete to tm8_vault_broker using (vault.is_system() or vault.owns_item(item_id));

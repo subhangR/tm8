@@ -11,6 +11,7 @@ import type { StoreHarness } from '../support/store-conformance.js';
 const run = promisify(execFile);
 export const PG_REASON = 'TM8_VAULT_PG_URL is unset; requires an isolated PG16 scratch cluster on 127.0.0.1:55400-55499';
 export const PG_ENABLED = Boolean(process.env.TM8_VAULT_PG_URL);
+if (!PG_ENABLED) console.warn(`Vault Postgres tests SKIPPED: ${PG_REASON}`);
 
 function scratchUrl(): URL {
   const url = new URL(process.env.TM8_VAULT_PG_URL!);
