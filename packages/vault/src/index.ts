@@ -12,3 +12,4 @@ export * from './core-types.js';
 export * from './audit/chain.js';
 export * from './store/memory.js';
 export * from './relay/attestation.js';
+export * from './relay/alerts.js';

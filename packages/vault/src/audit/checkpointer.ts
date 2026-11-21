@@ -96,6 +96,18 @@ export class AuditCheckpointer {
   }
 
   run(): Promise<CheckpointRecord> { return this.checkpoint(); }
+
+  /**
+   * The scheduled form. Sinks are create-only (file O_EXCL, GCS ifGenerationMatch=0),
+   * so an empty chain, or a head the last recorded checkpoint already covers, is
+   * skipped instead of failing on a restart with no new events.
+   */
+  async checkpointIfAdvanced(): Promise<CheckpointRecord | null> {
+    const { head, latest } = await this.options.store.transaction({ kind: 'system', purpose: 'audit' },
+      async (tx) => ({ head: await tx.audit.head(), latest: await tx.audit.latestCheckpoint() }));
+    if (head.seq === 0 || (latest !== null && latest.seq >= head.seq)) return null;
+    return this.checkpoint();
+  }
 }
 
 export { AuditCheckpointer as Checkpointer };

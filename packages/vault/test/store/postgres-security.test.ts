@@ -11,7 +11,7 @@ import { LocalDevKms, UnavailableKms, type KmsProvider } from '../../src/crypto/
 import { SecretMaterial } from '../../src/secret-material.js';
 import { FileDeletionLedger, replayDeletionLedger } from '../../src/store/deletion-ledger.js';
 import { OWNER_ID, SPACE_A, T0, fakeArgon2idHash, fakeSecret, newApproval, newLogin, otherCaller, outsiderCaller, scopeOf, testCaller, tokenPair } from '../support/kit.js';
-import { PG_ENABLED, PG_REASON, pgHarness, type PgHarness } from './pg-harness.js';
+import { NO_APP_ROLE_REACH, PG_ENABLED, PG_REASON, appRoleVaultReach, pgHarness, type PgHarness } from './pg-harness.js';
 
 const sys = { kind: 'system', purpose: 'audit' } as const;
 const event = (n = 0): AuditBody => ({ action: 'session.signed_in', actor: actorOf(testCaller), itemId: null, subjectMemberId: OWNER_ID, spaceId: SPACE_A, params: { n } });
@@ -27,19 +27,10 @@ else describe('Postgres vault security', () => {
     const roles = (await h.admin.query("select rolname, rolcanlogin, rolsuper, rolbypassrls, rolpassword from pg_authid where rolname like 'tm8_vault_%' order by rolname")).rows;
     expect(roles).toHaveLength(3);
     for (const role of roles) expect(role).toMatchObject({ rolcanlogin: false, rolsuper: false, rolbypassrls: false, rolpassword: null });
-    expect((await h.admin.query("select has_schema_privilege('tm8_app','vault','USAGE') as usage, has_schema_privilege('tm8_app','vault','CREATE') as create")).rows[0]).toEqual({ usage: false, create: false });
-    const grants = await h.admin.query("select count(*) as n from pg_namespace n, lateral aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a where n.nspname = 'vault' and a.grantee = 0");
-    expect(Number(grants.rows[0].n)).toBe(0);
-    const relations = (await h.admin.query("select c.oid from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'vault' and c.relkind in ('r','S')")).rows;
-    for (const row of relations) {
-      const permissions = (await h.admin.query("select has_table_privilege('tm8_app',$1::oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') as allowed", [row.oid])).rows[0];
-      expect(permissions.allowed).toBe(false);
-    }
-    const client = await h.admin.connect();
-    try {
-      await client.query('set role tm8_app');
-      await expect(client.query('select * from vault.items')).rejects.toMatchObject({ code: '42501' });
-    } finally { await client.query('reset role'); client.release(); }
+    expect(await appRoleVaultReach(h.admin)).toEqual(NO_APP_ROLE_REACH);
+    // The probe is not blind: a single column grant is reported, and the read is no longer refused.
+    await h.admin.query('grant usage on schema vault to tm8_app; grant select (name) on vault.items to tm8_app');
+    expect(await appRoleVaultReach(h.admin)).toMatchObject({ schema: { usage: true }, relations: ['items'], readRefused: false });
   });
 
   it('SQL append seals both external golden vectors byte for byte, preserving body_text', async () => {

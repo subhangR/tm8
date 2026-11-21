@@ -9,6 +9,8 @@ import {
   AttestationError, AttestationVerifier, VAULT_ATTESTATION_HEADER, loadAttestationPublicKey,
   type AttestationFailure,
 } from '../relay/attestation.js';
+import { VAULT_ALERTS_HEADER } from '../relay/alerts.js';
+import type { AlertOutbox } from './alerts.js';
 import {
   brokerErrorResponse, createBrokerDispatcher, mapBrokerError, matchBrokerRoute, sweepBrokerResponse,
   type BrokerDependencies, type BrokerResponse,
@@ -27,6 +29,11 @@ export interface BrokerServerOptions extends BrokerDependencies {
   socketPath: string;
   relayPublicKeyFile: string;
   mtls?: { host: string; port: number; keyFile: string; certFile: string; caFile: string };
+  /**
+   * Pending owner alerts ride on attested responses only, so an unattested
+   * connection never receives them. The relay strips the header (relay/alerts.ts).
+   */
+  alertOutbox?: AlertOutbox;
   maxHeaderSize?: number;
   headersTimeoutMs?: number;
   requestTimeoutMs?: number;
@@ -89,10 +96,15 @@ export async function createBrokerServer(options: BrokerServerOptions): Promise<
   let socketInode: number | null = null;
   let closePromise: Promise<void> | null = null;
 
-  const write = (res: ServerResponse, result: BrokerResponse, requestId: string): void => {
+  const write = (res: ServerResponse, result: BrokerResponse, requestId: string, attested: boolean): void => {
     if (res.destroyed || res.writableEnded) return;
+    let alerts: string | null = null;
+    // Taken only once the response can still be written; a handler header can never set or replace it.
+    try { alerts = attested ? options.alertOutbox?.take() ?? null : null; } catch { alerts = null; }
+    const { [VAULT_ALERTS_HEADER]: _ignored, ...headers } = result.headers;
     res.writeHead(result.status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store',
-      'x-content-type-options': 'nosniff', ...(result.body === '' ? {} : { 'x-tm8-request-id': requestId }), ...result.headers });
+      'x-content-type-options': 'nosniff', ...(result.body === '' ? {} : { 'x-tm8-request-id': requestId }), ...headers,
+      ...(alerts === null ? {} : { [VAULT_ALERTS_HEADER]: alerts }) });
     res.end(result.body);
   };
 
@@ -124,7 +136,7 @@ export async function createBrokerServer(options: BrokerServerOptions): Promise<
       requestId = verifiedRequestId(header as string);
       const result = await dispatch({ method: req.method ?? '', ...target, body, headers: req.headers, caller, requestId, signal: abort.signal });
       status = result.status;
-      write(res, result, requestId);
+      write(res, result, requestId, true);
     } catch (error) {
       let result: BrokerResponse;
       if (error instanceof AttestationError) {
@@ -141,7 +153,7 @@ export async function createBrokerServer(options: BrokerServerOptions): Promise<
       }
       status = result.status;
       if (!attested) result.headers.connection = 'close';
-      write(res, result, requestId);
+      write(res, result, requestId, attested);
       if (!req.complete) req.resume();
     } finally {
       clearTimeout(timer);

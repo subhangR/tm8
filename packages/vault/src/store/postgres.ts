@@ -76,10 +76,26 @@ export class PgVaultStore implements VaultStore {
     }
   }
 
+  /**
+   * Ready means the vault schema answers as the broker role, not only that the
+   * server does: a missing schema (a rolled-back 450), a missing role or a
+   * revoked grant is unhealthy, so startBroker refuses before serving.
+   */
   async health(): Promise<{ ok: boolean }> {
     if (this.#closed || this.faults.unavailable) return { ok: false };
-    try { await this.#pool.query('select 1'); return { ok: true }; }
+    let client: PoolClient;
+    try { client = await this.#pool.connect(); }
     catch { return { ok: false }; }
+    let healthy = false;
+    try {
+      await client.query('begin read only');
+      if (this.#role) await client.query('set local role tm8_vault_broker');
+      healthy = (await client.query('select 1 from vault.audit_head where singleton')).rowCount === 1;
+      await client.query('rollback');
+    } catch { healthy = false; }
+    // An unhealthy connection is destroyed rather than returned mid-transaction.
+    client.release(!healthy);
+    return { ok: healthy };
   }
 
   async close(): Promise<void> {

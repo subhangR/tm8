@@ -1027,11 +1027,17 @@ export interface SpendProcessor {
 // Alerts
 // ---------------------------------------------------------------------------
 
-export type VaultAlertKind =
-  | 'egress_refused' | 'canary_detected' | 'value_request_refused' | 'fill_repeated_failures'
-  | 'passkey_new_device' | 'recovery_code_used' | 'refresh_reuse_detected' | 'approval_requested' | 'audit_unavailable';
+export const VAULT_ALERT_KINDS = [
+  'egress_refused', 'canary_detected', 'value_request_refused', 'fill_repeated_failures',
+  'passkey_new_device', 'recovery_code_used', 'refresh_reuse_detected', 'approval_requested', 'audit_unavailable',
+] as const;
+export type VaultAlertKind = (typeof VAULT_ALERT_KINDS)[number];
 
-/** Metadata only. The relay drains these and notifies the owner in tm8. */
+/**
+ * Metadata only. The broker carries pending alerts to the relay in the
+ * `x-tm8-vault-alerts` header of attested responses (src/broker/alerts.ts);
+ * the relay strips that header and notifies the owner in tm8.
+ */
 export interface VaultAlert {
   kind: VaultAlertKind;
   memberId: string;

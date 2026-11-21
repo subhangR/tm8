@@ -10,8 +10,8 @@
       "default": "./dist/index.js"
     },
     "./relay": {
-      "types": "./dist/relay/attestation.d.ts",
-      "default": "./dist/relay/attestation.js"
+      "types": "./dist/relay/index.d.ts",
+      "default": "./dist/relay/index.js"
     }
   },
   "scripts": {

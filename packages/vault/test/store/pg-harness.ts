@@ -29,6 +29,38 @@ export interface PgHarness extends StoreHarness {
   restoreDump(dump: string): Promise<void>;
 }
 
+/** Every route by which the application role could reach vault data. NO_APP_ROLE_REACH is none. */
+export interface AppRoleVaultReach {
+  schema: { usage: boolean; create: boolean };
+  publicSchemaGrants: number;
+  relations: string[];
+  functions: string[];
+  readRefused: boolean;
+}
+
+export const NO_APP_ROLE_REACH: AppRoleVaultReach = { schema: { usage: false, create: false }, publicSchemaGrants: 0, relations: [], functions: [], readRefused: true };
+
+export async function appRoleVaultReach(admin: pg.Pool): Promise<AppRoleVaultReach> {
+  const schema = (await admin.query("select has_schema_privilege('tm8_app','vault','USAGE') as usage, has_schema_privilege('tm8_app','vault','CREATE') as create")).rows[0];
+  const publicSchemaGrants = Number((await admin.query("select count(*) as n from pg_namespace n, lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a where n.nspname = 'vault' and a.grantee = 0")).rows[0].n);
+  // Table, column and sequence grants; has_table_privilege alone misses a column grant.
+  const relations = (await admin.query(`select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'vault' and (
+      (c.relkind in ('r','p','v','m','f') and (has_table_privilege('tm8_app', c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+        or has_any_column_privilege('tm8_app', c.oid, 'SELECT,INSERT,UPDATE,REFERENCES')))
+      or (c.relkind = 'S' and has_sequence_privilege('tm8_app', c.oid, 'USAGE,SELECT,UPDATE')))
+    order by 1`)).rows.map((row) => row.relname as string);
+  const functions = (await admin.query("select p.oid::regprocedure::text as name from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'vault' and has_function_privilege('tm8_app', p.oid, 'EXECUTE') order by 1")).rows.map((row) => row.name as string);
+  let readRefused = false;
+  const client = await admin.connect();
+  try {
+    await client.query('set role tm8_app');
+    try { await client.query('select 1 from vault.items limit 1'); }
+    catch (error) { readRefused = (error as { code?: string }).code === '42501'; }
+  } finally { await client.query('reset role'); client.release(); }
+  return { schema, publicSchemaGrants, relations, functions, readRefused };
+}
+
 export async function pgHarness(): Promise<PgHarness> {
   const base = scratchUrl();
   const admin = new pg.Pool({ connectionString: base.toString() });

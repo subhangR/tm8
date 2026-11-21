@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AuditCheckpointer, FileCheckpointSink, LocalEd25519CheckpointSigner, OffCheckpointSink } from '../../src/audit/checkpointer.js';
 import { checkpointSigningInput } from '../../src/audit/chain.js';
 import { MemoryVaultStore } from '../../src/store/memory.js';
-import { FixedClock } from '../support/kit.js';
+import { actorOf } from '../../src/core-types.js';
+import { FixedClock, OWNER_ID, SPACE_A, scopeOf, testCaller } from '../support/kit.js';
 
 const dirs: string[] = [];
 afterEach(async () => { for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true }); });
@@ -46,5 +47,23 @@ describe('audit checkpoints', () => {
     expect(() => new LocalEd25519CheckpointSigner({ mode: 'production', name: 'test', keyFile: path })).toThrow('local signer refused');
     expect(() => new LocalEd25519CheckpointSigner({ mode: 'dev', name: 'test', keyFile: path })).toThrow('signing key unavailable');
     expect(() => new LocalEd25519CheckpointSigner({ mode: 'dev', name: '../bad', keyFile: path })).toThrow('invalid key name');
+  });
+  it('the scheduled form anchors only a head that no recorded checkpoint covers', async () => {
+    const dir = await temporary();
+    const store = new MemoryVaultStore();
+    const puts: number[] = [];
+    const sink = new FileCheckpointSink(join(dir, 'checkpoints'));
+    const counting = { kind: sink.kind, health: sink.health.bind(sink), put: async (checkpoint: Parameters<typeof sink.put>[0]) => { puts.push(checkpoint.seq); return sink.put(checkpoint); } };
+    const checkpointer = new AuditCheckpointer({ store, sink: counting, signer: { keyId: 'test', sign: async () => Buffer.alloc(64, 1) } });
+    const append = () => store.transaction(scopeOf(testCaller), (tx) => tx.audit.append({ action: 'session.signed_in', actor: actorOf(testCaller),
+      itemId: null, subjectMemberId: OWNER_ID, spaceId: SPACE_A, params: {} }));
+    expect(await checkpointer.checkpointIfAdvanced()).toBeNull();
+    await append();
+    expect(await checkpointer.checkpointIfAdvanced()).toMatchObject({ seq: 1, anchored: true });
+    // A restart with no new events: the create-only sink would refuse a second put of the same head.
+    expect(await checkpointer.checkpointIfAdvanced()).toBeNull();
+    await append(); await append();
+    expect(await checkpointer.checkpointIfAdvanced()).toMatchObject({ seq: 3 });
+    expect(puts).toEqual([1, 3]);
   });
 });
