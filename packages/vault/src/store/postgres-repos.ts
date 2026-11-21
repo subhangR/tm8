@@ -84,7 +84,17 @@ const TABLES = {
 } as const;
 type TableKey = keyof typeof TABLES;
 const snake = (name: string): string => name.replace(/[A-Z]/g, (part) => `_${part.toLowerCase()}`);
-const camel = (name: string): string => name.replace(/_([a-z])/g, (_, part: string) => part.toUpperCase());
+/**
+ * Column names are the only record-derived text interpolated into SQL (identifiers cannot be bound).
+ * They come from store-built records, but a stray key must fail closed rather than reach the query.
+ */
+const SQL_IDENTIFIER = /^[a-z][a-z0-9_]{0,62}$/;
+export function sqlColumn(name: string): string {
+  const column = snake(name);
+  if (!SQL_IDENTIFIER.test(column)) throw new TypeError('vault store: invalid column');
+  return column;
+}
+const camel =(name: string): string => name.replace(/_([a-z])/g, (_, part: string) => part.toUpperCase());
 const JSON_FIELDS = new Set(['createdBy','revokedBy','constraints','boundParams','requestedBy','decidedBy','lookalike','spend','actor','result','injection','evidence','registration']);
 const READ_METHODS = new Set(['get','list','listForItem','countActive','countOwned','activeForCaller','countPending','findPending','findUsable','currentSecret','getByCredentialId','getByTokenHash','getByApproval','listForMember','listUnknown','listUnused','countUnused','listUsable','getUsable','head','range','latestCheckpoint']);
 const AUTH_REPOS = new Set(['passkeys', 'sessions', 'challenges', 'recoveryCodes', 'enrollmentCodes']);
@@ -171,7 +181,7 @@ class SqlMap<T> {
   async set(key: string, value: T): Promise<void> {
     const record = this.#record(key, value);
     const entries = Object.entries(record);
-    const names = entries.map(([name]) => snake(name));
+    const names = entries.map(([name]) => sqlColumn(name));
     const values = entries.map(([name, value]) => JSON_FIELDS.has(name) && value !== null ? JSON.stringify(value) : value);
     const previous = this.#cache.get(key);
     let rows: Record<string, unknown>[];
