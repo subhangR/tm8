@@ -21,7 +21,9 @@
  * Fixture: H owns spaces A and B and is the node owner; H2 is a member of A
  * only; H3 owns C only; G is H's agent, pinned to A by its work session.
  *
- * Needs TM8_W1_ADMIN_DATABASE_URL (the test cluster). Skipped without one.
+ * Needs the test cluster, like every W1 scratch suite: test/db/pg-port-guard.ts
+ * resolves its URL (CI sets TM8_MIGRATION_DATABASE_URL). A missing cluster is
+ * red, never a skip.
  * Every key and token is generated at runtime and never printed.
  */
 import { randomUUID } from 'node:crypto';
@@ -51,8 +53,6 @@ import { CAPTURE_RESPONSE_HEADERS } from '../../src/vault/capture-page.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from '../db/w1-pg.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 240_000 });
-
-const describePg = process.env['TM8_W1_ADMIN_DATABASE_URL'] ? describe : describe.skip;
 
 type Caller = ReturnType<AttestationVerifier['verify']>;
 
@@ -101,7 +101,7 @@ async function waitFor<T>(probe: () => Promise<T | undefined>, ms = 10_000): Pro
   }
 }
 
-describePg('vault relay on a real node', () => {
+describe('vault relay on a real node', () => {
   let database: W1ScratchDatabase;
   let db: Db;
   let node: BootstrappedServer;
