@@ -19,7 +19,7 @@ const NODE: Receiver[] = ['node-form', 'node-component'];
 
 const EDGE_BYTES = [0x00, 0x09, 0x20, 0x25, 0x2b, 0x33, 0x7f, 0x80, 0x8f, 0x90, 0x9f, 0xa0, 0xbf, 0xc0, 0xc1, 0xc2, 0xc3, 0xdf,
   0xe0, 0xe2, 0xed, 0xef, 0xf0, 0xf4, 0xf5, 0xff];
-const CODE_POINTS = ['é', '€', '😀', '﻿', '�', '\u{10FFFF}', '퟿', '', '\u0080', '߿', 'ࠀ'];
+const CODE_POINTS = ['é', '€', '😀', '\ufeff', '�', '\u{10FFFF}', '\ud7ff', '\ue000', '\u0080', '߿', 'ࠀ'];
 
 /** Escapes biased to UTF-8's edges, valid sequences, literals and broken escapes, mixed. */
 function escapedText(random: () => number): string {

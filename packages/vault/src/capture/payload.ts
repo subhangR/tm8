@@ -1,3 +1,4 @@
+import { isVaultLabelSafe } from '@tm8/contract';
 import { z } from 'zod';
 import { boundedSafeParse } from '../bounded-parse.js';
 import { canonicalJson } from '../intent/hash.js';
@@ -17,14 +18,20 @@ import { SecretMaterial } from '../secret-material.js';
 export const VAULT_ITEM_TYPES = ['login', 'api_key', 'card', 'note', 'identity'] as const;
 export type VaultItemType = (typeof VAULT_ITEM_TYPES)[number];
 
-const name = z.string().trim().min(1).max(200);
+/**
+ * Review addendum 2, C6: a name and a username become plaintext metadata that people read, so they must be
+ * safe labels: no control, line-separator, text-direction override or tag characters (the contract's
+ * `VAULT_LABEL_UNSAFE` gives the set and the reasons). The capture page is not trusted to have checked.
+ */
+const LABEL_REFUSED = 'no control, line-separator, text-direction override or tag characters';
+const name = z.string().trim().min(1).max(200).refine(isVaultLabelSafe, LABEL_REFUSED);
 
 export const LoginPayloadSchema = z
   .object({
     type: z.literal('login'),
     name,
     origin: z.string().min(1).max(2048),
-    username: z.string().max(512).optional(),
+    username: z.string().max(512).refine(isVaultLabelSafe, LABEL_REFUSED).optional(),
     password: z.string().min(1).max(4096),
     /** otpauth:// URI or a base32 secret. TOTP autofill itself is v2 (MSG 15). */
     totp: z.string().max(2048).optional(),
@@ -152,14 +159,37 @@ export interface ParsedCapture {
 const CAPTURE_ISSUE_BUDGET = 32;
 
 /**
+ * Review addendum 2, C6: strict UTF-8. `Buffer#toString` replaces a malformed byte sequence with U+FFFD,
+ * so the vault would store a different secret than the browser sealed, and nobody would be told. The import
+ * parser already decodes this way. `ignoreBOM` keeps a leading byte-order mark, which JSON then refuses, as
+ * before this change.
+ */
+const STRICT_UTF8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+/** A lone surrogate. Strict UTF-8 cannot encode one, so only a JSON escape sequence can produce it. */
+const LONE_SURROGATE = /\p{Cs}/u;
+
+/** Walks a payload that has already passed its strict schema, so it is at most two objects deep. */
+function holdsLoneSurrogate(value: unknown): boolean {
+  if (typeof value === 'string') return LONE_SURROGATE.test(value);
+  if (value === null || typeof value !== 'object') return false;
+  return Object.entries(value).some(([key, child]) => LONE_SURROGATE.test(key) || holdsLoneSurrogate(child));
+}
+
+/**
  * Validates decrypted capture bytes and splits them. `expectedType` comes from
  * the capture link, so an envelope cannot change the item type its link was
  * issued for.
  */
 export function parseCapturePayload(plaintext: Buffer, expectedType: VaultItemType): ParsedCapture {
+  let text: string;
+  try {
+    text = STRICT_UTF8.decode(plaintext);
+  } catch {
+    throw new CapturePayloadError('invalid_payload', 'not UTF-8');
+  }
   let raw: unknown;
   try {
-    raw = JSON.parse(plaintext.toString('utf8'));
+    raw = JSON.parse(text);
   } catch {
     throw new CapturePayloadError('invalid_payload', 'not JSON');
   }
@@ -172,6 +202,9 @@ export function parseCapturePayload(plaintext: Buffer, expectedType: VaultItemTy
     throw new CapturePayloadError('invalid_payload', issues);
   }
   const payload = result.data;
+  // C6: a lone surrogate is not text. Every later UTF-8 encoding of it (the canonical secret, a fill) would
+  // silently turn it into U+FFFD, so the stored value would not be the one the owner entered.
+  if (holdsLoneSurrogate(payload)) throw new CapturePayloadError('invalid_payload', 'not well-formed Unicode');
   if (payload.type !== expectedType) throw new CapturePayloadError('type_mismatch', `link is for ${expectedType}`);
 
   switch (payload.type) {

@@ -159,3 +159,68 @@ describe('capture encryption, metadata and failure handling', () => {
     expect((await submit(h, created, { type: 'note', name: 'Test note', body: 'test-only' })).status).toBe(200);
   });
 });
+
+/** Text from code points, so this file holds no invisible character and no escape a tool could rewrite. */
+const cp = (...points: number[]) => String.fromCodePoint(...points);
+
+async function submitBytes(h: Harness, created: Awaited<ReturnType<typeof link>>, bytes: Buffer) {
+  try {
+    const sealed = sealCapture(bytes, h.components.captureKeys.publicKey(), created.id);
+    return await h.send('vault.captures.submit', { params: { captureId: created.id }, input: { clientMutationId: randomUUID(),
+      linkToken: created.token, sealed, stepUp: fakeStepUpProof() } });
+  } finally { bytes.fill(0); }
+}
+
+describe('capture content checks (review addendum 2, C6)', () => {
+  it('refuses an agent-suggested link name holding a text-direction override, a control or a tag character', async () => {
+    const h = await setup();
+    const hidden = cp(...[...'ignore'].map((letter) => 0xe0000 + letter.charCodeAt(0)));
+    for (const name of [`Bank${cp(0x202e)}moc.evil`, `Bank${cp(0x2066)}x${cp(0x2069)}`, `Bank${cp(0x1b)}[2J`, `Bank${cp(0x85)}x`, `Bank${cp(0x2028)}x`,
+      `Bank${hidden}`]) {
+      const response = await h.send('vault.captureLinks.create', { input: { clientMutationId: randomUUID(), itemType: 'note',
+        purpose: 'create', name }, caller: { ...testCaller, kind: 'agent', sessionId: randomUUID() } });
+      expect(response.status).toBe(400);
+      expect(response.json.error.code).toBe('invalid_input');
+      expect(response.text.includes(name)).toBe(false);
+    }
+    const safe = `${cp(0xc24, 0xc46, 0xc32, 0xc41, 0xc17, 0xc41)} ${cp(0x200e)}notes`;
+    const created = await link(h, 'note', { name: safe });
+    const open = await h.send('vault.captures.open', { params: { captureId: created.id }, input: { clientMutationId: randomUUID(), linkToken: created.token } });
+    expect(open.status).toBe(200);
+    expect(open.json.data.itemName).toBe(safe);
+  });
+
+  it('refuses malformed UTF-8 and lone surrogates before storing an item or consuming the link', async () => {
+    const h = await setup();
+    const created = await link(h);
+    const prefix = Buffer.from('{"type":"note","name":"Synthetic note","body":"synthetic');
+    for (const bad of [[0xff], [0xc0, 0x80], [0xed, 0xa0, 0x80], [0xe2, 0x82]]) {
+      const response = await submitBytes(h, created, Buffer.concat([prefix, Buffer.from(bad), Buffer.from('"}')]));
+      expect(response.status).toBe(400);
+      expect(response.json.error.code).toBe('invalid_input');
+    }
+    const lone = await submit(h, created, { type: 'note', name: 'Synthetic note', body: `synthetic${String.fromCharCode(0xd800)}` });
+    expect(lone.status).toBe(400);
+    expect(lone.json.error.code).toBe('invalid_input');
+    expect(await h.store.transaction(memberScope(testCaller), (tx) => tx.items.countOwned())).toBe(0);
+    expect((await submit(h, created, { type: 'note', name: 'Synthetic note', body: 'test-only' })).status).toBe(200);
+  });
+
+  it('refuses unsafe names and usernames, and stores safe non-Latin labels unchanged', async () => {
+    const h = await setup();
+    const created = await link(h, 'login');
+    // Synthetic, and assembled so the source holds no credential-shaped literal.
+    const base = { type: 'login', name: 'Synthetic', origin: 'https://example.com', password: ['test', 'only', 'value'].join('-') };
+    for (const payload of [{ ...base, name: `Pay${cp(0x202e)}lap` }, { ...base, username: `octo${cp(0x9)}x` }, { ...base, username: `octo${cp(0x2028)}` }]) {
+      const response = await submit(h, created, payload);
+      expect(response.status).toBe(400);
+      expect(response.json.error.code).toBe('invalid_input');
+    }
+    expect(await h.store.transaction(memberScope(testCaller), (tx) => tx.items.countOwned())).toBe(0);
+    const name = `${cp(0xc15, 0xc4d, 0x200c)}x ${cp(0x1f469, 0x200d, 0x1f4bb)}`;
+    const username = `${cp(0x5e9, 0x5dc, 0x5d5, 0x5dd)}${cp(0x200f)}`;
+    const stored = await submit(h, created, { ...base, name, username });
+    expect(stored.status).toBe(200);
+    expect(stored.json.data).toMatchObject({ name, username });
+  });
+});

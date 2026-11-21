@@ -73,8 +73,33 @@ const Command = { clientMutationId: z.string().min(1).max(128) };
 /** Why an agent or person is doing this. It is audited and shown to the owner, and must never contain a secret. */
 const Purpose = z.string().trim().min(1).max(500);
 const OriginInput = z.string().min(1).max(2048);
+/**
+ * Review addendum 2, C6: a label the vault shows to people (an item name, a username, a passkey name,
+ * the name an agent suggests for a capture link) must read as the characters it holds. So it cannot
+ * contain a C0 or C1 control character, a line or paragraph separator, or a bidirectional embedding,
+ * override or isolate (U+202A-U+202E and U+2066-U+2069, the "Trojan Source" set of CVE-2021-42574):
+ * each of those can make a label display as something other than what it says. Nor can it contain a
+ * lone surrogate, which is not text and which every UTF-8 encoder silently replaces. Nor a Unicode tag
+ * character (U+E0000-U+E007F): tags render as nothing, yet they spell ASCII that language models read,
+ * so a label holding them shows people one text and tells an agent another. A hostile page title that a
+ * password manager saved as an item name is the route in. The cost is recorded: the three subdivision
+ * flag emoji (England, Scotland, Wales) are tag sequences, so a label cannot hold them.
+ * The direction marks U+200E and U+200F and the joiners U+200C and U+200D stay allowed: they do not
+ * reorder the text around them, and Indic scripts and emoji need the joiners. Variation selectors stay
+ * allowed, because ideographic variation sequences are part of real Japanese names. Look-alike
+ * characters (confusables) and the other invisible format characters (U+00AD, U+200B, U+2060-U+2064,
+ * U+FEFF, variation selectors) are NOT detected here; that is a recorded residual. A label is never
+ * what the vault matches on (an origin is).
+ */
+export const VAULT_LABEL_UNSAFE = /[\u{0}-\u{1f}\u{7f}-\u{9f}\u{2028}\u{2029}\u{202a}-\u{202e}\u{2066}-\u{2069}\u{e0000}-\u{e007f}]|\p{Cs}/u;
+export const isVaultLabelSafe = (value: string): boolean => !VAULT_LABEL_UNSAFE.test(value);
+const LABEL_REFUSED = 'no control, line-separator, text-direction override or tag characters';
 /** A label in a STEP-UP input. It rejects surrounding whitespace rather than trimming it, because a step-up body must parse unchanged (point 6). */
-const StepUpLabel = (max: number) => z.string().min(1).max(max).regex(/^\S(?:[\s\S]*\S)?$/, 'no leading or trailing whitespace');
+const StepUpLabel = (max: number) => z.string().min(1).max(max).regex(/^\S(?:[\s\S]*\S)?$/, 'no leading or trailing whitespace')
+  .refine(isVaultLabelSafe, LABEL_REFUSED);
+/** An item name outside a step-up input: trimmed, then 1-200 characters, and a safe label (C6). */
+const ItemName = z.string().trim().min(1).max(200).refine(isVaultLabelSafe, LABEL_REFUSED);
+const ItemUsername = z.string().max(512).refine(isVaultLabelSafe, LABEL_REFUSED);
 
 // ---------------------------------------------------------------------------
 // Constants shared by the broker, the relay and the UI
@@ -114,6 +139,11 @@ export const VAULT_REVOCATION_BOUND_SECONDS = 5;
 export const VAULT_MAX_SCREENSHOT_BASE64 = 4 * 1024 * 1024;
 export const VAULT_MAX_CAPTURE_CIPHERTEXT = 64 * 1024;
 export const VAULT_MAX_IMPORT_CIPHERTEXT = 8 * 1024 * 1024;
+/**
+ * The most rows one import commit takes. The import parser refuses an export that would offer more
+ * importable rows than this (review addendum 2, C6), so a preview never lists rows that no commit can take.
+ */
+export const VAULT_MAX_IMPORT_ITEMS = 5000;
 /**
  * MSG 6, Journey A step 3. When the server's chat paste guard (TM8_VAULT_PASTE_GUARD=on) replaces
  * secret-shaped text in a person's message with `[redacted:<kind>]` before storing it, the result
@@ -614,7 +644,7 @@ export const VaultCaptureLinkCreateInputSchema = z.object({
   purpose: z.enum(['create', 'replace']),
   itemId: Id.optional(),
   /** Suggested item name, shown on the capture page. Never a secret. */
-  name: z.string().trim().min(1).max(200).optional(),
+  name: ItemName.optional(),
 }).strict().refine((input) => (input.purpose === 'replace') === (input.itemId !== undefined), {
   message: 'itemId is required for replace and refused for create',
   path: ['itemId'],
@@ -883,8 +913,8 @@ export const VaultPasskeyRevokeInputSchema = z.object({ ...Command, confirmLast:
 export const VaultItemUpdateInputSchema = z.object({
   ...Command,
   expectedVersion: z.number().int().positive(),
-  name: z.string().trim().min(1).max(200).optional(),
-  username: z.string().max(512).nullable().optional(),
+  name: ItemName.optional(),
+  username: ItemUsername.nullable().optional(),
 }).strict().refine((input) => input.name !== undefined || input.username !== undefined, 'nothing to update');
 
 export const VaultItemSetPropertiesInputSchema = z.object({
@@ -977,7 +1007,7 @@ export const VaultImportCommitInputSchema = z.object({
     name: StepUpLabel(200).optional(),
     /** Required for a row whose origin was refused. The broker refuses the row otherwise. */
     originOverride: OriginInput.optional(),
-  }).strict()).min(1).max(5000),
+  }).strict()).min(1).max(VAULT_MAX_IMPORT_ITEMS),
   stepUp: VaultStepUpProofSchema,
 }).strict();
 export const VaultImportResultSchema = z.object({

@@ -17,6 +17,7 @@ export interface HarnessOptions {
   space?: string | null;
   expiresAt?: string; maxCiphertextBytes?: number; fail?: Operation; reason?: string;
   candidates?: Record<string, unknown>[];
+  skipped?: { index: number; reason: string }[];
   onRequest?: (request: RequestRecord) => Response | Promise<Response> | undefined;
 }
 export function response(data: unknown, status = 200): Response {
@@ -100,7 +101,7 @@ export function harness(options: HarnessOptions = {}) {
           { index: 0, type: 'login', name: 'Primary fixture', origin: 'https://service.example', username: 'fixture-user', originError: null, hasPassword: true, hasTotp: false, duplicateOf: null, warnings: ['notes_present'] },
           { index: 1, type: 'login', name: 'Duplicate fixture', origin: 'https://service.example', username: 'fixture-user', originError: null, hasPassword: true, hasTotp: true, duplicateOf: 0, warnings: [] },
           { index: 2, type: 'login', name: 'Origin fixture', origin: null, username: null, originError: 'origin_refused', hasPassword: true, hasTotp: false, duplicateOf: null, warnings: ['http_origin'] },
-        ], skipped: [{ index: 3, reason: 'unsupported_type' }],
+        ], skipped: options.skipped ?? [{ index: 3, reason: 'unsupported_type' }],
       });
       case 'vault.imports.commit': return response({
         importId, created: [{ index: 0, itemId: randomUUID(), state: 'active' }], skipped: [], deleteSourceAdvice: true,

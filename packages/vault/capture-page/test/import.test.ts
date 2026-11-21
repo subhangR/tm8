@@ -209,3 +209,45 @@ describe('import page', () => {
     expect(h.win.document.querySelector<HTMLElement>('#vault-page')?.dataset.state).toBe('cancelled');
   });
 });
+
+/** Text from code points, so this file holds no invisible character and no escape a tool could rewrite. */
+const cp = (...points: number[]) => String.fromCodePoint(...points);
+
+describe('import page labels (review addendum 2, C6)', () => {
+  it('refuses an override name holding a text-direction override before any challenge or commit', async () => {
+    const h = make(); const sinks = leakageSinks(h);
+    await begin(h); await upload(h);
+    const input = h.win.document.querySelector<HTMLInputElement>('[name="overrideName"]')!;
+    input.value = `Pay${cp(0x202e)}lap`;
+    submit(h); await state(h, 'error');
+    expect(input.value).toBe('');
+    expect(h.win.document.body.textContent).toContain('hidden text-direction characters');
+    expect(h.requests.some((request) => request.operation === 'vault.imports.commit' || request.body.purpose === 'step_up')).toBe(false);
+    sinks.assertClean();
+  });
+
+  it('explains a repaired name and a skipped unsafe username in the preview', async () => {
+    const h = make({
+      candidates: [{ index: 0, type: 'login', name: 'Pay lap', origin: 'https://service.example', username: 'fixture-user', originError: null,
+        hasPassword: true, hasTotp: false, duplicateOf: null, warnings: ['unsafe_characters_replaced'] }],
+      skipped: [{ index: 1, reason: 'unsafe_username' }],
+    });
+    await begin(h); await upload(h);
+    const text = h.win.document.body.textContent ?? '';
+    expect(text).toContain('Control, hidden text-direction or invisible tag characters in the name were replaced with spaces.');
+    expect(text).toContain('Row 2: The username contains control, hidden text-direction or invisible tag characters, so this row was not imported.');
+  });
+
+  it('refuses an override name hiding text in Unicode tag characters', async () => {
+    const h = make(); const sinks = leakageSinks(h);
+    await begin(h); await upload(h);
+    const input = h.win.document.querySelector<HTMLInputElement>('[name="overrideName"]')!;
+    // "Bank" followed by tag characters spelling "go": nothing visible, but a language model reads it.
+    input.value = `Bank${cp(0xe0067, 0xe006f)}`;
+    submit(h); await state(h, 'error');
+    expect(input.value).toBe('');
+    expect(h.win.document.body.textContent).toContain('invisible tag characters');
+    expect(h.requests.some((request) => request.operation === 'vault.imports.commit' || request.body.purpose === 'step_up')).toBe(false);
+    sinks.assertClean();
+  });
+});

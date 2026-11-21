@@ -177,3 +177,36 @@ describe('capture page', () => {
     expect(identity.win.document.querySelectorAll('[data-identity-row]')).toHaveLength(1);
   });
 });
+
+/** Text from code points, so this file holds no invisible character and no escape a tool could rewrite. */
+const cp = (...points: number[]) => String.fromCodePoint(...points);
+
+describe('capture page labels (review addendum 2, C6)', () => {
+  it.each([
+    ['a name with a text-direction override', { name: `Pay${cp(0x202e)}lap` }],
+    ['a name with a C1 control', { name: `Pay${cp(0x85)}lap` }],
+    ['a name with an isolate', { name: `Pay${cp(0x2067)}lap${cp(0x2069)}` }],
+    ['a username with a TAB', { username: `octo${cp(0x9)}cat` }],
+    ['a username with a line separator', { username: `octo${cp(0x2028)}cat` }],
+    ['a name hiding text in tag characters', { name: `Bank${cp(0xe0067, 0xe006f)}` }],
+    ['a username hiding text in tag characters', { username: `octo${cp(0xe0041, 0xe007f)}cat` }],
+  ])('refuses %s before any challenge, clears the fields and says why', async (_label, change) => {
+    const h = make(); await h.mount().ready;
+    const fields = fillCapture(h, { ...payloadFixture('login'), ...change });
+    submit(h); await state(h, 'error');
+    for (const input of fields) expect(input.value).toBe('');
+    expect(h.requests).toHaveLength(2);
+    expect(h.credentials.get).not.toHaveBeenCalled();
+    expect(h.win.document.body.textContent).toContain('hidden text-direction characters');
+  });
+
+  it('seals a non-Latin name and username with direction marks and joiners unchanged', async () => {
+    const h = make(); await h.mount().ready;
+    const fixture = { ...payloadFixture('login'), name: `${cp(0xc24, 0xc46, 0xc32, 0xc41, 0xc17, 0xc41)} ${cp(0x200e)}x`,
+      username: `${cp(0x5e9, 0x5dc, 0x5d5, 0x5dd)}${cp(0x200f)}${cp(0xc15, 0xc4d, 0x200c)}` };
+    fillCapture(h, fixture); submit(h); await state(h, 'stored');
+    const submitted = h.requests.find((request) => request.operation === 'vault.captures.submit')!;
+    const opened = h.broker.open(submitted.body.sealed, h.captureId);
+    try { expect(JSON.parse(opened.toString())).toEqual(fixture); } finally { opened.fill(0); }
+  });
+});

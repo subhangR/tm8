@@ -16,6 +16,7 @@ const COPY = {
   secret_in_metadata: 'That looks like a secret. Names, usernames and origins are stored as plain metadata, so put secrets only in the secret fields.',
   too_large: 'This item is too large for the secure capture channel.',
   invalid_payload: 'Check the required fields and try again.',
+  unsafe_label: 'Names and usernames cannot contain control characters, hidden text-direction characters or invisible tag characters. Type the text instead of pasting it.',
   invalid_key: 'The secure capture key could not be verified. Ask for a new link.',
   unavailable: 'The vault is unavailable. Try again later.',
   failed: 'The request could not be completed. Try again.',

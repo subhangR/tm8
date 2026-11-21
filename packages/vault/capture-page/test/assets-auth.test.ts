@@ -6,12 +6,13 @@ import {
   VAULT_IMPORT_FORMATS, VAULT_IMPORT_PAGE_PATH as CONTRACT_IMPORT_PATH,
   VAULT_MAX_CAPTURE_CIPHERTEXT as CONTRACT_MAX_CAPTURE, VAULT_MAX_IMPORT_CIPHERTEXT as CONTRACT_MAX_IMPORT,
   VAULT_OPERATIONS as CONTRACT_OPERATIONS, VAULT_ITEM_TYPES, VAULT_SPACE_HEADER as CONTRACT_SPACE_HEADER,
+  VAULT_LABEL_UNSAFE as CONTRACT_LABEL_UNSAFE, VAULT_MAX_IMPORT_ITEMS as CONTRACT_MAX_IMPORT_ITEMS,
 } from '../../../contract/src/vault.js';
 // The package entry, not envelope.ts: its source pulls in the whole catalog.
 import { TM8_CLIENT_HEADER as CONTRACT_CLIENT_HEADER } from '@tm8/contract';
 import { CAPTURE_RESPONSE_HEADERS } from '../src/headers.js';
 import { CAPTURE_FIELDS } from '../src/payload.js';
-import { IMPORT_FORMATS, TM8_CLIENT_HEADER, VAULT_IMPORT_PAGE_PATH, VAULT_MAX_CAPTURE_CIPHERTEXT, VAULT_MAX_IMPORT_CIPHERTEXT, VAULT_OPERATIONS, VAULT_SPACE_HEADER } from '../src/contract.js';
+import { IMPORT_FORMATS, TM8_CLIENT_HEADER, VAULT_IMPORT_PAGE_PATH, VAULT_LABEL_UNSAFE, VAULT_MAX_CAPTURE_CIPHERTEXT, VAULT_MAX_IMPORT_CIPHERTEXT, VAULT_MAX_IMPORT_ITEMS, VAULT_OPERATIONS, VAULT_SPACE_HEADER } from '../src/contract.js';
 import { harness, response } from './page-harness.js';
 import type { Harness } from './page-harness.js';
 import { PageError, errorCopy, remoteError } from '../src/errors.js';
@@ -64,6 +65,10 @@ describe('standalone assets and contract parity', () => {
     expect(Object.keys(CAPTURE_FIELDS)).toEqual([...VAULT_ITEM_TYPES]);
     expect(VAULT_MAX_CAPTURE_CIPHERTEXT).toBe(CONTRACT_MAX_CAPTURE);
     expect(VAULT_MAX_IMPORT_CIPHERTEXT).toBe(CONTRACT_MAX_IMPORT);
+    // Review addendum 2, C6: the page refuses the labels the broker refuses, and offers no larger commit.
+    expect(VAULT_LABEL_UNSAFE.source).toBe(CONTRACT_LABEL_UNSAFE.source);
+    expect(VAULT_LABEL_UNSAFE.flags).toBe(CONTRACT_LABEL_UNSAFE.flags);
+    expect(VAULT_MAX_IMPORT_ITEMS).toBe(CONTRACT_MAX_IMPORT_ITEMS);
   });
 
   it('emits capture.js and local ES modules with no runtime package imports', () => {

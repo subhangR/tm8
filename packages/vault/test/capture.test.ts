@@ -157,3 +157,93 @@ describe('capture payload (R1, R9)', () => {
     expect(() => parseCapturePayload(login({ note: 'x' }), 'login')).toThrow(/invalid_payload/);
   });
 });
+
+/** Text from code points, so this file holds no invisible character and no escape a tool could rewrite. */
+const cp = (...points: number[]) => String.fromCodePoint(...points);
+function refusal(run: () => unknown): CapturePayloadError {
+  try { run(); } catch (error) { if (error instanceof CapturePayloadError) return error; throw error; }
+  throw new Error('expected a capture payload refusal');
+}
+
+describe('capture payload encoding and labels (review addendum 2, C6)', () => {
+  const note = (body: string, name = 'Synthetic note') => Buffer.from(JSON.stringify({ type: 'note', name, body }));
+
+  it.each([
+    ['a lone continuation byte', [0x80]],
+    ['an invalid byte', [0xff]],
+    ['an overlong NUL', [0xc0, 0x80]],
+    ['an encoded surrogate (CESU-8)', [0xed, 0xa0, 0x80]],
+    ['a truncated sequence', [0xe2, 0x82]],
+    ['a code point above U+10FFFF', [0xf4, 0x90, 0x80, 0x80]],
+  ])('refuses %s inside a secret instead of storing U+FFFD', (_label, bytes) => {
+    const prefix = Buffer.from('{"type":"note","name":"Synthetic note","body":"before');
+    const error = refusal(() => parseCapturePayload(Buffer.concat([prefix, Buffer.from(bytes), Buffer.from('after"}')]), 'note'));
+    expect(error.code).toBe('invalid_payload');
+    expect(error.detail).toBe('not UTF-8');
+  });
+
+  it('still refuses a payload that starts with a byte-order mark', () => {
+    const error = refusal(() => parseCapturePayload(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), login()]), 'login'));
+    expect(error.code).toBe('invalid_payload');
+    expect(error.detail).toBe('not JSON');
+  });
+
+  it('keeps valid multi-byte text in a secret exactly', () => {
+    const body = ['synthetic', cp(0xe9), cp(0x20ac), cp(0x1f600), cp(0x10ffff), cp(0xc15, 0x200c), cp(0xfffd)].join(' ');
+    const parsed = parseCapturePayload(note(body), 'note');
+    expect(JSON.parse(parsed.secret.utf8())).toEqual({ body });
+    parsed.secret.dispose();
+  });
+
+  it.each([
+    ['a lone high surrogate in a password', () => login({ password: `synthetic-${String.fromCharCode(0xd800)}` }), 'login'],
+    ['a lone low surrogate in a note', () => note(`synthetic-${String.fromCharCode(0xdc00)}`), 'note'],
+    ['a reversed surrogate pair in a note', () => note(String.fromCharCode(0xdc00, 0xd800)), 'note'],
+    ['a lone surrogate in an identity value', () => Buffer.from(JSON.stringify({ type: 'identity', name: 'Synthetic', fields: { Passport: String.fromCharCode(0xdbff) } })), 'identity'],
+  ] as const)('refuses %s, which only a JSON escape can spell', (_label, payload, type) => {
+    const bytes = payload();
+    // JSON.stringify writes a lone surrogate as an ASCII escape, so the bytes are valid UTF-8 and the decoder passes them.
+    expect(bytes.every((byte) => byte < 0x80)).toBe(true);
+    const error = refusal(() => parseCapturePayload(bytes, type));
+    expect(error.code).toBe('invalid_payload');
+    expect(error.detail).toBe('not well-formed Unicode');
+  });
+
+  const UNSAFE = [
+    ['NUL', 0x0], ['TAB', 0x9], ['LF', 0xa], ['ESC', 0x1b], ['DEL', 0x7f], ['NEL', 0x85], ['CSI', 0x9b],
+    ['LINE SEPARATOR', 0x2028], ['PARAGRAPH SEPARATOR', 0x2029], ['LRE', 0x202a], ['RLO', 0x202e],
+    ['LRI', 0x2066], ['PDI', 0x2069], ['TAG LATIN SMALL G', 0xe0067], ['CANCEL TAG', 0xe007f],
+  ] as const;
+
+  it.each(UNSAFE)('refuses %s inside a name or a username', (_label, point) => {
+    const bad = `Git${cp(point)}Hub`;
+    const cases = [[login({ name: bad }), 'login'], [login({ username: bad }), 'login'], [note('synthetic', bad), 'note']] as const;
+    for (const [payload, type] of cases) {
+      const error = refusal(() => parseCapturePayload(payload, type));
+      expect(error.code).toBe('invalid_payload');
+      expect(error.detail).not.toContain(bad);
+    }
+  });
+
+  it('refuses a lone surrogate in a name', () => {
+    expect(refusal(() => parseCapturePayload(note('synthetic', `Git${String.fromCharCode(0xd83d)}Hub`), 'note')).code).toBe('invalid_payload');
+  });
+
+  it('keeps names and usernames with direction marks, joiners and non-Latin scripts unchanged', () => {
+    const labels = [
+      cp(0xc24, 0xc46, 0xc32, 0xc41, 0xc17, 0xc41),
+      `${cp(0xc15, 0xc4d, 0x200c)}x`,
+      cp(0x5e9, 0x5dc, 0x5d5, 0x5dd),
+      cp(0x645, 0x631, 0x62d, 0x628, 0x627),
+      `GitHub ${cp(0x200e)}(${cp(0x200f)})`,
+      cp(0x1f469, 0x200d, 0x1f4bb),
+      `Caf${cp(0xe9)}${cp(0xa0)}Bar`,
+    ];
+    for (const label of labels) {
+      const parsed = parseCapturePayload(login({ name: label, username: label }), 'login');
+      expect(parsed.metadata.name).toBe(label);
+      expect(parsed.metadata.username).toBe(label);
+      parsed.secret.dispose();
+    }
+  });
+});

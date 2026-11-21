@@ -14,6 +14,15 @@ export const TM8_CLIENT_HEADER = 'x-tm8-client';
 export const VAULT_PAGE_CLIENT_LABEL = 'tm8-vault-page';
 export const VAULT_MAX_CAPTURE_CIPHERTEXT = 64 * 1024;
 export const VAULT_MAX_IMPORT_CIPHERTEXT = 8 * 1024 * 1024;
+export const VAULT_MAX_IMPORT_ITEMS = 5000;
+/**
+ * Review addendum 2, C6: the characters a vault label (an item name or username) may not hold: C0 and C1
+ * controls, line and paragraph separators, bidirectional embeddings, overrides and isolates, Unicode tag
+ * characters, and lone surrogates. Same source and flags as the contract's VAULT_LABEL_UNSAFE, which
+ * gives the reasons; the parity test compares them.
+ */
+export const VAULT_LABEL_UNSAFE = /[\u{0}-\u{1f}\u{7f}-\u{9f}\u{2028}\u{2029}\u{202a}-\u{202e}\u{2066}-\u{2069}\u{e0000}-\u{e007f}]|\p{Cs}/u;
+export const isLabelSafe = (value: string): boolean => !VAULT_LABEL_UNSAFE.test(value);
 export const VAULT_OPERATIONS = {
   'vault.status': { method: 'GET', path: '/v2/vault/status' },
   'vault.webauthn.challenge': { method: 'POST', path: '/v2/vault/webauthn/challenges' },

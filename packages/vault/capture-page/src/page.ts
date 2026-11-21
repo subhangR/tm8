@@ -1,6 +1,6 @@
 import { VaultApi } from './api.js';
 import {
-  IMPORT_FORMATS, VAULT_IMPORT_PAGE_PATH, VAULT_MAX_CAPTURE_CIPHERTEXT, VAULT_MAX_IMPORT_CIPHERTEXT,
+  IMPORT_FORMATS, isLabelSafe, VAULT_IMPORT_PAGE_PATH, VAULT_MAX_CAPTURE_CIPHERTEXT, VAULT_MAX_IMPORT_CIPHERTEXT, VAULT_MAX_IMPORT_ITEMS,
 } from './contract.js';
 import type {
   CaptureOpen, Challenge, ExposureTier, ImportFormat, ImportPreview, ImportResult, ImportRow,
@@ -397,7 +397,7 @@ export class CapturePage {
     const form = this.form(async (current, epoch) => {
       const rows = this.importRows(current);
       const session = this.importSession;
-      if (!session || !rows.length || rows.length > 5000) throw new PageError('invalid_payload');
+      if (!session || !rows.length || rows.length > VAULT_MAX_IMPORT_ITEMS) throw new PageError('invalid_payload');
       const path = { importId: session.importId };
       const body = { ...this.api.command(), rows };
       this.clearFields();
@@ -443,6 +443,7 @@ export class CapturePage {
       const name = row.querySelector<HTMLInputElement>('[name="overrideName"]')?.value ?? '';
       const originOverride = row.querySelector<HTMLInputElement>('[name="overrideOrigin"]')?.value ?? '';
       if (!['a', 'b', 'c'].includes(exposureTier) || name.length > 200 || (name && name.trim() !== name) || originOverride.length > 2048) throw new PageError('invalid_payload');
+      if (!isLabelSafe(name)) throw new PageError('unsafe_label');
       return {
         index: Number(row.dataset.importIndex), include, exposureTier: exposureTier as ExposureTier,
         ...(name ? { name } : {}), ...(originOverride ? { originOverride } : {}),
@@ -481,6 +482,8 @@ function warningCopy(code: string): string {
     missing_password: 'No password was found.',
     unsupported_type: 'This item type is not supported for import.',
     empty_row: 'This row was empty.',
+    unsafe_characters_replaced: 'Control, hidden text-direction or invisible tag characters in the name were replaced with spaces.',
+    unsafe_username: 'The username contains control, hidden text-direction or invisible tag characters, so this row was not imported.',
   };
   return Object.hasOwn(warnings, code) ? warnings[code] ?? 'Review this item.' : 'Review this item.';
 }

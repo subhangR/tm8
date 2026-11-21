@@ -1,3 +1,4 @@
+import { isVaultLabelSafe, VAULT_LABEL_UNSAFE, VAULT_MAX_IMPORT_ITEMS } from '@tm8/contract';
 import { boundedSafeParse } from '../bounded-parse.js';
 import { CapturePayloadSchema, type CapturePayload } from '../capture/payload.js';
 import { MAX_IMPORT_CIPHERTEXT } from '../capture/seal.js';
@@ -76,15 +77,28 @@ function csvRows(text: string, hint?: ImportFormat): { format: ImportFormat; row
   return { format, rows, skipped };
 }
 
+/**
+ * Review addendum 2, C6: a lone surrogate. The bytes are valid UTF-8, but a JSON escape sequence can still
+ * spell half of a surrogate pair, which is not text. `detached()` and every later UTF-8 encoding would
+ * silently turn it into U+FFFD, so the stored value would differ from the export. The export is refused,
+ * as for any other invalid encoding.
+ */
+const LONE_SURROGATE = /\p{Cs}/u;
+
+function checkJsonString(value: string): void {
+  if (Buffer.byteLength(value, 'utf8') > 65536) refuse('field_too_large');
+  if (LONE_SURROGATE.test(value)) refuse('invalid_encoding');
+}
+
 function checkJsonFields(root: unknown): void {
   const stack: unknown[] = [root];
   while (stack.length > 0) {
     const value = stack.pop();
-    if (typeof value === 'string') { if (Buffer.byteLength(value, 'utf8') > 65536) refuse('field_too_large'); }
+    if (typeof value === 'string') checkJsonString(value);
     else if (Array.isArray(value)) { for (const child of value) stack.push(child); }
     else if (object(value)) {
       for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-        if (Buffer.byteLength(key, 'utf8') > 65536) refuse('field_too_large');
+        checkJsonString(key);
         stack.push(child);
       }
     }
@@ -133,6 +147,21 @@ function previewText(value: string, fallback: string, max: number, warnings: str
   return detached(truncated || fallback);
 }
 
+/** Every run of display-unsafe characters (the contract's VAULT_LABEL_UNSAFE). */
+const UNSAFE_RUNS = new RegExp(`(?:${VAULT_LABEL_UNSAFE.source})+`, 'gu');
+
+/**
+ * Review addendum 2, C6: an item name is a label that people read. One holding a control, line-separator,
+ * text-direction override or tag character is repaired: each run becomes one space, and the candidate carries
+ * `unsafe_characters_replaced`, so the owner sees the change before committing it. A username is never
+ * repaired this way, because it is a value the vault fills: such a row is skipped instead.
+ */
+function nameText(value: string, fallback: string, warnings: string[]): string {
+  if (isVaultLabelSafe(value.trim())) return previewText(value, fallback, 200, warnings);
+  warnings.push('unsafe_characters_replaced');
+  return previewText(value.replace(UNSAFE_RUNS, ' '), fallback, 200, warnings);
+}
+
 export function createImportParser(): ImportParser {
   return {
     parse(bytes, hint) {
@@ -154,7 +183,7 @@ export function createImportParser(): ImportParser {
           skipped.push({ index: row.index, reason: row.type === 'identity' ? 'unsupported_identity' : 'unsupported_type' }); continue;
         }
         const warnings: string[] = [];
-        const name = previewText(row.name, `Imported ${row.type}`, 200, warnings);
+        const name = nameText(row.name, `Imported ${row.type}`, warnings);
         const username = row.type === 'login' && row.username !== '' ? previewText(row.username, '', 512, warnings) : null;
         const candidate: ImportCandidate = { index: row.index, type: row.type, name, origin: null, username, hasPassword: row.password !== '', hasTotp: row.totp !== '', warnings };
         if (row.notes) warnings.push('notes_present');
@@ -163,6 +192,8 @@ export function createImportParser(): ImportParser {
         if (row.type === 'login') {
           if (row.password === '') { skipped.push({ index: row.index, reason: 'missing_password' }); continue; }
           if (row.url === '') { skipped.push({ index: row.index, reason: 'missing_url' }); continue; }
+          // C6: the payload schema would refuse this username anyway. A fixed reason tells the owner why.
+          if (row.username !== '' && !isVaultLabelSafe(row.username)) { skipped.push({ index: row.index, reason: 'unsafe_username' }); continue; }
           if (/^http:/i.test(row.url)) warnings.push('http_origin');
           try { candidate.origin = normalizeOrigin(row.url, { allowPath: true }).origin; }
           catch (error) { candidate.originError = error instanceof OriginRefusal ? error.code : 'invalid_url'; }
@@ -216,6 +247,10 @@ export function createImportParser(): ImportParser {
         }
         keptCandidates.push(candidate); keptPayloads.push(payload);
       });
+      // Review addendum 2, C6: one commit takes at most VAULT_MAX_IMPORT_ITEMS rows, and the import session
+      // ends with that commit. A preview offering more could never be imported whole, so the export is
+      // refused here, before any of its rows are sealed and held. The 10,000 raw-row limit still applies first.
+      if (keptCandidates.length > VAULT_MAX_IMPORT_ITEMS) refuse('too_many_rows');
       skipped.sort((a, b) => a.index - b.index);
       return { format: parsed.format, candidates: keptCandidates, payloads: keptPayloads, skipped };
     },

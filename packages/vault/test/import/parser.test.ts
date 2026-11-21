@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { VAULT_MAX_IMPORT_ITEMS } from '@tm8/contract';
 import { createImportParser, ImportParseError } from '../../src/import/index.js';
 import { CapturePayloadSchema } from '../../src/capture/payload.js';
 import { MAX_IMPORT_CIPHERTEXT } from '../../src/capture/seal.js';
@@ -14,7 +15,7 @@ const secrets = () => ({
   url: 'https://EXAMPLE.com:443/sign-in?credential=' + ['fixture', 'query', 'secret'].join('-'),
 });
 const csv = (rows: string[][], newline = '\n') => rows.map((row) => row.map((field) => '"' + field.replaceAll('"', '""') + '"').join(',')).join(newline);
-const fixedWarnings = new Set(['http_origin', 'missing_password', 'missing_url', 'cvv_column_dropped', 'totp_present', 'notes_present', 'long_field_truncated']);
+const fixedWarnings = new Set(['http_origin', 'missing_password', 'missing_url', 'cvv_column_dropped', 'totp_present', 'notes_present', 'long_field_truncated', 'unsafe_characters_replaced']);
 
 function assertSafe(result: ImportParseResult, values: string[]) {
   const metadata = JSON.stringify({ candidates: result.candidates, skipped: result.skipped });
@@ -209,10 +210,15 @@ describe('fixed import refusals and limits', () => {
     expectRefusal(Buffer.alloc(MAX_IMPORT_CIPHERTEXT + 1), 'too_large');
   });
   it('enforces 10,000 data rows for CSV and JSON, including skipped rows', () => {
-    const row = 'Example,https://example.com,fixture-user,fixture-long-password';
+    const importable = 'Example,https://example.com,fixture-user,fixture-long-password';
+    const skippable = 'Example,,fixture-user,fixture-long-password';
     const header = 'name,url,username,password\n';
-    expect(parser.parse(Buffer.from(header + Array(10000).fill(row).join('\n'))).candidates).toHaveLength(10000);
-    expectRefusal(Buffer.from(header + Array(10001).fill(row).join('\n')), 'too_many_rows');
+    // C6: 10,000 rows parse when no more than VAULT_MAX_IMPORT_ITEMS of them are importable.
+    const mixed = parser.parse(Buffer.from(header + [...Array(5000).fill(importable), ...Array(5000).fill(skippable)].join('\n')));
+    expect(mixed.candidates).toHaveLength(5000);
+    expect(mixed.skipped).toHaveLength(5000);
+    expect(mixed.skipped.every((entry) => entry.reason === 'missing_url')).toBe(true);
+    expectRefusal(Buffer.from(header + Array(10001).fill(skippable).join('\n')), 'too_many_rows');
     expectRefusal(Buffer.from(JSON.stringify({ items: Array(10001).fill(null) })), 'too_many_rows');
   });
   it('enforces a UTF-8 byte limit of 64 KiB per field, including unknown JSON fields', () => {
@@ -222,5 +228,123 @@ describe('fixed import refusals and limits', () => {
     expectRefusal(Buffer.from(csv([['type', 'name', 'notes'], ['note', 'Note', note + 'N']])), 'field_too_large');
     expectRefusal(Buffer.from(csv([['type', 'name', 'notes'], ['note', 'Note', 'é'.repeat(32769)]])), 'field_too_large');
     expectRefusal(Buffer.from(JSON.stringify({ items: [], unused: note + 'N' })), 'field_too_large');
+  });
+});
+
+/** Text from code points, so this file holds no invisible character and no escape a tool could rewrite. */
+const cp = (...points: number[]) => String.fromCodePoint(...points);
+/** A JSON escape for one UTF-16 code unit, built from its number. */
+const jsonEscape = (unit: number) => String.fromCharCode(92) + 'u' + unit.toString(16).padStart(4, '0');
+
+describe('import content checks (review addendum 2, C6)', () => {
+  const header = ['name', 'url', 'username', 'password'];
+  // Synthetic, and assembled so the source holds no credential-shaped literal.
+  const loginValue = ['fixture', 'long', 'value'].join('-');
+  const loginRow = (name: string, username = 'fixture-user') => [name, 'https://example.com', username, loginValue];
+  const exported = { type: 1, name: 'Example', login: { uris: [{ uri: 'https://example.com' }], username: 'fixture-user', password: loginValue } };
+
+  it('refuses an export with more importable rows than one commit takes', () => {
+    expect(VAULT_MAX_IMPORT_ITEMS).toBe(5000);
+    const row = `Example,https://example.com,fixture-user,${loginValue}`;
+    const head = 'name,url,username,password\n';
+    expect(parser.parse(Buffer.from(head + Array(VAULT_MAX_IMPORT_ITEMS).fill(row).join('\n'))).candidates).toHaveLength(VAULT_MAX_IMPORT_ITEMS);
+    expectRefusal(Buffer.from(head + Array(VAULT_MAX_IMPORT_ITEMS + 1).fill(row).join('\n')), 'too_many_rows');
+    const note = { type: 2, name: 'Note', notes: 'synthetic' };
+    expect(parser.parse(Buffer.from(JSON.stringify({ items: Array(VAULT_MAX_IMPORT_ITEMS).fill(note) }))).candidates).toHaveLength(VAULT_MAX_IMPORT_ITEMS);
+    expectRefusal(Buffer.from(JSON.stringify({ items: Array(VAULT_MAX_IMPORT_ITEMS + 1).fill(note) })), 'too_many_rows');
+  });
+
+  it.each([
+    ['TAB', 0x9], ['LF', 0xa], ['ESC', 0x1b], ['DEL', 0x7f], ['NEL', 0x85], ['CSI', 0x9b],
+    ['LINE SEPARATOR', 0x2028], ['PARAGRAPH SEPARATOR', 0x2029], ['RLO', 0x202e], ['LRI', 0x2066], ['PDI', 0x2069],
+    ['TAG LATIN SMALL G', 0xe0067], ['CANCEL TAG', 0xe007f],
+  ] as const)('replaces %s inside an item name with a space and says so, on both preview and payload', (_label, point) => {
+    for (const name of [`Pay${cp(point)}lap`, `Pay${cp(point, 0x202e, point)}lap`]) {
+      const result = parser.parse(Buffer.from(csv([header, loginRow(name)])));
+      expect(result.candidates[0]).toMatchObject({ name: 'Pay lap', warnings: ['unsafe_characters_replaced'] });
+      expect(result.payloads[0]).toMatchObject({ name: 'Pay lap' });
+      assertSafe(result, []);
+    }
+  });
+
+  it('replaces unsafe characters in a JSON name, and falls back when nothing readable is left', () => {
+    const result = parser.parse(Buffer.from(JSON.stringify({ items: [
+      { ...exported, name: `${cp(0x202e)}moc.elpmaxe` },
+      { type: 2, name: cp(0x202e, 0x2066, 0x1b), notes: 'synthetic' },
+    ] })));
+    expect(result.candidates.map((candidate) => [candidate.name, candidate.warnings])).toEqual([
+      ['moc.elpmaxe', ['unsafe_characters_replaced']],
+      ['Imported note', ['unsafe_characters_replaced', 'notes_present']],
+    ]);
+    expect(result.payloads.map((payload) => payload.name)).toEqual(['moc.elpmaxe', 'Imported note']);
+  });
+
+  it('drops text hidden in tag characters from a name, and degrades a subdivision flag to the plain flag', () => {
+    // A page title a password manager saved as the name: "Bank" and then tag characters spelling "ignore".
+    const hidden = cp(...[...'ignore'].map((letter) => 0xe0000 + letter.charCodeAt(0)));
+    const flagged = `${cp(0x1f3f4, 0xe0067, 0xe0062, 0xe0065, 0xe006e, 0xe0067, 0xe007f)} Club`;
+    const result = parser.parse(Buffer.from(JSON.stringify({ items: [{ ...exported, name: `Bank${hidden}` }, { ...exported, name: flagged }] })));
+    expect(result.candidates[0]).toMatchObject({ name: 'Bank', warnings: ['unsafe_characters_replaced'] });
+    expect(result.payloads[0]).toMatchObject({ name: 'Bank' });
+    const repaired = result.candidates[1]!;
+    expect(repaired.warnings).toContain('unsafe_characters_replaced');
+    expect(repaired.name.startsWith(cp(0x1f3f4))).toBe(true);
+    expect(repaired.name.endsWith('Club')).toBe(true);
+    for (const text of [repaired.name, result.payloads[1]!.name]) expect(/[\u{e0000}-\u{e007f}]/u.test(text)).toBe(false);
+  });
+
+  it('leaves a name alone when only its surrounding whitespace is unusual', () => {
+    const result = parser.parse(Buffer.from(csv([header, loginRow(`${cp(0x9)}Example${cp(0xa)}`)])));
+    expect(result.candidates[0]).toMatchObject({ name: 'Example', warnings: [] });
+  });
+
+  it('keeps names and usernames with direction marks, joiners and non-Latin scripts unchanged', () => {
+    const labels = [
+      cp(0xc24, 0xc46, 0xc32, 0xc41, 0xc17, 0xc41),
+      `${cp(0xc15, 0xc4d, 0x200c)}x`,
+      cp(0x645, 0x631, 0x62d, 0x628, 0x627),
+      `GitHub ${cp(0x200e)}(${cp(0x200f)})`,
+      cp(0x1f469, 0x200d, 0x1f4bb),
+    ];
+    for (const label of labels) {
+      const result = parser.parse(Buffer.from(csv([header, loginRow(label, label)])));
+      expect(result.candidates[0]).toMatchObject({ name: label, username: label, warnings: [] });
+      expect(result.payloads[0]).toMatchObject({ name: label, username: label });
+    }
+  });
+
+  it('skips a login whose username holds a control or text-direction character instead of changing a value it fills', () => {
+    for (const username of [`octo${cp(0x202e)}cat`, `octo${cp(0x9)}cat`, `${cp(0x9)}octocat`, `octo${cp(0x2028)}`, `octo${cp(0x85)}`,
+      `octo${cp(0xe0041)}cat`]) {
+      const result = parser.parse(Buffer.from(csv([header, loginRow('Example', username), loginRow('Example')])));
+      expect(result.skipped).toEqual([{ index: 0, reason: 'unsafe_username' }]);
+      expect(result.candidates).toHaveLength(1);
+      expect(result.candidates[0]).toMatchObject({ index: 1, username: 'fixture-user' });
+      assertSafe(result, [username]);
+    }
+  });
+
+  it('refuses a JSON export holding a lone surrogate in any value or key, used or not', () => {
+    const lone = String.fromCharCode(0xd800);
+    for (const value of [
+      { items: [{ ...exported, name: `Example${lone}` }] },
+      { items: [{ ...exported, login: { ...exported.login, password: `fixture${lone}` } }] },
+      { items: [exported], unused: String.fromCharCode(0xdfff) },
+      { items: [exported], [`key${lone}`]: 'value' },
+    ]) {
+      const bytes = Buffer.from(JSON.stringify(value));
+      // JSON.stringify writes a lone surrogate as an ASCII escape, so the bytes are valid UTF-8.
+      expect(bytes.every((byte) => byte < 0x80)).toBe(true);
+      expectRefusal(bytes, 'invalid_encoding');
+    }
+    const escaped = (units: number[]) => Buffer.from(`{"items":[{"type":2,"name":"${units.map(jsonEscape).join('')}","notes":"synthetic"}]}`);
+    expectRefusal(escaped([0xd83d]), 'invalid_encoding');
+    expectRefusal(escaped([0xde00, 0xd83d]), 'invalid_encoding');
+    expect(parser.parse(escaped([0xd83d, 0xde00])).candidates[0]?.name).toBe(cp(0x1f600));
+  });
+
+  it('refuses CSV bytes that encode a surrogate', () => {
+    expectRefusal(Buffer.concat([Buffer.from('name,url,username,password\nExample'), Buffer.from([0xed, 0xa0, 0x80]),
+      Buffer.from(',https://example.com,fixture-user,fixture-long-password')]), 'invalid_encoding');
   });
 });

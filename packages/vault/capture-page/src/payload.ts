@@ -1,3 +1,4 @@
+import { isLabelSafe } from './contract.js';
 import type { ItemType } from './contract.js';
 import { PageError } from './errors.js';
 
@@ -49,6 +50,8 @@ export function buildPayload(form: HTMLFormElement, type: ItemType): Record<stri
     let value = input?.value ?? '';
     if (field.key === 'name') value = value.trim();
     if ((!value && field.required) || value.length > field.max) throw new PageError('invalid_payload');
+    // C6: a name or username is a label people read; the broker refuses the same characters.
+    if ((field.key === 'name' || field.key === 'username') && !isLabelSafe(value)) throw new PageError('unsafe_label');
     if (!value) continue;
     if (field.kind === 'number') {
       const number = Number(value);

@@ -13,8 +13,11 @@ import { createECDH, createHash, randomBytes, randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type { ZodTypeAny } from 'zod';
 import {
+  isVaultLabelSafe,
   VAULT_ERROR_REASONS,
   VAULT_INPUT_SCHEMAS,
+  VAULT_LABEL_UNSAFE,
+  VAULT_MAX_IMPORT_ITEMS,
   VAULT_OPERATIONS,
   VAULT_OUTPUT_SCHEMAS,
   VAULT_STEP_UP_ACTIONS,
@@ -352,5 +355,78 @@ describe('error reasons', () => {
     expect(new Set(VAULT_ERROR_REASONS).size).toBe(VAULT_ERROR_REASONS.length);
     expect(VAULT_ERROR_REASONS).toContain('spend_disabled');
     expect(VAULT_ERROR_REASONS).toContain('value_request_refused');
+  });
+});
+
+/** Text from code points, so this file holds no invisible character and no escape a tool could rewrite. */
+const cp = (...points: number[]) => String.fromCodePoint(...points);
+
+describe('vault labels people read (review addendum 2, C6)', () => {
+  const REFUSED = [0x0, 0x9, 0xa, 0xd, 0x1b, 0x1f, 0x7f, 0x80, 0x85, 0x9b, 0x9f, 0x2028, 0x2029,
+    0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069,
+    0xe0000, 0xe0001, 0xe0020, 0xe0041, 0xe0067, 0xe007e, 0xe007f];
+  // U+00AD, U+200B and U+FEFF are invisible but reorder nothing, and U+E0100 is a variation selector that
+  // Japanese names use. They are accepted: confusable and other invisible-character detection is a
+  // recorded residual of C6, not something this check claims. U+DFFFF and U+E0080 bound the tag block.
+  const ACCEPTED = [0x20, 0x7e, 0xa0, 0xad, 0x200b, 0x200c, 0x200d, 0x200e, 0x200f, 0x2027, 0x202f, 0x2065, 0x206a, 0xfeff, 0x1f600,
+    0xdffff, 0xe0080, 0xe0100];
+
+  it('refuses controls, separators, bidi embeddings, overrides and isolates, tag characters and lone surrogates', () => {
+    for (const point of REFUSED) expect(isVaultLabelSafe(`a${cp(point)}b`), point.toString(16)).toBe(false);
+    for (const unit of [0xd800, 0xdbff, 0xdc00, 0xdfff]) expect(isVaultLabelSafe(`a${String.fromCharCode(unit)}b`), unit.toString(16)).toBe(false);
+    expect(isVaultLabelSafe(String.fromCharCode(0xdc00, 0xd800))).toBe(false);
+  });
+
+  it('refuses text hidden in tag characters, and records that subdivision flags are refused with it', () => {
+    // "Bank" followed by tag characters spelling "ignore": it renders as "Bank", but a model reads the rest.
+    const hidden = cp(...[...'ignore'].map((letter) => 0xe0000 + letter.charCodeAt(0)));
+    expect(isVaultLabelSafe(`Bank${hidden}`)).toBe(false);
+    // The cost: the England flag is a tag sequence (black flag, tags g b e n g, cancel tag).
+    expect(isVaultLabelSafe(cp(0x1f3f4, 0xe0067, 0xe0062, 0xe0065, 0xe006e, 0xe0067, 0xe007f))).toBe(false);
+    expect(isVaultLabelSafe(cp(0x1f3f4))).toBe(true);
+    // A Japanese name with an ideographic variation selector stays a valid label.
+    expect(isVaultLabelSafe(cp(0x8fbb, 0xe0100))).toBe(true);
+  });
+
+  it('accepts the neighbours of every refused range, direction marks, joiners, pairs and non-Latin scripts', () => {
+    for (const point of ACCEPTED) expect(isVaultLabelSafe(`a${cp(point)}b`), point.toString(16)).toBe(true);
+    for (const label of [cp(0xc24, 0xc46, 0xc32, 0xc41, 0xc17, 0xc41), cp(0x5e9, 0x5dc, 0x5d5, 0x5dd), cp(0x645, 0x631, 0x62d, 0x628, 0x627),
+      cp(0x4e2d, 0x6587), cp(0x1f469, 0x200d, 0x1f4bb), `Caf${cp(0xe9)}`]) {
+      expect(isVaultLabelSafe(label)).toBe(true);
+    }
+  });
+
+  it('spells its pattern in ASCII only, with the flags the capture page copies', () => {
+    expect(VAULT_LABEL_UNSAFE.source).toMatch(/^[\x20-\x7e]+$/);
+    expect(VAULT_LABEL_UNSAFE.flags).toBe('u');
+  });
+
+  it('applies to every input that names an item, a capture link, a passkey or an import row', () => {
+    const stepUp = { challengeId: randomUUID(), assertion: { id: 'cred', rawId: 'cred', type: 'public-key', clientExtensionResults: {},
+      response: { clientDataJSON: 'e30', authenticatorData: 'AAAA', signature: 'AAAA' } } };
+    const update = VAULT_INPUT_SCHEMAS['vault.items.update'];
+    const commit = VAULT_INPUT_SCHEMAS['vault.imports.commit'];
+    const row = { index: 0, include: true, exposureTier: 'a' };
+    const accepts = (label: string) => [
+      VaultCaptureLinkCreateInputSchema.safeParse({ clientMutationId: 'm1', itemType: 'login', purpose: 'create', name: label }).success,
+      update.safeParse({ clientMutationId: 'm1', expectedVersion: 1, name: label }).success,
+      update.safeParse({ clientMutationId: 'm1', expectedVersion: 1, username: label }).success,
+      VaultPasskeyRegisterBeginInputSchema.safeParse({ clientMutationId: 'm1', enrollmentCode: 'abcd-efgh-1234', name: label }).success,
+      commit.safeParse({ clientMutationId: 'm1', rows: [{ ...row, name: label }], stepUp }).success,
+    ];
+    expect(accepts(`Bank ${cp(0xc24, 0xc46, 0xc32, 0xc41, 0xc17, 0xc41)}${cp(0x200f)}x`)).toEqual([true, true, true, true, true]);
+    for (const unsafe of [cp(0x202e), cp(0x2066), cp(0x1b), cp(0x85), cp(0x2028), cp(0xe0067), String.fromCharCode(0xd800)]) {
+      expect(accepts(`Bank${unsafe}x`)).toEqual([false, false, false, false, false]);
+    }
+  });
+
+  it('caps one import commit at VAULT_MAX_IMPORT_ITEMS rows', () => {
+    const stepUp = { challengeId: randomUUID(), assertion: { id: 'cred', rawId: 'cred', type: 'public-key', clientExtensionResults: {},
+      response: { clientDataJSON: 'e30', authenticatorData: 'AAAA', signature: 'AAAA' } } };
+    const rows = (count: number) => Array.from({ length: count }, (_, index) => ({ index, include: true, exposureTier: 'a' }));
+    const commit = VAULT_INPUT_SCHEMAS['vault.imports.commit'];
+    expect(VAULT_MAX_IMPORT_ITEMS).toBe(5000);
+    expect(commit.safeParse({ clientMutationId: 'm1', rows: rows(VAULT_MAX_IMPORT_ITEMS), stepUp }).success).toBe(true);
+    expect(commit.safeParse({ clientMutationId: 'm1', rows: rows(VAULT_MAX_IMPORT_ITEMS + 1), stepUp }).success).toBe(false);
   });
 });
