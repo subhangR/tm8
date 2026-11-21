@@ -13,15 +13,127 @@ export interface DecodedView {
   ends: number[];
 }
 
+/**
+ * The single-layer decodings a receiver may apply to text it is sent. The canary matcher and
+ * the response filter read the same views, after the raw text.
+ * - `json`: JSON string escapes.
+ * - `url`: form decoding, as the WHATWG URLSearchParams and form parsers do it: `+` is a space.
+ * - `uri`: component decoding, as decodeURIComponent, Python's unquote and Go's PathUnescape do
+ *   it: `+` stays `+`. Without it, a value that mixes a literal `+` with escapes would be read as
+ *   a space by every view (review F02 follow-up).
+ * - `url-node`, `uri-node`: Node's URLSearchParams, querystring.parse (Express's urlencoded
+ *   parser) and querystring.unescape run decodeURIComponent, and when it throws on a value they
+ *   fall back to a byte decoder that reads each literal UTF-16 code unit by its low byte. So
+ *   `\u0166ixture...%FF` reads as `fixture...`, and a literal `\u00c3` completes an escaped
+ *   continuation byte. These views read that fallback, with `+` as a space and as itself.
+ */
+export const DECODINGS = ['json', 'url', 'uri', 'url-node', 'uri-node'] as const;
+export type Decoding = typeof DECODINGS[number];
+
+/** False when no receiver reads the view or it would equal one already read, so the pass can be skipped. */
+export function decodingApplies(text: string, encoding: Decoding): boolean {
+  if (encoding === 'json') return text.includes('\\');
+  if (encoding === 'url') return text.includes('%') || text.includes('+');
+  if (encoding === 'uri') return text.includes('%') && text.includes('+');
+  // Node falls back only where decodeURIComponent throws, and the fallback reads ASCII exactly as
+  // `url` and `uri` do. For a value with no valid escape URLSearchParams decodes nothing, so there
+  // `url-node` reads more than it does; that can only match more.
+  if (!/[^\x00-\x7f]/.test(text) || !escapesMalformed(text)) return false;
+  return encoding === 'url-node' || text.includes('+');
+}
+
+type Push = (value: string, start: number, end: number) => void;
+
+const hexPair = (source: string, at: number): boolean => /^[0-9a-f]{2}$/i.test(source.slice(at + 1, at + 3));
+
+/**
+ * The WHATWG UTF-8 decoder, with replacement: each valid sequence decodes, and each maximal
+ * invalid subpart becomes one U+FFFD. This is what URLSearchParams, TextDecoder, Node's Buffer
+ * and Python's unquote produce, and a byte-oriented receiver (Go, PHP) keeps the same valid
+ * bytes. Byte k starts at source offset `offset(k)`; the last ends at `offset(bytes.length)`.
+ * Returns false when any subpart was invalid.
+ *
+ * Review F02 follow-up (task 01a1fe78). A run of escapes used to be decoded with a fatal decoder
+ * and kept raw whenever any byte in it was invalid. So `...012%33%C3` hid the `3` that every
+ * receiver decodes, and a decoy ending in `3` passed the canary check and the filter.
+ */
+function decodeBytes(bytes: readonly number[], offset: (k: number) => number, push: Push): boolean {
+  let valid = true;
+  for (let at = 0; at < bytes.length;) {
+    const lead = bytes[at]!;
+    let needed = 0;
+    let point = lead;
+    let lower = 0x80;
+    let upper = 0xbf;
+    if (lead >= 0xc2 && lead <= 0xdf) { needed = 1; point = lead & 0x1f; }
+    else if (lead >= 0xe0 && lead <= 0xef) {
+      needed = 2; point = lead & 0x0f;
+      if (lead === 0xe0) lower = 0xa0;
+      if (lead === 0xed) upper = 0x9f;
+    } else if (lead >= 0xf0 && lead <= 0xf4) {
+      needed = 3; point = lead & 0x07;
+      if (lead === 0xf0) lower = 0x90;
+      if (lead === 0xf4) upper = 0x8f;
+    } else if (lead > 0x7f) needed = -1;
+    let next = at + 1;
+    for (let seen = 0; needed > 0 && seen < needed; seen += 1, next += 1) {
+      const byte = bytes[next];
+      // A byte outside the range ends the sequence unconsumed: it starts the next one.
+      if (byte === undefined || byte < lower || byte > upper) { needed = -1; break; }
+      point = (point << 6) | (byte & 0x3f);
+      lower = 0x80; upper = 0xbf;
+    }
+    if (needed < 0) valid = false;
+    push(needed < 0 ? '\uFFFD' : String.fromCodePoint(point), offset(at), offset(next));
+    at = next;
+  }
+  return valid;
+}
+
+/** True where decodeURIComponent throws: a `%` without two hex digits, or escapes that are not UTF-8. */
+function escapesMalformed(text: string): boolean {
+  for (let i = text.indexOf('%'); i >= 0; i = text.indexOf('%', i)) {
+    if (!hexPair(text, i)) return true;
+    const bytes: number[] = [];
+    while (text[i] === '%' && hexPair(text, i)) { bytes.push(parseInt(text.slice(i + 1, i + 3), 16)); i += 3; }
+    try { if (!decodeBytes(bytes, () => 0, () => undefined)) return true; } finally { bytes.fill(0); }
+  }
+  return false;
+}
+
+/**
+ * Node's fallback, querystring.unescapeBuffer read as UTF-8: one byte per escape and one per
+ * literal UTF-16 code unit, its low byte, with `+` as a space when `spaces`. A lone surrogate
+ * reads by its low byte too, where a sender's UTF-8 encoder would have sent U+FFFD: more than a
+ * receiver reads, so it can only match more.
+ */
+function nodeFallback(source: string, spaces: boolean, push: Push): void {
+  const bytes: number[] = [];
+  const offsets: number[] = [];
+  try {
+    for (let i = 0; i < source.length;) {
+      offsets.push(i);
+      if (source[i] === '%' && hexPair(source, i)) { bytes.push(parseInt(source.slice(i + 1, i + 3), 16)); i += 3; }
+      else { bytes.push(spaces && source[i] === '+' ? 0x20 : source.charCodeAt(i) & 0xff); i += 1; }
+    }
+    offsets.push(source.length);
+    decodeBytes(bytes, (k) => offsets[k]!, push);
+  } finally { bytes.fill(0); }
+}
+
 /** One decoding pass, with UTF-16 source coordinates for redaction. */
-export function decodedView(source: string, encoding: 'json' | 'url'): DecodedView {
+export function decodedView(source: string, encoding: Decoding): DecodedView {
   const chunks: string[] = [];
   const starts: number[] = [];
   const ends: number[] = [];
-  const push = (value: string, start: number, end: number) => {
+  const push: Push = (value, start, end) => {
     chunks.push(value);
     for (let j = 0; j < value.length; j += 1) { starts.push(start); ends.push(end); }
   };
+  if (encoding === 'url-node' || encoding === 'uri-node') {
+    nodeFallback(source, encoding === 'url-node', push);
+    return { text: chunks.join(''), starts, ends };
+  }
   for (let i = 0; i < source.length;) {
     if (encoding === 'json' && source[i] === '\\') {
       const escaped = source[i + 1];
@@ -33,23 +145,11 @@ export function decodedView(source: string, encoding: 'json' | 'url'): DecodedVi
         push(simple[escaped]!, i, i + 2); i += 2; continue;
       }
     }
-    if (encoding === 'url' && source[i] === '%' && /^[0-9a-f]{2}$/i.test(source.slice(i + 1, i + 3))) {
+    if (encoding !== 'json' && source[i] === '%' && hexPair(source, i)) {
       const start = i;
       const bytes: number[] = [];
-      while (source[i] === '%' && /^[0-9a-f]{2}$/i.test(source.slice(i + 1, i + 3))) {
-        bytes.push(parseInt(source.slice(i + 1, i + 3), 16)); i += 3;
-      }
-      const buffer = Buffer.from(bytes);
-      try {
-        const decoded = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(buffer);
-        let offset = start;
-        for (const char of decoded) {
-          const end = offset + Buffer.byteLength(char) * 3;
-          push(char, offset, end); offset = end;
-        }
-      } catch {
-        for (let at = start; at < i; at += 1) push(source[at]!, at, at + 1);
-      } finally { buffer.fill(0); }
+      while (source[i] === '%' && hexPair(source, i)) { bytes.push(parseInt(source.slice(i + 1, i + 3), 16)); i += 3; }
+      try { decodeBytes(bytes, (k) => start + k * 3, push); } finally { bytes.fill(0); }
       continue;
     }
     push(encoding === 'url' && source[i] === '+' ? ' ' : source[i]!, i, i + 1); i += 1;

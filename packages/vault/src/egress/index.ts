@@ -5,6 +5,7 @@ import type { Readable, Transform } from 'node:stream';
 import {
   isNonPublicAddress, resolvePublicAddresses, OutboundGuardError, type HostResolver, type ResolvedAddress,
 } from '@tm8/integrations';
+import { headerMatches } from '../canary/index.js';
 import { createResponseFilter } from '../filter/index.js';
 import { EgressRefusal, type ApiResponseOutcome, type BrokerPolicy, type EgressExecutor,
   type EgressExecuteInput, type KeyInjection, type TokenSpanScanner } from '../types.js';
@@ -222,7 +223,7 @@ function prepare(input: EgressExecuteInput, { url, connector, operation }: Desti
         rebuilt = Buffer.from(checked.text);
       }
     }
-    if (canaries.matches(request.url) || canaries.matches(url.href) || Object.values(headers).some((value) => canaries.matches(value)) ||
+    if (canaries.matches(request.url) || canaries.matches(url.href) || Object.values(headers).some((value) => headerMatches(canaries, value)) ||
       (body && canaries.matches(body)) || (rebuilt && canaries.matches(rebuilt))) {
       throw new EgressRefusal('canary_in_request');
     }
@@ -251,7 +252,7 @@ function inject(input: EgressExecuteInput, url: URL, headers: Record<string, str
       const basic = Buffer.from(`${injection.username}:${key}`);
       try { headers.authorization = `Basic ${basic.toString('base64')}`; } finally { basic.fill(0); }
     }
-    if (input.canaries.matches(url.href) || Object.values(headers).some((value) => input.canaries.matches(value))) throw new EgressRefusal('canary_in_request');
+    if (input.canaries.matches(url.href) || Object.values(headers).some((value) => headerMatches(input.canaries, value))) throw new EgressRefusal('canary_in_request');
     headers['accept-encoding'] = 'identity'; headers['user-agent'] = 'tm8-vault-broker/1';
   } catch (error) {
     if (error instanceof EgressRefusal) throw error;

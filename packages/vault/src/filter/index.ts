@@ -1,6 +1,7 @@
 import { TextDecoder } from 'node:util';
 import type { ApiResponseBody, ApiResponseOutcome, ResponseFilter, TokenSpanScanner } from '../types.js';
-import { compileMatcher, decodedView, encodedPatterns, mergeSpans, sourceSpan, type Span } from '../canary/encodings.js';
+import { headerMatches } from '../canary/index.js';
+import { DECODINGS, compileMatcher, decodedView, decodingApplies, encodedPatterns, mergeSpans, sourceSpan, type Span } from '../canary/encodings.js';
 
 const ALLOWED_HEADERS = new Set([
   'content-type', 'content-language', 'etag', 'last-modified', 'cache-control',
@@ -37,8 +38,8 @@ function redactor(key: string, scanner?: TokenSpanScanner) {
   const rawMatcher = compileMatcher([{ text: key }]);
   return (text: string): { value: string; count: number } => {
     const decodedSpans: Span[] = [];
-    for (const encoding of ['json', 'url'] as const) {
-      if (!text.includes(encoding === 'json' ? '\\' : '%') && (encoding !== 'url' || !text.includes('+'))) continue;
+    for (const encoding of DECODINGS) {
+      if (!decodingApplies(text, encoding)) continue;
       const view = decodedView(text, encoding);
       decodedSpans.push(...rawMatcher.occurrences(view.text).map((span) => sourceSpan(view, span)));
     }
@@ -75,9 +76,12 @@ export function createResponseFilter(): ResponseFilter {
       for (const [rawName, value] of Object.entries(input.headers)) {
         const name = rawName.toLowerCase();
         if (!allowedHeader(name)) continue;
-        if (input.canaries.matches(value)) return withheld('canary');
+        if (headerMatches(input.canaries, value)) return withheld('canary');
         const result = redact(value);
-        headers[name] = result.value; redactions += result.count;
+        // Node read the header's bytes as Latin-1; the agent can read the same bytes as UTF-8. A key
+        // found only that way takes the whole value (review F02 follow-up, task 01a1fe78).
+        const utf8 = /[^\x00-\x7f]/.test(result.value) && redact(Buffer.from(result.value, 'latin1').toString('utf8')).count > 0;
+        headers[name] = utf8 ? '[redacted]' : result.value; redactions += result.count + (utf8 ? 1 : 0);
       }
       if (!text.length) return { status: input.status, headers, body: { kind: 'empty' }, redactions };
       const result = redact(text);
