@@ -162,6 +162,23 @@ describe('vault owner flow through the real relay and the real broker process (F
       .map(({ op, status }) => ({ op, status }));
   }
 
+  /**
+   * The broker writes its answer first and its log record second (broker/server.ts, the handler's finally), so a
+   * record can reach this process after the reply it describes. Wait for the records a check needs, bounded.
+   * The record is written to the pipe in the same turn as the answer, before the broker reads another request.
+   */
+  async function brokerRequestsWhen(ready: (records: Array<{ op: string; status: number }>) => boolean): Promise<Array<{ op: string; status: number }>> {
+    try {
+      return await waitFor(async () => {
+        const records = brokerRequests();
+        return ready(records) ? records : undefined;
+      }, 10_000);
+    } catch {
+      // Timed out: return what did arrive, so the caller's assertion fails with the difference.
+      return brokerRequests();
+    }
+  }
+
   function http(method: string, path: string, headers: OutgoingHttpHeaders, body?: string): Promise<Reply> {
     const base = new URL(node.url);
     return new Promise<Reply>((resolve, reject) => {
@@ -370,7 +387,7 @@ describe('vault owner flow through the real relay and the real broker process (F
       expect(refused.json.error.details).toBeUndefined();
     }
     for (const reply of [control, bare, cli, agent]) expectVaultHeaders(reply);
-    expect(brokerRequests().slice(before)).toEqual([
+    expect((await brokerRequestsWhen((records) => records.length >= before + 4)).slice(before)).toEqual([
       { op: 'vault.session.end', status: 200 },
       { op: 'vault.session.end', status: 403 },
       { op: 'vault.session.end', status: 403 },
@@ -388,7 +405,13 @@ describe('vault owner flow through the real relay and the real broker process (F
       cookie: `${TM8_SESSION_COOKIE}=${ownerToken}`, origin: BROWSER_ORIGIN, [VAULT_SPACE_HEADER]: f.spaceA, 'content-type': 'application/json',
     }, JSON.stringify(command()));
     expect(csrf.status).toBe(403);
-    expect(brokerRequests().length).toBe(before + 4);
+    // None of the four refusals above reached the broker. A call that does reach it proves that: a record for a refused
+    // call would have been written before the broker read this one, so it would sit before this call's record. The
+    // agent's call is used because it spends the agent's budget, not the owner's sign-in budget the next test needs.
+    const after = await bearer(agentToken, 'POST', path, command(), { origin: BROWSER_ORIGIN });
+    expect(after.status, after.text).toBe(403);
+    expect((await brokerRequestsWhen((records) => records.length >= before + 5)).slice(before + 4))
+      .toEqual([{ op: 'vault.session.end', status: 403 }]);
   });
 
   it('runs owner registration, sign-in, capture and approval end to end through the relay and the broker', async () => {
@@ -467,8 +490,10 @@ describe('vault owner flow through the real relay and the real broker process (F
     expect(verification.status, verification.text).toBe(200);
     expect(verification.json.data).toMatchObject({ status: 'verified', firstBrokenSeq: null });
 
-    // Each human-only step reached the broker and was served, and the broker logged no value.
-    const served = brokerRequests().filter((record) => record.status === 200).map((record) => record.op);
+    // Each human-only step reached the broker and was served, and the broker logged no value. The verification is the
+    // last call, so once its record is here every earlier record is too.
+    const served = (await brokerRequestsWhen((records) => records.some((record) => record.op === 'vault.audit.verify')))
+      .filter((record) => record.status === 200).map((record) => record.op);
     for (const op of ['vault.passkeys.registerBegin', 'vault.passkeys.registerFinish', 'vault.webauthn.challenge', 'vault.session.begin',
       'vault.captures.open', 'vault.captures.submit', 'vault.approvals.decide', 'vault.audit.verify']) expect(served).toContain(op);
     const output = brokerOutput.join('');
