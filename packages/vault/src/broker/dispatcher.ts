@@ -9,6 +9,7 @@ import {
   type OwnerAuth, type VaultCaller, type VaultCookies, type VaultHandlers, type VaultSetCookie, type VaultStore,
 } from '../core-types.js';
 import { KmsUnavailableError } from '../crypto/kms.js';
+import { boundedSafeParse } from '../bounded-parse.js';
 import { BrokerRateLimiter, kdfCost, rateClass } from './rate-limit.js';
 import { matchVaultRoute, type VaultRoute } from '../relay/routes.js';
 
@@ -122,6 +123,9 @@ export function brokerErrorResponse(error: VaultError, requestId: string): Broke
   };
 }
 
+/** Review addendum 2, C4: an input check stops at its first issue (bounded-parse.ts). */
+const INPUT_ISSUE_BUDGET = 0;
+
 function parseInput(op: VaultOperationName, request: BrokerRequest): unknown {
   let raw: unknown;
   if (request.method === 'GET') {
@@ -140,7 +144,9 @@ function parseInput(op: VaultOperationName, request: BrokerRequest): unknown {
     try { raw = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(request.body)); }
     catch { throw new VaultError('invalid_input'); }
   }
-  const result = VAULT_INPUT_SCHEMAS[op].safeParse(raw);
+  // That is exact: the input schemas hold no union that tries options and no `.catch`, so no issue is
+  // ever moot (test/bounded-parse.test.ts). The answer never says which issue it was.
+  const result = boundedSafeParse(VAULT_INPUT_SCHEMAS[op], raw, INPUT_ISSUE_BUDGET);
   if (!result.success) throw new VaultError('invalid_input');
   return result.data;
 }

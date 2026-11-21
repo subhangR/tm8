@@ -122,8 +122,10 @@ const OPENAI_OPERATIONS: readonly ConnectorOperation[] = [
   { id: 'models.list', method: 'GET', path: '/v1/models', body: null },
   { id: 'models.retrieve', method: 'GET', path: '/v1/models/{model}', params: { model: OPENAI_MODEL }, body: null },
   { id: 'embeddings.create', method: 'POST', path: '/v1/embeddings', body: { kind: 'json', schema: strict({ model: openAiModel,
-    input: z.union([z.string(), z.array(z.string()).min(1).max(2048), z.array(z.number().int()).min(1),
-      z.array(z.array(z.number().int()).min(1)).min(1).max(2048)]),
+    // Token lists hold at most 8,192 tokens, the embedding models' input limit. They come before
+    // the string list so that a passing body raises few union issues (JSON_BODY_ISSUE_BUDGET).
+    input: z.union([z.string(), z.array(z.number().int()).min(1).max(8192), z.array(z.string()).min(1).max(2048),
+      z.array(z.array(z.number().int()).min(1).max(8192)).min(1).max(2048)]),
     dimensions: z.number().int().positive().optional(), encoding_format: z.enum(['float', 'base64']).optional(), user: z.string().max(256).optional() }) } },
   { id: 'chat.completions.create', method: 'POST', path: '/v1/chat/completions', body: { kind: 'json', schema: strict({
     model: openAiModel, messages: z.array(openAiChatMessage).min(1),

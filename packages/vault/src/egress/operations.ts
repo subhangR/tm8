@@ -1,4 +1,5 @@
 import type { ZodType } from 'zod';
+import { boundedSafeParse } from '../bounded-parse.js';
 import { EgressRefusal, type ApiRequestBody, type HttpMethod } from '../types.js';
 
 /**
@@ -119,6 +120,22 @@ function formAllowed(body: Extract<OperationBody, { kind: 'form' }>, name: strin
   return (body.patterns ?? []).some(([key, check]) => whole(key).test(name) && whole(check).test(value));
 }
 
+/**
+ * How many zod issues a JSON body check may raise before it stops and refuses (review addendum 2,
+ * C4; see bounded-parse.ts). A body that passes raises issues only in the union options tried
+ * before the one it matches. Within the 128 KiB `vault.callApi` cap, the most such issues a passing
+ * body can raise is about 4,500:
+ * - chat completions: one per message with array content, and a message that small is 29 bytes;
+ * - Anthropic messages: one per message with array content, at 31 bytes each, so about 4,200;
+ * - embeddings `input`: at most 4,097, because the token lists hold at most 8,192 tokens and are
+ *   tried before the string list (at most 2,048 strings);
+ * - every other union: a handful.
+ * The budget, 8,192, is 1.8 times that (measured: 4,520). Tests in test/egress/bounded-body.test.ts
+ * fill the cap with the worst passing bodies and pin the list of union sites, so adding a union fails
+ * a test until this bound is redone.
+ */
+export const JSON_BODY_ISSUE_BUDGET = 8192;
+
 /** What the broker sends for a checked body: its content type, and for a form the re-serialized text. */
 export interface CheckedBody { contentType: string; text?: string }
 
@@ -135,7 +152,9 @@ export function checkBody(operation: ConnectorOperation, body: ApiRequestBody | 
   }
   if (body === undefined) throw new EgressRefusal('request_schema_refused');
   if (expected.kind === 'json') {
-    if (body.kind !== 'json' || !expected.schema.safeParse(body.value).success) throw new EgressRefusal('request_schema_refused');
+    if (body.kind !== 'json' || !boundedSafeParse(expected.schema, body.value, JSON_BODY_ISSUE_BUDGET).success) {
+      throw new EgressRefusal('request_schema_refused');
+    }
     return { contentType: 'application/json' };
   }
   if (body.kind !== 'text' || !FORM_TYPE.test(body.contentType ?? '') || body.value.includes(';')) {

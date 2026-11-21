@@ -1,3 +1,4 @@
+import { boundedSafeParse } from '../bounded-parse.js';
 import { CapturePayloadSchema, type CapturePayload } from '../capture/payload.js';
 import { MAX_IMPORT_CIPHERTEXT } from '../capture/seal.js';
 import { normalizeOrigin, OriginRefusal } from '../origin/normalize.js';
@@ -180,7 +181,9 @@ export function createImportParser(): ImportParser {
           payload = { type: 'card', name, pan: detached(row.pan), expMonth: Number(row.month), expYear: Number(row.year),
             ...(cardholder ? { cardholder } : {}) };
         }
-        const checked = CapturePayloadSchema.safeParse(payload);
+        // Review addendum 2, C4: only pass or fail matters here, so the check stops at the first issue
+        // (bounded-parse.ts). The item type picks one payload schema, so no issue is moot.
+        const checked = boundedSafeParse(CapturePayloadSchema, payload, 0);
         if (!checked.success) { skipped.push({ index: row.index, reason: 'invalid_payload' }); continue; }
         candidate.warnings = [...new Set(warnings)];
         candidates.push(candidate);

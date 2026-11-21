@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { boundedSafeParse } from '../bounded-parse.js';
 import { canonicalJson } from '../intent/hash.js';
 import { normalizeOrigin, OriginRefusal } from '../origin/normalize.js';
 import { SecretMaterial } from '../secret-material.js';
@@ -143,6 +144,14 @@ export interface ParsedCapture {
 }
 
 /**
+ * Review addendum 2, C4: the payload check stops after this many issues (bounded-parse.ts), so a
+ * payload of thousands of bad identity fields cannot make the broker build thousands of issues. The
+ * item type picks one payload schema (no union that tries each option) and no schema has a `.catch`,
+ * so every issue counted is a real one.
+ */
+const CAPTURE_ISSUE_BUDGET = 32;
+
+/**
  * Validates decrypted capture bytes and splits them. `expectedType` comes from
  * the capture link, so an envelope cannot change the item type its link was
  * issued for.
@@ -155,10 +164,11 @@ export function parseCapturePayload(plaintext: Buffer, expectedType: VaultItemTy
     throw new CapturePayloadError('invalid_payload', 'not JSON');
   }
   if (findCvvKey(raw)) throw new CapturePayloadError('cvv_refused', 'card verification values are never stored (R9)');
-  const result = CapturePayloadSchema.safeParse(raw);
+  const result = boundedSafeParse(CapturePayloadSchema, raw, CAPTURE_ISSUE_BUDGET);
   if (!result.success) {
     // Report paths and codes only; zod messages can echo input values.
-    const issues = result.error.issues.map((issue) => `${issue.path.join('.') || '<root>'}:${issue.code}`).join(',');
+    const issues = 'overBudget' in result ? `more than ${CAPTURE_ISSUE_BUDGET} issues`
+      : result.error.issues.map((issue) => `${issue.path.join('.') || '<root>'}:${issue.code}`).join(',');
     throw new CapturePayloadError('invalid_payload', issues);
   }
   const payload = result.data;

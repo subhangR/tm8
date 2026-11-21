@@ -118,6 +118,24 @@ describe('capture payload (R1, R9)', () => {
     expect((error as CapturePayloadError).code).toBe('cvv_refused');
   });
 
+  it('stops checking a payload of thousands of bad identity fields at its issue budget (review addendum 2, C4)', () => {
+    const refusal = (fields: Record<string, string>) => {
+      try {
+        parseCapturePayload(Buffer.from(JSON.stringify({ type: 'identity', name: 'Synthetic', fields })), 'identity');
+      } catch (e) {
+        return e as CapturePayloadError;
+      }
+      return undefined;
+    };
+    const many = refusal(Object.fromEntries(Array.from({ length: 10_000 }, (_, index) => [`!${index}`, 'x'])));
+    expect(many?.code).toBe('invalid_payload');
+    expect(many?.detail).toBe('more than 32 issues');
+    // Within the budget the detail still names each issue, by path and code only.
+    const few = refusal({ '!a': 'x', '!b': 'y' });
+    expect(few?.code).toBe('invalid_payload');
+    expect(few?.detail).toBe('fields.!a:invalid_string,fields.!b:invalid_string');
+  });
+
   it('keeps card metadata to last 4 and expiry', () => {
     const card = { type: 'card', name: 'Visa', pan: '4242-4242-4242-4242', expMonth: 12, expYear: 2030 };
     const parsed = parseCapturePayload(Buffer.from(JSON.stringify(card)), 'card');
