@@ -20,6 +20,7 @@ export const VAULT_ERROR_COPY: Record<KnownVaultReason, string> = {
   approval_not_pending: 'This approval is no longer pending. Refresh the inbox.',
   approval_hash_mismatch: 'The approval changed. Refresh the inbox before deciding.',
   operation_id_reused: 'This operation identifier cannot be reused with different parameters.',
+  operation_in_progress: 'This operation is still running. Check it again shortly.',
   spend_disabled: 'Payments are off.',
   import_disabled: 'Import is disabled.',
   pre_review_limit: 'Test secrets only. The pre-review limit was reached.',

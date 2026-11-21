@@ -32,7 +32,8 @@ async function webCryptoSeal(plaintext: Uint8Array, pub: CapturePublicKey, captu
   const ct = await subtle.encrypt(
     { name: 'AES-GCM', iv: nonce, additionalData: enc.encode(`tm8-vault-capture-v1|${captureId}|${pub.kid}`), tagLength: 128 },
     key,
-    plaintext,
+    // A copy backed by a plain ArrayBuffer: WebCrypto's BufferSource type refuses a SharedArrayBuffer view.
+    new Uint8Array(plaintext),
   );
   return { v: 1, kid: pub.kid, epk: b64url(await subtle.exportKey('raw', eph.publicKey)), nonce: b64url(nonce), ct: b64url(ct) };
 }

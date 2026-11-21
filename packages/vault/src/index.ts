@@ -7,3 +7,8 @@ export * from './intent/hash.js';
 export * from './capture/seal.js';
 export * from './capture/payload.js';
 export * from './types.js';
+export * from './intent/step-up.js';
+export * from './core-types.js';
+export * from './audit/chain.js';
+export * from './store/memory.js';
+export * from './relay/attestation.js';

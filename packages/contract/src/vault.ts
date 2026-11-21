@@ -161,6 +161,8 @@ export const VAULT_ERROR_REASONS = [
   'approval_hash_mismatch',
   /** The same `operationId` was sent with different parameters. */
   'operation_id_reused',
+  /** The same `operationId` is still running. Poll `vault.operations.get`. */
+  'operation_in_progress',
   /** v1 builds spend but keeps it off (owner decision, form revision 2). */
   'spend_disabled',
   'import_disabled',
@@ -269,10 +271,17 @@ const AuditParamValue = z.union([
 /** Fixed audit vocabulary (MSG 10). Params are metadata only: origins, hosts, methods, path prefixes, amounts, codes. */
 export const VAULT_AUDIT_ACTIONS = [
   'item.captured', 'item.replaced', 'item.updated', 'item.properties_changed', 'item.deleted', 'item.imported',
+  /** Start-up replay of the deletion ledger re-applied a tombstone a database restore had undone (test 17). */
+  'item.tombstone_replayed',
   'policy.set',
-  'fill.done', 'fill.refused', 'fill.unknown',
-  'api.done', 'api.refused', 'api.unknown',
-  'spend.requested', 'spend.executed', 'spend.refused', 'spend.unknown', 'spend.reconciled',
+  /**
+   * `*.started` is written in the same transaction that reserves the operation,
+   * BEFORE any side effect. If that write fails, nothing runs (test 18). Every
+   * started operation later gets exactly one done, refused or unknown event.
+   */
+  'fill.started', 'fill.done', 'fill.refused', 'fill.unknown',
+  'api.started', 'api.done', 'api.refused', 'api.unknown',
+  'spend.requested', 'spend.started', 'spend.executed', 'spend.refused', 'spend.unknown', 'spend.reconciled',
   'approval.requested', 'approval.approved', 'approval.denied', 'approval.expired', 'approval.consumed',
   'grant.created', 'grant.revoked', 'grant.dropped_on_leave',
   'capture.link_created', 'capture.link_refused',

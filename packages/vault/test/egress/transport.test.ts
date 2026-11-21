@@ -4,6 +4,7 @@ import { createServer as createHttpsServer, type Server as HttpsServer } from 'n
 import { createServer as createTcpServer, type AddressInfo, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Duplex } from 'node:stream';
 import type { TLSSocket } from 'node:tls';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { nodeHttpsTransport, type PinnedHttpsRequest, type PinnedHttpsResponse } from '../../src/egress/index.js';
@@ -15,8 +16,9 @@ describe('production node:https transport, with an ephemeral test CA', () => {
   let privateKey: Buffer;
   let server: HttpsServer;
   let port: number;
-  const sockets = new Set<Socket>();
-  const requests: { method: string | undefined; host: string | undefined; sni: string | false; body: string; header: string | string[] | undefined }[] = [];
+  // An https server's 'connection' event is typed as a Duplex.
+  const sockets = new Set<Duplex>();
+  const requests: { method: string | undefined; host: string | undefined; sni: string | false | null; body: string; header: string | string[] | undefined }[] = [];
 
   beforeAll(async () => {
     directory = await mkdtemp(join(tmpdir(), 'vault-egress-tls-'));

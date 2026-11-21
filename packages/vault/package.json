@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./relay": {
+      "types": "./dist/relay/attestation.d.ts",
+      "default": "./dist/relay/attestation.js"
     }
   },
   "scripts": {
@@ -16,6 +20,7 @@
   },
   "dependencies": {
     "@simplewebauthn/server": "14.1.0",
+    "@tm8/contract": "workspace:*",
     "@tm8/integrations": "workspace:*",
     "hash-wasm": "4.13.0",
     "playwright-core": "1.58.2",
