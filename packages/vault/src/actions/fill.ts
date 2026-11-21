@@ -1,7 +1,6 @@
 import type { VaultFillResult } from '@tm8/contract';
 import { VaultError, type ApprovalRecord, type ItemRecord, type SecretVersionRecord, type VaultHandler, type VaultTx } from '../core-types.js';
 import { decryptSecretVersion } from '../crypto/aead.js';
-import { KmsRefusedError, KmsUnavailableError } from '../crypto/kms.js';
 import { normalizeOrigin } from '../origin/normalize.js';
 import { SecretMaterial } from '../secret-material.js';
 import type { FillOutcome, MaskedScreenshot } from '../types.js';
@@ -90,7 +89,6 @@ export const fill: VaultHandler<'vault.fill'> = async (ctx, { params, input }) =
   let material: SecretMaterial | undefined;
   let password: SecretMaterial | undefined;
   let outcome: FillOutcome;
-  let unavailable = false;
   try {
     material = await decryptSecretVersion(ctx.components.kms, secret, { itemId: item.id, ownerId: item.ownerMemberId, version: secret.version });
     password = material.use((bytes) => {
@@ -103,8 +101,7 @@ export const fill: VaultHandler<'vault.fill'> = async (ctx, { params, input }) =
     outcome = await ctx.components.fillDriver.fill({ intent: { operationId: input.operationId, itemId: item.id,
       origin, ...(input.startUrl === undefined ? {} : { startUrl: input.startUrl }), submit: input.submit, devMode: item.devMode },
       material: { username: item.username, password, totp: null }, signal: ctx.signal });
-  } catch (error) {
-    unavailable = error instanceof KmsUnavailableError || error instanceof KmsRefusedError;
+  } catch {
     outcome = { ok: false, code: ctx.signal.aborted ? 'timeout' : 'browser_unavailable', observedOrigin: null, screenshot: null };
   } finally {
     password?.dispose();
@@ -127,6 +124,5 @@ export const fill: VaultHandler<'vault.fill'> = async (ctx, { params, input }) =
     return streak === 3;
   });
   if (repeated) alert(ctx, 'fill_repeated_failures', item, { origin, count: 3 });
-  if (unavailable) throw VaultError.reason('kms_unavailable');
   return { data: result };
 };

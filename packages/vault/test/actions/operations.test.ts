@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { markUnknownOperations } from '../../src/actions/handlers.js';
 import { hashIntent } from '../../src/actions/common.js';
 import { actorOf, type OperationKind } from '../../src/core-types.js';
+import { KmsUnavailableError } from '../../src/crypto/kms.js';
 import { SPACE_B, makeCaller, otherCaller, scopeOf, testCaller } from '../support/kit.js';
 import { NEW_ORIGIN, ORIGIN, apiInput, apiKey, approve, events, fillInput, harness, invoke, login } from './fixtures.js';
 
@@ -69,6 +70,24 @@ describe('idempotent action lifecycle', () => {
     const result = await invoke(broker, 'vault.fill', { itemId: item.id }, input);
     expect((await invoke(broker, 'vault.fill', { itemId: item.id }, input)).data).toEqual(result.data);
     expect(fill).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['fill', 'callApi'] as const)('KMS failure after reservation returns the same persisted refusal on replay: %s', async (action) => {
+    const { broker, fill, execute } = harness();
+    const item = action === 'fill' ? await login(broker) : await apiKey(broker);
+    const unwrap = vi.spyOn(broker.components.kms, 'unwrap').mockRejectedValue(new KmsUnavailableError('test KMS unavailable'));
+    const operationId = randomUUID();
+    const request = () => action === 'fill'
+      ? invoke(broker, 'vault.fill', { itemId: item.id }, fillInput({ operationId }))
+      : invoke(broker, 'vault.callApi', { itemId: item.id }, apiInput({ operationId }));
+    const first = await request();
+    expect(first.data).toMatchObject({ state: 'refused', code: action === 'fill' ? 'browser_unavailable' : 'upstream_unreachable' });
+    expect((await request()).data).toEqual(first.data);
+    expect(unwrap).toHaveBeenCalledTimes(1);
+    expect(fill).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+    expect((await events(broker)).map((event) => event.action)).toEqual(action === 'fill'
+      ? ['fill.started', 'fill.refused'] : ['api.started', 'api.refused']);
   });
 
   it('exactly one concurrent fill consumes an approved one-use origin', async () => {

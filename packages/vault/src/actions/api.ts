@@ -1,7 +1,6 @@
 import type { VaultCallApiResult } from '@tm8/contract';
 import { VaultError, type ItemRecord, type SecretVersionRecord, type VaultHandler } from '../core-types.js';
 import { decryptSecretVersion } from '../crypto/aead.js';
-import { KmsRefusedError, KmsUnavailableError } from '../crypto/kms.js';
 import { SecretMaterial } from '../secret-material.js';
 import { EgressRefusal, type ApiRequestSpec, type ApiResponseOutcome, type BrokerPolicy } from '../types.js';
 import {
@@ -87,13 +86,11 @@ export const callApi: VaultHandler<'vault.callApi'> = async (ctx, { params, inpu
   let material: SecretMaterial | undefined;
   let response: ApiResponseOutcome | undefined;
   let refusal: EgressRefusal | undefined;
-  let unavailable = false;
   try {
     material = await decryptSecretVersion(ctx.components.kms, secret, { itemId: item.id, ownerId: item.ownerMemberId, version: secret.version });
     response = await ctx.components.egress.execute({ operationId: input.operationId, policy, key: material,
       request, canaries: ctx.components.canaries, signal: ctx.signal });
   } catch (error) {
-    unavailable = error instanceof KmsUnavailableError || error instanceof KmsRefusedError;
     refusal = error instanceof EgressRefusal ? error : new EgressRefusal(ctx.signal.aborted ? 'timeout' : 'upstream_unreachable');
   } finally {
     material?.dispose();
@@ -116,6 +113,5 @@ export const callApi: VaultHandler<'vault.callApi'> = async (ctx, { params, inpu
   if (refusal) alert(ctx, 'egress_refused', item, { operationId: input.operationId, code: refusal.code });
   if (canary) alert(ctx, 'canary_detected', item, { operationId: input.operationId,
     source: refusal ? 'egress_request' : 'egress_response' });
-  if (unavailable) throw VaultError.reason('kms_unavailable');
   return { data: result };
 };
