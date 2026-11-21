@@ -132,13 +132,27 @@ export function createOwnerAuthHandlers(): HandlersFor<OwnerAuthOp> {
     },
 
     'vault.session.end': async (ctx) => {
-      if (validToken(ctx.cookies.session)) await ctx.store.transaction(memberScope(ctx.caller), async (tx) => {
-        const row = await tx.sessions.getByTokenHash(sha256(ctx.cookies.session!));
+      const reuse = await ctx.store.transaction(memberScope(ctx.caller), async (tx) => {
+        let row = validToken(ctx.cookies.session) ? await tx.sessions.getByTokenHash(sha256(ctx.cookies.session)) : null;
+        if (!row && validToken(ctx.cookies.refresh)) {
+          // Access cookies expire first. Resolve and end the refresh family even without one.
+          const rotation = await tx.sessions.rotateRefresh({ refreshHash: sha256(ctx.cookies.refresh),
+            newTokenHash: sha256(randomToken()), newRefreshHash: sha256(randomToken()),
+            expiresAt: tx.now, refreshExpiresAt: tx.now });
+          if (rotation.result === 'reused') {
+            await audit(tx, ctx.caller, 'session.refresh_reuse_detected');
+            return true;
+          }
+          if (rotation.result === 'rotated' || rotation.result === 'ended') row = rotation.session;
+        }
         if (row && row.revokedAt === null) {
           await tx.sessions.revoke(row.id, 'ended');
           await audit(tx, ctx.caller, 'session.ended');
         }
+        return false;
       });
+      if (reuse) ctx.components.alerts.raise({ kind: 'refresh_reuse_detected', memberId: ctx.caller.memberId,
+        spaceId: ctx.caller.spaceId, itemId: null, params: {}, at: ctx.clock.now().toISOString() });
       return { data: { ended: true }, setCookies: clearCookies() };
     },
 

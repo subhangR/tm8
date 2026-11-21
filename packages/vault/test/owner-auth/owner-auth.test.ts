@@ -494,6 +494,20 @@ describe('owner authentication', () => {
     await expect(h.call('vault.session.refresh', {})).rejects.toMatchObject({ reason: 'vault_session_required' });
   });
 
+  it('ends the refresh family when the browser has already discarded its expired access cookie', async () => {
+    const h = harness();
+    const { device } = await h.enroll();
+    const signed = await h.signIn(device);
+    h.clock.advanceSeconds(VAULT_SESSION_TTL_SECONDS);
+    h.cookies.session = null;
+    const result = await h.call('vault.session.end', {});
+    expect(result.data.ended).toBe(true);
+    expect(result.setCookies?.every((cookie) => cookie.value === null)).toBe(true);
+    await expect(h.call('vault.session.refresh', {})).rejects.toMatchObject({ reason: 'vault_session_required' });
+    const row = await h.store.transaction(memberScope(testCaller), (tx) => tx.sessions.get(signed.data.id));
+    expect(row?.revokedReason).toBe('ended');
+  });
+
   it('rejects another member cookie and cross-member passkey/session IDs without disclosing rows', async () => {
     const h = harness();
     const { device, key } = await h.enroll();
