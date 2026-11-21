@@ -17,6 +17,7 @@ retention policy or a payment processor, and none of it installs or enables itse
 | Capture page `/vault/capture/*` | `404` for everyone, never the SPA. |
 | Settings → Secure vault (UI) | Says “The vault is switched off.” It calls only the same-origin relay and sends no bearer. |
 | Broker and fill worker | Not running. Nothing starts them. |
+| Chat paste guard | Its own knob, `TM8_VAULT_PASTE_GUARD`, which this deploy also leaves unset or `off`. Off, the server builds nothing, and every message is stored as sent. Any value but `off` or `on` stops the server at start with `tm8-server failed to start: vault relay: TM8_VAULT_PASTE_GUARD must be off or on`. Turning it on is §5's last subsection. |
 | Database | Migrations **450** and **451** apply (below). They write no member data. The one row 450 inserts is the audit chain's genesis head. |
 
 **Migration 450 (`450_vault_store.sql`)** creates:
@@ -54,7 +55,8 @@ cannot be run from an agent session.
    - `A db/migrations/451_vault_alert_notifications.sql`
    
    Anything else in the delta belongs to other work on main. Account for it before going on.
-3. Confirm the prod environment has no `TM8_VAULT_*` knob, or only `TM8_VAULT_MODE=off`.
+3. Confirm the prod environment has no `TM8_VAULT_*` knob, or only `TM8_VAULT_MODE=off` and
+   `TM8_VAULT_PASTE_GUARD=off`.
 4. Run the deploy without `--plan`. It requires typed confirmation, and it applies the
    migrations under its explicit superuser URL.
 
@@ -75,7 +77,8 @@ curl -s <origin>/vault/capture/x                                             # e
 - **Signed in:** open Settings → Secure vault. It says “The vault is switched off.” The
   browser's network panel shows `503` for `/v2/vault/status`.
 - **Journal:** the server's boot log does NOT contain `vault relay on`. That line
-  appears only when the mode is not off.
+  appears only when the mode is not off. Nor does it contain `vault paste guard on`, which
+  appears only when `TM8_VAULT_PASTE_GUARD=on`.
 - **Database:** as the migration owner, check:
   - `select rolname, rolcanlogin, rolsuper, rolbypassrls from pg_roles where rolname like 'tm8_vault\_%'` gives three rows, all `f`;
   - `select count(*) from vault.items` gives `0`;
@@ -86,6 +89,10 @@ curl -s <origin>/vault/capture/x                                             # e
 **Code.** Redeploy the previous sha with the same script:
 `./deploy/utho/deploy.sh prod <previous-sha>`. With the vault off, no vault state is lost.
 The previous build simply has no `/v2/vault` relay or capture route.
+
+**Paste guard.** Set `TM8_VAULT_PASTE_GUARD=off`, or remove it, and restart the server.
+Text it already redacted stays redacted. The guard never stores what it removed, so no
+rollback can bring that text back.
 
 **Schema.** Roll back only if the schema itself must go; the previous build ignores it.
 Roll back 451 before 450, as the migration owner, with the vault off. Each down file's
@@ -239,6 +246,28 @@ first passkey (an open review item), so:
 - keep the TTL short;
 - never paste it into a chat, a task or a log.
 
+### Chat paste guard (`TM8_VAULT_PASTE_GUARD=on`)
+
+Turning it on is a separate owner decision. It is the one part of this build that works
+with the vault off. It puts nothing in the vault and holds no secret, so the review gate
+does not apply to it. It changes what tm8 stores, though, so it needs its own decision.
+
+With the guard on, the server redacts secret-shaped text that a person sends before
+storing it:
+- `messages.post`, `messages.edit` and `chat.start`;
+- a bridged message's body, slash-command text and media captions.
+
+The sender gets a `vault_paste_redacted` warning. It names kinds of secret, never values.
+- An edit that adds secret-shaped text is refused, and the message keeps its old text.
+- A bridged chat gets one notice per message.
+- Agents' posts are not scanned.
+- With `TM8_VAULT_MODE=off`, the warning leaves out the capture-link advice.
+
+Detection is best-effort. Plan `01a1fab7` §10 lists what it does not catch.
+
+To verify after the restart, check the boot log for `[tm8] vault paste guard on (vault off)`
+(or `(vault on)`). Never post a real secret to test it.
+
 ## 6. Open before real secrets (gate items)
 
 The independent review must close these or accept them in writing. The task's review list
@@ -267,7 +296,7 @@ on `01a1fa87` holds the full set with severities. The headline items:
 - `startUrl` restriction.
 - `devMode` must come from broker config.
 - An origin change should require step-up.
-- Paste detection.
+- Paste detection, including the chat paste guard's limits (plan `01a1fab7` §10).
 
 **Durability and alerts**
 - The ledger needs separate media.
