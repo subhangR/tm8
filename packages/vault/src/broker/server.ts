@@ -3,24 +3,20 @@ import { dirname } from 'node:path';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import type { Socket } from 'node:net';
-import { VAULT_MAX_CAPTURE_CIPHERTEXT, VAULT_MAX_IMPORT_CIPHERTEXT } from '@tm8/contract';
 import { VaultError, type VaultCaller } from '../core-types.js';
 import {
   AttestationError, AttestationVerifier, VAULT_ATTESTATION_HEADER, loadAttestationPublicKey,
   type AttestationFailure,
 } from '../relay/attestation.js';
 import { VAULT_ALERTS_HEADER } from '../relay/alerts.js';
+import { VAULT_BODY_LIMITS, vaultBodyLimit } from '../relay/routes.js';
 import type { AlertOutbox } from './alerts.js';
 import {
   brokerErrorResponse, createBrokerDispatcher, mapBrokerError, matchBrokerRoute, sweepBrokerResponse,
   type BrokerDependencies, type BrokerResponse,
 } from './dispatcher.js';
 
-export const BROKER_BODY_LIMITS = Object.freeze({
-  small: 128 * 1024,
-  capture: Math.ceil(4 * VAULT_MAX_CAPTURE_CIPHERTEXT / 3) + 32 * 1024,
-  import: Math.ceil(4 * VAULT_MAX_IMPORT_CIPHERTEXT / 3) + 32 * 1024,
-});
+export const BROKER_BODY_LIMITS = VAULT_BODY_LIMITS;
 /** Unauthenticated errors have one byte-identical body, with no unverified request id. */
 export const UNATTESTED_REQUEST_ID = '00000000-0000-4000-8000-000000000000';
 
@@ -127,8 +123,7 @@ export async function createBrokerServer(options: BrokerServerOptions): Promise<
       if (closing) throw VaultError.reason('vault_unavailable');
       const header = req.headers[VAULT_ATTESTATION_HEADER];
       if (!header) throw new AttestationError('missing');
-      const cap = route?.row.name === 'vault.imports.upload' ? BROKER_BODY_LIMITS.import
-        : route?.row.name === 'vault.captures.submit' ? BROKER_BODY_LIMITS.capture : BROKER_BODY_LIMITS.small;
+      const cap = vaultBodyLimit(route?.row.name);
       const body = await readBody(req, cap);
       caller = verifier.verify(header, { method: req.method ?? '', ...target, body });
       attested = true;

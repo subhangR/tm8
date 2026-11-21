@@ -10,33 +10,11 @@ import {
 } from '../core-types.js';
 import { KmsUnavailableError } from '../crypto/kms.js';
 import { BrokerRateLimiter, rateClass } from './rate-limit.js';
+import { matchVaultRoute, type VaultRoute } from '../relay/routes.js';
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ROUTES = VAULT_OPERATIONS.map((row) => ({ row, parts: row.path.split('/') }));
-
-export interface BrokerRoute {
-  row: (typeof VAULT_OPERATIONS)[number];
-  params: Record<string, string>;
-}
-
-export function matchBrokerRoute(method: string, path: string): BrokerRoute | null {
-  const parts = path.split('/');
-  for (const { row, parts: template } of ROUTES) {
-    if (row.method !== method || parts.length !== template.length) continue;
-    const params: Record<string, string> = {};
-    let matches = true;
-    for (let i = 0; i < template.length; i += 1) {
-      const segment = template[i]!;
-      if (segment.startsWith(':')) {
-        const value = parts[i]!;
-        if (!UUID.test(value)) { matches = false; break; }
-        params[segment.slice(1)] = value.toLowerCase();
-      } else if (segment !== parts[i]) { matches = false; break; }
-    }
-    if (matches) return { row, params };
-  }
-  return null;
-}
+/** The relay and the broker share one route table (relay/routes.ts). */
+export type BrokerRoute = VaultRoute;
+export const matchBrokerRoute = matchVaultRoute;
 
 export interface BrokerLog {
   op: VaultOperationName | null;

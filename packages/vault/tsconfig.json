@@ -16,6 +16,9 @@
     },
     {
       "path": "../integrations"
+    },
+    {
+      "path": "./capture-page"
     }
   ]
 }

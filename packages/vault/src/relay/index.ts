@@ -5,3 +5,7 @@
  */
 export * from './attestation.js';
 export * from './alerts.js';
+export * from './routes.js';
+// The relay passes back only the broker's own two cookies, in the broker's exact shape,
+// and 451's internal.vault_notify accepts exactly the broker's alert kinds.
+export { VAULT_ALERT_KINDS, VAULT_COOKIE_NAMES } from '../core-types.js';

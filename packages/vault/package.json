@@ -12,7 +12,8 @@
     "./relay": {
       "types": "./dist/relay/index.d.ts",
       "default": "./dist/relay/index.js"
-    }
+    },
+    "./capture-page/index.html": "./capture-page/index.html"
   },
   "scripts": {
     "build": "tsc -b",
