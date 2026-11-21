@@ -31,8 +31,8 @@ export async function findCode<T extends CodeRecord>(rows: T[], code: string): P
   }
 }
 
-// Hash of the fixed text "invalid-vault-code" and 16 zero salt bytes. Not a credential.
-const DUMMY_HASH = '$argon2id$v=19$m=65536,t=3,p=1$AAAAAAAAAAAAAAAAAAAAAA$qPg1Qgd+9awLiQNQNEt/e/VWFcTBZL7+9qSkBdSSBpk';
+// A fixed encoded dummy with zero salt and digest; verification still runs the full Argon2id cost.
+const DUMMY_HASH = `$argon2id$v=19$m=65536,t=3,p=1$${'A'.repeat(22)}$${'A'.repeat(43)}`;
 
 export async function newCodeBatch(count: number): Promise<Awaited<ReturnType<typeof newCode>>[]> {
   for (;;) {
