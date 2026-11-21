@@ -166,6 +166,7 @@ import {
 import { SpaceLinksSection, spaceLinksPortFromSeam } from '../settings-space-links';
 import { BridgesSection } from '../bridges';
 import { McpTokensSection } from '../settings-mcp-tokens';
+import { VaultSettingsSection } from '../vault-settings/VaultSettingsSection';
 import { readLastSpace, readLastTarget, WORK_PLACE, writeLastTarget } from './last-place';
 import { desktopModes } from '../shell/desktop-modes';
 import { AppFrame, useFrameSlots, type AppFrameProps } from '../shell/AppFrame';
@@ -2556,6 +2557,14 @@ export function GateApp(props: GateAppProps = {}) {
                   ? { bridges: <BridgesSection port={data.seam.commands.bridges} spaceId={data.spaceId} onOpen={openFromSettings} /> }
                   : {}),
                 ...(mcpTokensPort ? { 'mcp-tokens': <McpTokensSection port={mcpTokensPort} /> } : {}),
+                /* Secure Vault (task 01a1fa87): this space's vault, on the node
+                   the page was loaded from only. Its cookies are path-scoped
+                   to this origin's /v2/vault, so a named server reached
+                   through the proxy route has no vault here, and the shell
+                   then states the section is not mounted. */
+                ...(data.spaceId && activeServer.id === LOCAL_SERVER.id
+                  ? { vault: <VaultSettingsSection spaceId={data.spaceId} /> }
+                  : {}),
                 ...(spaceCredentialsPort
                   ? {
                       /* Status only on the phone (mockup 01a14cc4): adding,
