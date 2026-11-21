@@ -47,7 +47,7 @@ const socketEnv = (extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
   TM8_VAULT_MODE: 'pre_review', TM8_VAULT_BROKER_SOCKET: socketPath, TM8_VAULT_RELAY_PRIVATE_KEY_FILE: keyFile, ...extra,
 });
 const urlEnv = (url: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
-  TM8_VAULT_MODE: 'production',
+  TM8_VAULT_MODE: 'pre_review',
   TM8_VAULT_BROKER_URL: url,
   TM8_VAULT_RELAY_TLS_KEY_FILE: files['tlsKey'],
   TM8_VAULT_RELAY_TLS_CERT_FILE: files['cert'],
@@ -123,9 +123,30 @@ describe('vaultRelayConfigFromEnv', () => {
     expect(knobOf(urlEnv('https://broker.invalid', { TM8_VAULT_RELAY_TLS_KEY_FILE: files['openTlsKey'] }))).toBe('TM8_VAULT_RELAY_TLS_KEY_FILE');
     expect(knobOf(urlEnv('https://broker.invalid', { TM8_VAULT_RELAY_TLS_CERT_FILE: undefined }))).toBe('TM8_VAULT_RELAY_TLS_CERT_FILE');
     expect(knobOf(urlEnv('https://broker.invalid', { TM8_VAULT_RELAY_TLS_CA_FILE: join(dir, 'absent.pem') }))).toBe('TM8_VAULT_RELAY_TLS_CA_FILE');
+    expect(knobOf(urlEnv('https://broker.invalid:8443', { TM8_VAULT_MODE: 'dev' }))).toBe('accepted');
     const config = vaultRelayConfigFromEnv(urlEnv('https://broker.invalid:8443'))!;
     expect(config.broker.kind).toBe('mtls');
     expect(config.broker.kind === 'mtls' && config.broker.url.origin).toBe('https://broker.invalid:8443');
+  });
+
+  it('production is refused before any key file is opened, while agents run as the server user (review F03)', () => {
+    const production = { TM8_VAULT_MODE: 'production' };
+    // Every file valid: still refused.
+    expect(knobOf(urlEnv('https://broker.invalid:8443', production))).toBe('TM8_VAULT_MODE');
+    expect(knobOf(urlEnv('https://broker.invalid:8443', { TM8_VAULT_MODE: ' production ' }))).toBe('TM8_VAULT_MODE');
+    // Every file absent or unsafe: a read would name that file's knob, so none was opened.
+    const absent = join(dir, 'never-created');
+    expect(knobOf(urlEnv('https://broker.invalid:8443', {
+      ...production, TM8_VAULT_RELAY_TLS_KEY_FILE: absent, TM8_VAULT_RELAY_TLS_CERT_FILE: absent,
+      TM8_VAULT_RELAY_TLS_CA_FILE: absent, TM8_VAULT_RELAY_PRIVATE_KEY_FILE: files['openKey'],
+    }))).toBe('TM8_VAULT_MODE');
+    // The target's shape is still checked first, so a socket names the socket and no target names both.
+    expect(knobOf(socketEnv(production))).toBe('TM8_VAULT_BROKER_SOCKET');
+    expect(knobOf(production)).toBe('TM8_VAULT_BROKER_SOCKET');
+    let message = '';
+    try { vaultRelayConfigFromEnv(urlEnv('https://broker.invalid:8443', production)); } catch (error) { message = String(error); }
+    expect(message).toMatch(/^VaultRelayConfigError: vault relay: TM8_VAULT_MODE production is refused \(review F03\)/);
+    expect(message.includes(dir)).toBe(false);
   });
 
   it('the signing key is a required, owner-only, regular PKCS#8 Ed25519 file, and a refusal never echoes it', () => {

@@ -141,10 +141,14 @@ the value.
 - `TM8_VAULT_KMS_KIND=gcp-kms`;
 - a checkpoint sink (`TM8_VAULT_AUDIT_SINK`, `file` or `gcs`) signed through `TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION`;
 - no local KEK file and no local checkpoint key;
-- an mTLS listener;
+- an mTLS listener, with the relay's client certificate pinned (`TM8_VAULT_RELAY_CLIENT_CERT_SHA256`);
 - a dedicated database role.
 
 `TM8_VAULT_SPEND` must stay `false`: payments are `disabled_v1`, and the broker refuses `true`.
+
+**The relay refuses `production` today (review F03).** A broker can be configured as above,
+but the tm8 server will not boot with `TM8_VAULT_MODE=production`. See *Relay key isolation*
+below for why, and for what lifts it.
 
 ### Topology A: the only production shape
 
@@ -154,11 +158,13 @@ it only over mutual TLS:
 | Side | Knobs |
 | --- | --- |
 | Relay (tm8 server) | `TM8_VAULT_MODE`, `TM8_VAULT_BROKER_URL` (an https origin), `TM8_VAULT_RELAY_TLS_KEY_FILE`, `TM8_VAULT_RELAY_TLS_CERT_FILE`, `TM8_VAULT_RELAY_TLS_CA_FILE`, `TM8_VAULT_RELAY_PRIVATE_KEY_FILE` |
-| Broker | `TM8_VAULT_BROKER_MTLS_LISTEN`, `TM8_VAULT_BROKER_TLS_KEY_FILE`, `TM8_VAULT_BROKER_TLS_CERT_FILE`, `TM8_VAULT_BROKER_TLS_CA_FILE`, `TM8_VAULT_RELAY_PUBLIC_KEY_FILE` |
+| Broker | `TM8_VAULT_BROKER_MTLS_LISTEN`, `TM8_VAULT_BROKER_TLS_KEY_FILE`, `TM8_VAULT_BROKER_TLS_CERT_FILE`, `TM8_VAULT_BROKER_TLS_CA_FILE`, `TM8_VAULT_RELAY_CLIENT_CERT_SHA256`, `TM8_VAULT_RELAY_PUBLIC_KEY_FILE` |
 
 - The relay signs every request with an Ed25519 key (`TM8_VAULT_RELAY_PRIVATE_KEY_FILE`).
   The broker holds only the public half (`TM8_VAULT_RELAY_PUBLIC_KEY_FILE`).
 - The relay refuses to boot unless its key files are `chmod 600` and owned by the server's user.
+  That keeps other users out. It does not keep out a process that runs as the server's user,
+  and today every agent session, terminal and tool does (*Relay key isolation*, below).
 - **The browser origin travels inside the signature (attestation v2).** The relay forwards no
   `Origin` header. For a browser session only, it signs into the attestation the `Origin` that
   the server's own Origin and CSRF checks accepted. A CLI or agent session never gets one. The
@@ -181,6 +187,63 @@ same uid can connect.
 - **Only `dev` and `pre_review`** may point the relay at the socket. A relay under a
   different uid on the same host has no supported socket path; that is an open review
   item. In production the relay refuses the socket.
+
+### Relay key isolation (review F03)
+
+The relay's signing key lets its holder call the broker as any member, and its TLS key lets
+it connect. Today the tm8 server starts agent sessions, terminals and tools as its own user:
+`pty.spawn` in `packages/execution/src/pty/PtyHostService.ts` passes no uid or gid, and a
+search of every package's source (2026-11-21) found no spawn that sets another uid, gid or
+`sudo -u`. So an agent can read both key files, and the memory of
+the server process that holds them. Some agent postures wrap shell commands in the provider's
+own sandbox (codex `--sandbox`). That sandbox runs as the same user, depends on the posture,
+does not cover terminals, and does not work on every node (`spawn/sandbox-probe.ts`). The keys
+cannot rely on it.
+
+Two controls ship now. Neither one is the boundary itself.
+
+- **The relay refuses `production`.** Boot stops with
+  `vault relay: TM8_VAULT_MODE production is refused (review F03): ...`. It comes after the
+  checks that exactly one of the socket and the URL is set and that production uses the URL,
+  and before any key file is opened. No knob lifts it. Only a
+  code change in `packages/server/src/vault/config.ts` does, and only after all of these:
+  1. Agent execution runs outside the key holder's reach, behind an OS or service boundary that
+     the agents cannot change. The open owner decisions are D1 (the docker group), D2 (which
+     boundary) and D3 (the signer); see design doc `01a1fe13`.
+  2. Reach checks show that no agent process can read the keys, the server's memory, host
+     credentials or docker and root paths (D5, checks R1-R9).
+  3. The relay keys are rotated at cutover. Agents could read the keys a `pre_review` relay
+     held, so treat those keys as exposed.
+  4. The cross-member identity forgery test passes in staging. D7 covers the staging resources
+     and D9 who runs the test.
+
+  `dev` and `pre_review` still boot. They hold synthetic test secrets only.
+- **The broker pins the relay's certificate.** A CA can issue more than one client
+  certificate, so a chain to `TM8_VAULT_BROKER_TLS_CA_FILE` is not enough. Whenever
+  `TM8_VAULT_BROKER_MTLS_LISTEN` is set, in every mode, the broker also requires
+  `TM8_VAULT_RELAY_CLIENT_CERT_SHA256`: the SHA-256 of the relay certificate's DER. A pin set
+  without a listener is refused as stray config.
+  - **Computing the pin.** Either form works:
+    - `openssl x509 -noout -fingerprint -sha256 -in relay.crt`, keeping the 32 colon-separated
+      pairs after `=`;
+    - `openssl x509 -in relay.crt -outform DER | sha256sum`, keeping the 64 hex digits.
+
+    The pin is a hash of a public certificate, not a secret, so it can sit in the unit's
+    environment. The keys stay in their `0600` files; never move a key into an environment
+    variable.
+  - **What it refuses.** The broker checks the pin once per connection, as the TLS 1.3
+    handshake completes.
+    - A connection with any other certificate closes with no response.
+    - A request that arrived with that handshake is dropped before any handler runs.
+    - Each refusal increments the broker's refused-peer counter and logs
+      `{"event":"vault_broker_mtls_peer_refused","fingerprint":"<sha256 hex>"}`, the
+      fingerprint of the refused public certificate.
+    - Nothing alerts on these yet.
+  - **What it does not cover.** The pin closes every other certificate the CA issued. It cannot
+    help once the relay's own key is read. That is what the production refusal is for.
+  - **Rotation.** The broker accepts exactly one pin. Issue the new relay certificate, set the
+    broker's pin to it and restart the broker, then restart the relay with the new certificate.
+    The relay is refused in between, so plan a short outage.
 
 ### Database
 
@@ -428,8 +491,15 @@ on `01a1fa87` holds the full set with severities. The headline items:
 **Database and keys**
 - A trust-auth or superuser database login bypasses RLS. Production refuses it, but the
   other modes only log it.
-- Agent sessions run under the tm8 server's uid, so `chmod 600` does not keep the relay's
-  signing key or TLS key from them.
+- Relay key isolation (review F03). Agent sessions run under the tm8 server's uid, so
+  `chmod 600` does not keep the relay's signing key or TLS key from them. The relay now refuses
+  `production`, and the broker pins the relay's certificate (§5, *Relay key isolation*).
+  Still open:
+  - the boundary itself, its reach checks, and the staging cross-member forgery test;
+  - owner decisions D1-D9 (design doc `01a1fe13`);
+  - agents can read a `pre_review` relay's keys today. That relay holds test secrets only, and
+    its keys must be rotated before any production cutover;
+  - a refused certificate is only logged and counted. Nothing alerts on it.
 - The KMS REST path (review F05). The broker now wipes the response bytes it owns and the GCM
   output on a failed tag. It cannot wipe V8 strings or undici/OpenSSL buffers. Production
   refuses a host that could write cores or swap. The host checks are not done on a real broker

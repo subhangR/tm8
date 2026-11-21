@@ -66,6 +66,7 @@ export const BROKER_RUNTIME_ENV_KNOBS = [
   { name: 'TM8_VAULT_BROKER_TLS_KEY_FILE', default: '', meaning: 'mTLS listener private key (PEM)' },
   { name: 'TM8_VAULT_BROKER_TLS_CERT_FILE', default: '', meaning: 'mTLS listener certificate (PEM)' },
   { name: 'TM8_VAULT_BROKER_TLS_CA_FILE', default: '', meaning: 'CA (PEM) that issues the relay client certificate' },
+  { name: 'TM8_VAULT_RELAY_CLIENT_CERT_SHA256', default: '', meaning: 'SHA-256 of the relay client certificate (DER): 64 hex digits, colon pairs allowed; required with the mTLS listener, which closes every other certificate the CA issued (review F03)' },
   { name: 'TM8_VAULT_FILL_SOCKET', default: DEFAULT_FILL_SOCKET, meaning: 'Fill worker socket; the worker reads the same knob' },
   { name: 'TM8_VAULT_FILL_TIMEOUT_MS', default: String(DEFAULT_FILL_TIMEOUT_MS), meaning: 'Fill timeout 100..120000; the worker reads the same knob' },
   { name: 'TM8_VAULT_LOCAL_KEK_FILE', default: '', meaning: 'local-dev KEK file, created 0600 when absent; dev and pre_review only' },
@@ -125,16 +126,30 @@ function listenAddress(value: string): { host: string; port: number } {
   return { host: match[1]!.replace(/^\[|\]$/g, ''), port };
 }
 
+const CLIENT_PIN_KNOB = 'TM8_VAULT_RELAY_CLIENT_CERT_SHA256';
+
+/** 64 hex digits, or the 32 colon-separated pairs `openssl x509 -noout -fingerprint -sha256` prints. */
+function clientCertificatePin(env: Env): Buffer {
+  const value = optional(env, CLIENT_PIN_KNOB);
+  if (value === null || !/^(?:[0-9A-Fa-f]{64}|[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){31})$/.test(value)) throw new BrokerConfigError(CLIENT_PIN_KNOB);
+  return Buffer.from(value.replaceAll(':', ''), 'hex');
+}
+
 function mtlsOptions(env: Env, mode: VaultMode) {
   const files = ['TM8_VAULT_BROKER_TLS_KEY_FILE', 'TM8_VAULT_BROKER_TLS_CERT_FILE', 'TM8_VAULT_BROKER_TLS_CA_FILE'] as const;
   const listen = optional(env, 'TM8_VAULT_BROKER_MTLS_LISTEN');
   if (listen === null) {
-    for (const knob of files) if (optional(env, knob) !== null) throw new BrokerConfigError(knob);
+    for (const knob of [...files, CLIENT_PIN_KNOB]) if (optional(env, knob) !== null) throw new BrokerConfigError(knob);
     // Topology A: in production the relay is on another host and reaches the broker only over mTLS.
     if (mode === 'production') throw new BrokerConfigError('TM8_VAULT_BROKER_MTLS_LISTEN');
     return undefined;
   }
-  return { ...listenAddress(listen), keyFile: path(env, files[0]), certFile: path(env, files[1]), caFile: path(env, files[2]) };
+  // Review F03: a CA can issue more than one client certificate, so in every mode the listener
+  // also pins the relay's own. There is no unpinned mTLS listener.
+  return {
+    ...listenAddress(listen), keyFile: path(env, files[0]), certFile: path(env, files[1]), caFile: path(env, files[2]),
+    clientCertSha256: clientCertificatePin(env),
+  };
 }
 
 function databaseUrl(env: Env): string {
@@ -378,6 +393,8 @@ export async function composeBroker(env: Env, options: {
       // Longer than the slowest handler (a fill), shorter than the relay's upstream timeout.
       requestTimeoutMs: fillTimeoutMs + 60_000,
       log: (record) => log({ event: 'vault_broker_request', ...record }),
+      // Review F03: a certificate the CA issued that is not the relay's. Its fingerprint is public.
+      onRefusedPeer: (peer) => log({ event: 'vault_broker_mtls_peer_refused', ...peer }),
       beforeServe: [
         // Tombstones first: a restored backup must never serve a deleted item.
         async () => { await replayDeletionLedger(store, components.deletionLedger); },

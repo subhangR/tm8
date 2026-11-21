@@ -1,8 +1,10 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFile, mkdir, lstat, chmod, unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import type { Socket } from 'node:net';
+import type { TLSSocket } from 'node:tls';
 import { VaultError, type VaultCaller } from '../core-types.js';
 import {
   AttestationError, AttestationVerifier, VAULT_ATTESTATION_HEADER, loadAttestationPublicKey,
@@ -24,7 +26,17 @@ export interface BrokerServerOptions extends BrokerDependencies {
   /** Must have a dedicated, owner-only directory. Existing paths are never unlinked on startup. */
   socketPath: string;
   relayPublicKeyFile: string;
-  mtls?: { host: string; port: number; keyFile: string; certFile: string; caFile: string };
+  /**
+   * The listener for a relay on another host. The client certificate must chain to `caFile` AND
+   * its SHA-256 (over the DER) must equal `clientCertSha256` (review F03). The CA alone does not
+   * name the relay: it can issue other certificates.
+   */
+  mtls?: { host: string; port: number; keyFile: string; certFile: string; caFile: string; clientCertSha256: Buffer };
+  /**
+   * Told of each mTLS connection closed because its verified certificate is not the pinned one,
+   * with that certificate's SHA-256 (hex) so the operator can find which certificate the CA issued.
+   */
+  onRefusedPeer?: (peer: { fingerprint: string | null }) => void;
   /**
    * Pending owner alerts ride on attested responses only, so an unattested
    * connection never receives them. The relay strips the header (relay/alerts.ts).
@@ -42,6 +54,8 @@ export interface BrokerServer {
   readonly https: ReturnType<typeof createHttpsServer> | null;
   readonly socketPath: string;
   readonly attestationFailures: ReadonlyMap<AttestationFailure, number>;
+  /** mTLS connections closed after the handshake because the client certificate is not the pinned one. */
+  readonly refusedPeers: number;
   listen(): Promise<void>;
   close(): Promise<void>;
 }
@@ -81,6 +95,12 @@ export async function createBrokerServer(options: BrokerServerOptions): Promise<
   const headersTimeout = positive(options.headersTimeoutMs ?? 5000, 'headersTimeoutMs');
   const requestTimeout = positive(options.requestTimeoutMs ?? 30_000, 'requestTimeoutMs');
   const closeGrace = positive(options.closeGraceMs ?? 1000, 'closeGraceMs');
+  const tls = options.mtls;
+  if (tls && !(Buffer.isBuffer(tls.clientCertSha256) && tls.clientCertSha256.length === 32)) {
+    throw new TypeError('vault broker: invalid mtls.clientCertSha256');
+  }
+  // A copy: the caller cannot change the pin after start.
+  const pin = tls ? Buffer.from(tls.clientCertSha256) : null;
   const verifier = new AttestationVerifier(loadAttestationPublicKey(await readFile(options.relayPublicKeyFile)),
     { clock: options.clock, maxReplayEntries: options.maxReplayEntries });
   const dispatch = createBrokerDispatcher(options);
@@ -165,11 +185,35 @@ export async function createBrokerServer(options: BrokerServerOptions): Promise<
   };
 
   const http = createServer({ maxHeaderSize, headersTimeout, requestTimeout }, (req, res) => { void handle(req, res); });
-  const tls = options.mtls;
+  let refusedPeers = 0;
+  /** SHA-256 of the client certificate, only once its chain has verified. */
+  const peerFingerprint = (socket: TLSSocket): Buffer | null => {
+    if (socket.authorized !== true) return null;
+    // null once the socket is destroyed, and an empty object when the peer sent no certificate.
+    const raw = (socket.getPeerCertificate() as { raw?: unknown } | null)?.raw;
+    return Buffer.isBuffer(raw) && raw.length > 0 ? createHash('sha256').update(raw).digest() : null;
+  };
+  /** The connections whose verified certificate is the pinned relay certificate (review F03). */
+  const admitted = new WeakSet<TLSSocket>();
   const https = tls ? createHttpsServer({
     maxHeaderSize, headersTimeout, requestTimeout, requestCert: true, rejectUnauthorized: true,
     minVersion: 'TLSv1.3', ca: await readFile(tls.caFile), key: await readFile(tls.keyFile), cert: await readFile(tls.certFile),
-  }, (req, res) => { void handle(req, res); }) : null;
+  }, (req, res) => {
+    // Request bytes that arrive with the client's last handshake flight are parsed AFTER the check
+    // below has closed the socket, and still reach this listener. Only an admitted connection is handled.
+    if (!admitted.has(req.socket as TLSSocket)) { req.socket.destroy(); return; }
+    void handle(req, res);
+  }) : null;
+  // Runs once per connection, as its handshake completes. TLS 1.3 only, so the certificate cannot
+  // change afterwards. A refused connection is closed with no response and no echo of the certificate.
+  https?.on('secureConnection', (socket: TLSSocket) => {
+    const fingerprint = peerFingerprint(socket);
+    if (fingerprint !== null && pin !== null && timingSafeEqual(fingerprint, pin)) { admitted.add(socket); return; }
+    refusedPeers += 1;
+    socket.destroy();
+    try { options.onRefusedPeer?.({ fingerprint: fingerprint?.toString('hex') ?? null }); }
+    catch { /* Logging cannot reopen a closed connection. */ }
+  });
   const servers = https ? [http, https] : [http];
   for (const server of servers) {
     server.maxHeadersCount = 64;
@@ -214,6 +258,7 @@ export async function createBrokerServer(options: BrokerServerOptions): Promise<
 
   return {
     http, https, socketPath: options.socketPath, attestationFailures: failures,
+    get refusedPeers() { return refusedPeers; },
     async listen() {
       if (closing || listening) throw new Error('vault broker: listener unavailable');
       const directory = dirname(options.socketPath);

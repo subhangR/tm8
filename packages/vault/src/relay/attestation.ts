@@ -30,9 +30,12 @@ import { digestEquals } from '../intent/hash.js';
  * trusts it and never the raw Origin header on its own socket. The broker still
  * checks it against its exact WebAuthn origins (broker/dispatcher.ts).
  *
- * Known limit for the independent review: on a host where agent sessions run
- * as the same uid as the tm8 server, an agent can read the signing key file.
- * That is one reason `pre_review` holds test secrets only.
+ * Known limit (independent review F03): on a host where agent sessions run as
+ * the same uid as the tm8 server, an agent can read the signing key file and
+ * sign as any member. So the relay refuses `production`
+ * (packages/server/src/vault/config.ts), and `pre_review` holds test secrets
+ * only. Only a boundary that keeps agents out of the key holder's reach,
+ * proven in staging, closes it (deploy/vault/README.md, "Relay key isolation").
  */
 export const VAULT_ATTESTATION_HEADER = 'x-tm8-vault-caller';
 export const ATTESTATION_MAX_TTL_SECONDS = 30;

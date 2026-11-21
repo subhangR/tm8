@@ -17,9 +17,17 @@
  * key the relay signs each forwarded request with; the broker holds only the
  * public half. The file must be a regular file owned by this process's user
  * and unreadable by group and others. That stops other local users, but not
- * a process running as the same user: agent sessions on a shared host run as
- * that user, so the security review gate lists it as open until the relay
- * runs under its own user (deploy/vault/README.md).
+ * a process running as the same user.
+ *
+ * PRODUCTION IS REFUSED (review F03). This server starts agent sessions,
+ * terminals and tools as its own user (packages/execution: no spawn sets
+ * another uid), so they can read the relay's signing key, its TLS key and
+ * this process. A key they can read lets an agent sign as any member. So
+ * production refuses here, before any key file is opened, and only a change
+ * to this code lifts it: once agents run outside the relay's reach and the
+ * staging forgery test has passed (deploy/vault/README.md, "Relay key
+ * isolation"). dev and
+ * pre_review hold synthetic test secrets only.
  */
 import { readFileSync, statSync } from 'node:fs';
 import type { KeyObject } from 'node:crypto';
@@ -75,14 +83,22 @@ export function vaultRelayConfigFromEnv(env: NodeJS.ProcessEnv = process.env): V
   if (socketPath !== '' && brokerUrl !== '') {
     throw new VaultRelayConfigError('TM8_VAULT_BROKER_SOCKET', 'and TM8_VAULT_BROKER_URL are both set: set exactly one');
   }
+  if (socketPath === '' && brokerUrl === '') {
+    throw new VaultRelayConfigError('TM8_VAULT_BROKER_SOCKET', 'or TM8_VAULT_BROKER_URL is required when TM8_VAULT_MODE is not off');
+  }
+  if (socketPath !== '' && mode === 'production') {
+    throw new VaultRelayConfigError('TM8_VAULT_BROKER_SOCKET', 'is not allowed in production: use TM8_VAULT_BROKER_URL over mutual TLS');
+  }
+  // Review F03: before any key file is opened. See THE SIGNING KEY above.
+  if (mode === 'production') {
+    throw new VaultRelayConfigError('TM8_VAULT_MODE', 'production is refused (review F03): this server runs agent sessions, '
+      + 'terminals and tools as its own user, so they could read the relay keys (deploy/vault/README.md)');
+  }
   let broker: VaultBrokerTarget;
   if (socketPath !== '') {
-    if (mode === 'production') {
-      throw new VaultRelayConfigError('TM8_VAULT_BROKER_SOCKET', 'is not allowed in production: use TM8_VAULT_BROKER_URL over mutual TLS');
-    }
     if (!isAbsolute(socketPath)) throw new VaultRelayConfigError('TM8_VAULT_BROKER_SOCKET', 'must be an absolute path');
     broker = Object.freeze({ kind: 'socket', socketPath });
-  } else if (brokerUrl !== '') {
+  } else {
     broker = Object.freeze({
       kind: 'mtls',
       url: brokerOrigin(brokerUrl),
@@ -90,8 +106,6 @@ export function vaultRelayConfigFromEnv(env: NodeJS.ProcessEnv = process.env): V
       cert: plainFile(env.TM8_VAULT_RELAY_TLS_CERT_FILE, 'TM8_VAULT_RELAY_TLS_CERT_FILE'),
       ca: plainFile(env.TM8_VAULT_RELAY_TLS_CA_FILE, 'TM8_VAULT_RELAY_TLS_CA_FILE'),
     });
-  } else {
-    throw new VaultRelayConfigError('TM8_VAULT_BROKER_SOCKET', 'or TM8_VAULT_BROKER_URL is required when TM8_VAULT_MODE is not off');
   }
 
   const pem = secretFile(env.TM8_VAULT_RELAY_PRIVATE_KEY_FILE, 'TM8_VAULT_RELAY_PRIVATE_KEY_FILE');

@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { generateKeyPairSync, randomUUID, sign } from 'node:crypto';
+import { X509Certificate, createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { request as httpRequest, type IncomingHttpHeaders } from 'node:http';
 import { request as httpsRequest } from 'node:https';
@@ -48,6 +49,13 @@ function preReviewEnv(dir: string, extra: Record<string, string | undefined> = {
     ...extra,
   };
 }
+
+/** A listener with every TLS file named, so only the relay certificate pin (review F03) is left to check. */
+const LISTENER = {
+  TM8_VAULT_BROKER_MTLS_LISTEN: '127.0.0.1:8443', TM8_VAULT_BROKER_TLS_KEY_FILE: '/k', TM8_VAULT_BROKER_TLS_CERT_FILE: '/c',
+  TM8_VAULT_BROKER_TLS_CA_FILE: '/ca',
+} as const;
+const PIN = 'TM8_VAULT_RELAY_CLIENT_CERT_SHA256';
 
 async function refusal(promise: Promise<unknown>): Promise<BrokerConfigError> {
   try { await promise; } catch (error) {
@@ -134,6 +142,18 @@ describe('broker composition root: static refusals', () => {
     [{ TM8_VAULT_BROKER_MTLS_LISTEN: '127.0.0.1:65536' }, 'TM8_VAULT_BROKER_MTLS_LISTEN'],
     [{ TM8_VAULT_BROKER_MTLS_LISTEN: '127.0.0.1:8443', TM8_VAULT_BROKER_TLS_KEY_FILE: '/k', TM8_VAULT_BROKER_TLS_CERT_FILE: '/c' }, 'TM8_VAULT_BROKER_TLS_CA_FILE'],
     [{ TM8_VAULT_BROKER_TLS_KEY_FILE: '/k' }, 'TM8_VAULT_BROKER_TLS_KEY_FILE'],
+    // Review F03: every mTLS listener pins the relay's certificate, so a listener without an exact pin is refused.
+    [{ ...LISTENER }, PIN],
+    [{ ...LISTENER, [PIN]: 'ab'.repeat(31) }, PIN],
+    [{ ...LISTENER, [PIN]: 'ab'.repeat(33) }, PIN],
+    [{ ...LISTENER, [PIN]: 'zz'.repeat(32) }, PIN],
+    [{ ...LISTENER, [PIN]: ` ${'ab'.repeat(32)}` }, PIN],
+    [{ ...LISTENER, [PIN]: `${'AB:'.repeat(32)}` }, PIN],
+    // 32 bytes, but not in pairs.
+    [{ ...LISTENER, [PIN]: `AB${':AB'.repeat(29)}:ABAB` }, PIN],
+    [{ ...LISTENER, [PIN]: `SHA256 Fingerprint=AB${':AB'.repeat(31)}` }, PIN],
+    // A pin with no listener is a mistake too: it would pin nothing.
+    [{ [PIN]: 'ab'.repeat(32) }, PIN],
     [{ TM8_VAULT_KMS_KIND: 'vault-transit' }, 'TM8_VAULT_KMS_KIND'],
     [{ TM8_VAULT_KMS_KIND: 'test-fake' }, 'TM8_VAULT_KMS_KIND'],
     [{ TM8_VAULT_CANARY_FILE: '/nonexistent/vault-test-canaries' }, 'TM8_VAULT_CANARY_FILE'],
@@ -145,6 +165,20 @@ describe('broker composition root: static refusals', () => {
     expect(failureMessage(error)).toBe(`vault broker: invalid ${knob}`);
     expect(JSON.stringify(Object.getOwnPropertyDescriptors(error))).not.toContain(marker);
     expect(await readdir(dir)).toEqual([]);
+  });
+
+  it.each([
+    ['64 hex digits', 'ab'.repeat(32)],
+    ['the colon pairs openssl prints', `AB${':AB'.repeat(31)}`],
+    ['mixed case', `aB${':Ab'.repeat(31)}`],
+  ] as const)('review F03: takes the relay certificate pin as %s', async (_form, pin) => {
+    const dir = await temporary();
+    const error = await composeBroker(preReviewEnv(dir, { ...LISTENER, [PIN]: pin }), { log: () => undefined })
+      .then(() => null, (reason: unknown) => reason);
+    // Past every configuration check (a BrokerConfigError would name a knob): the unreachable test database refuses.
+    expect(error).not.toBeInstanceOf(BrokerConfigError);
+    expect(error).toBeInstanceOf(VaultError);
+    expect((error as VaultError).message).toBe('vault: vault_unavailable');
   });
 
   it.each([
@@ -160,6 +194,8 @@ describe('broker composition root: static refusals', () => {
       TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION: keyVersionName, TM8_VAULT_LOCAL_KEK_FILE: undefined, TM8_VAULT_CHECKPOINT_KEY_FILE: '/k' }, 'TM8_VAULT_CHECKPOINT_KEY_FILE'],
     [{ TM8_VAULT_REVIEW_GATE: 'passed', TM8_VAULT_KMS_KIND: 'gcp-kms', TM8_VAULT_AUDIT_SINK: 'gcs',
       TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION: keyVersionName, TM8_VAULT_LOCAL_KEK_FILE: undefined }, 'TM8_VAULT_BROKER_MTLS_LISTEN'],
+    [{ TM8_VAULT_REVIEW_GATE: 'passed', TM8_VAULT_KMS_KIND: 'gcp-kms', TM8_VAULT_AUDIT_SINK: 'gcs',
+      TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION: keyVersionName, TM8_VAULT_LOCAL_KEK_FILE: undefined, ...LISTENER }, PIN],
   ] as const)('production %j is refused as %s before any KMS, database or network call', async (patch, knob) => {
     const dir = await temporary();
     const error = await refusal(composeBroker(preReviewEnv(dir, { TM8_VAULT_MODE: 'production', ...patch }), { hostProc: hardenedHost() }));
@@ -486,13 +522,18 @@ else describe('broker composition root over Postgres', () => {
       const openssl = (args: string[]) => execFileSync('openssl', args, { stdio: ['ignore', 'ignore', 'ignore'] });
       // Ephemeral test-only fixtures, generated at runtime.
       openssl(['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-keyout', file(dir, 'ca.key'), '-out', file(dir, 'ca.crt'), '-subj', '/CN=vault-test-ca', '-days', '1']);
-      for (const name of ['server', 'client']) {
+      // `other` is a second client certificate from the same CA: it passes the CA, not the pin (review F03).
+      for (const name of ['server', 'client', 'other']) {
         openssl(['req', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-keyout', file(dir, `${name}.key`), '-out', file(dir, `${name}.csr`), '-subj', `/CN=vault-test-${name}`]);
         await writeFile(file(dir, `${name}.ext`), name === 'server' ? 'subjectAltName=IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' : 'extendedKeyUsage=clientAuth\n');
         openssl(['x509', '-req', '-in', file(dir, `${name}.csr`), '-CA', file(dir, 'ca.crt'), '-CAkey', file(dir, 'ca.key'), '-CAcreateserial',
           '-out', file(dir, `${name}.crt`), '-days', '1', '-extfile', file(dir, `${name}.ext`)]);
       }
+      // The pin exactly as deploy/vault/README.md tells the operator to take it: what openssl prints after '='.
+      const printed = execFileSync('openssl', ['x509', '-noout', '-fingerprint', '-sha256', '-in', file(dir, 'client.crt')], { encoding: 'utf8' });
+      await writeFile(file(dir, 'client.pin'), printed.trim().split('=')[1]!);
     }
+    const fingerprintOf = (dir: string, name: string) => createHash('sha256').update(new X509Certificate(readFileSync(file(dir, `${name}.crt`))).raw).digest('hex');
     async function freePort(): Promise<number> {
       const server = createNetServer();
       await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -537,6 +578,7 @@ else describe('broker composition root over Postgres', () => {
         TM8_VAULT_AUDIT_SINK: 'gcs', TM8_VAULT_GCS_BUCKET: bucket, TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION: keyVersionName,
         TM8_VAULT_BROKER_MTLS_LISTEN: `127.0.0.1:${port}`, TM8_VAULT_BROKER_TLS_KEY_FILE: file(dir, 'server.key'),
         TM8_VAULT_BROKER_TLS_CERT_FILE: file(dir, 'server.crt'), TM8_VAULT_BROKER_TLS_CA_FILE: file(dir, 'ca.crt'),
+        [PIN]: readFileSync(file(dir, 'client.pin'), 'utf8'),
       };
     }
     const refusesConnections = (port: number) => new Promise<boolean>((resolve) => {
@@ -545,7 +587,7 @@ else describe('broker composition root over Postgres', () => {
       socket.once('error', () => resolve(true));
     });
 
-    it('refuses any database login but a dedicated broker role, then serves only over pinned mTLS', async () => {
+    it('refuses any database login but a dedicated broker role, then serves only the pinned relay certificate over mTLS', async () => {
       const h = await database();
       const dir = await temporary();
       await writeRelayKey(dir);
@@ -564,8 +606,11 @@ else describe('broker composition root over Postgres', () => {
       expect(outsider.knob).toBe('TM8_VAULT_DATABASE_URL');
       await expect(lstat(join(dir, 'broker.sock'))).rejects.toMatchObject({ code: 'ENOENT' });
 
-      const broker = (await composeBroker(env(await loginRole(h, 'tm8_vault_broker')), { gcp, log: () => undefined, hostProc: hardenedHost() }))!;
+      const records: Record<string, unknown>[] = [];
+      const broker = (await composeBroker(env(await loginRole(h, 'tm8_vault_broker')), { gcp, log: (record) => records.push(record), hostProc: hardenedHost() }))!;
       brokers.push(broker);
+      // openssl prints colon pairs in upper case; the broker took that form.
+      expect(readFileSync(file(dir, 'client.pin'), 'utf8')).toMatch(/^[0-9A-F]{2}(?::[0-9A-F]{2}){31}$/);
       expect(broker.databaseRole.dedicated).toBe(true);
       expect(broker.config).toMatchObject({ mode: 'production', reviewGate: 'passed', auditSink: 'gcs' });
       expect(broker.server.https).not.toBeNull();
@@ -586,6 +631,18 @@ else describe('broker composition root over Postgres', () => {
         req.once('error', reject);
         req.end();
       })).rejects.toThrow();
+      // Review F03: a certificate the same CA issued, with a valid attestation, is closed before any handler runs.
+      const served = records.filter((record) => record.event === 'vault_broker_request').length;
+      const [otherCert, otherKey] = await Promise.all(['other.crt', 'other.key'].map((name) => readFile(file(dir, name))));
+      await expect(new Promise((resolve, reject) => {
+        const req = httpsRequest({ host: '127.0.0.1', port, path: '/v2/vault/status', ca, cert: otherCert, key: otherKey, agent: false,
+          headers: { 'x-tm8-vault-caller': header } }, resolve);
+        req.once('error', reject);
+        req.end();
+      })).rejects.toThrow();
+      expect(records).toContainEqual({ event: 'vault_broker_mtls_peer_refused', fingerprint: fingerprintOf(dir, 'other') });
+      expect(records.filter((record) => record.event === 'vault_broker_request')).toHaveLength(served);
+      expect(broker.server.refusedPeers).toBe(1);
     }, 30_000);
 
     it('review F01: refuses a checkpoint bucket with no retention policy, or one it cannot read, and never writes one', async () => {
