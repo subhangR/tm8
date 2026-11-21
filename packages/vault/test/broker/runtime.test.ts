@@ -177,6 +177,27 @@ describe('authority, modes and output boundary', () => {
     expect(response.status).toBe(500);
     expect(response.text).toBe('');
   });
+  it('emits only the fixed cookie attributes and also refuses a canary planted in a cookie header', async () => {
+    const handlers = stubHandlers();
+    const original = handlers['vault.status'];
+    const marker = ['test-only-cookie', randomUUID()].join('-');
+    handlers['vault.status'] = async (ctx, req) => ({ ...await original(ctx, req), setCookies: [
+      { name: 'tm8_vault_session', value: marker, maxAgeSeconds: 900 },
+      { name: 'tm8_vault_refresh', value: null, maxAgeSeconds: 0 },
+    ] });
+    const h = await setup({ handlers });
+    const accepted = await h.send('vault.status');
+    expect(accepted.status).toBe(200);
+    expect(accepted.headers['set-cookie']).toEqual([
+      `tm8_vault_session=${marker}; Max-Age=900; Path=/v2/vault; HttpOnly; Secure; SameSite=Strict`,
+      'tm8_vault_refresh=; Max-Age=0; Path=/v2/vault/session; HttpOnly; Secure; SameSite=Strict',
+    ]);
+    h.components.canaries = buildCanarySet([marker]);
+    const refused = await h.send('vault.status');
+    expect(refused.status).toBe(500);
+    expect(refused.headers['set-cookie']).toBeUndefined();
+    expect(JSON.stringify(refused.headers).includes(marker)).toBe(false);
+  });
   it.each([
     [new StoreNotFoundError(), 404, 'not_found', null], [new VaultError('not_found'), 404, 'not_found', null],
     [new StoreVersionConflictError(7), 409, 'version_conflict', null], [new AuditUnavailableError(), 503, 'upstream_unavailable', 'audit_unavailable'],

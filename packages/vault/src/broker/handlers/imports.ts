@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { VAULT_MAX_IMPORT_CIPHERTEXT } from '@tm8/contract';
 import { memberScope, StoreNotFoundError, VaultError, type HandlersFor, type HandlerContext } from '../../core-types.js';
-import { CaptureSealError } from '../../capture/seal.js';
+import { CaptureSealError, sealCapture, type SealedCapture } from '../../capture/seal.js';
 import { CapturePayloadError, parseCapturePayload, type CapturePayload } from '../../capture/payload.js';
 import { encryptSecretVersion } from '../../crypto/aead.js';
 import { ImportParseError } from '../../import/index.js';
@@ -18,19 +18,18 @@ interface ImportSession {
   kid: string;
   format?: ImportFormat;
   expiresAt: string;
-  rows: Map<number, { candidate: ImportCandidate; payload: SecretMaterial }>;
+  rows: Map<number, { candidate: ImportCandidate; sealed: SealedCapture }>;
   skipped: { index: number; reason: string }[];
   uploaded: boolean;
   busy: boolean;
   timer: ReturnType<typeof setTimeout>;
 }
 
-/** Sessions and exports exist only in memory. Payloads become zeroizable buffers immediately after parsing. */
+/** Sessions exist only in memory. Between requests they retain metadata and envelopes, never plaintext exports. */
 export function createImportHandlers(): HandlersFor<ImportOp> {
   const sessions = new Map<string, ImportSession>();
   const discard = (session: ImportSession): void => {
     clearTimeout(session.timer);
-    for (const row of session.rows.values()) row.payload.dispose();
     session.rows.clear();
     sessions.delete(session.id);
   };
@@ -66,7 +65,6 @@ export function createImportHandlers(): HandlersFor<ImportOp> {
       session.busy = true;
       let plaintext: SecretMaterial | null = null;
       const rows: ImportSession['rows'] = new Map();
-      let adopted = false;
       try {
         plaintext = SecretMaterial.adopt(ctx.components.captureKeys.open(input.sealed, session.id, VAULT_MAX_IMPORT_CIPHERTEXT));
         const parsed = plaintext.use((bytes) => ctx.components.importParser.parse(bytes, session.format));
@@ -75,14 +73,16 @@ export function createImportHandlers(): HandlersFor<ImportOp> {
           parsed.candidates.forEach((candidate, index) => {
             scanMetadata(ctx, [candidate.name, candidate.username, candidate.origin]);
             if (rows.has(candidate.index)) throw new VaultError('invariant_violation');
-            rows.set(candidate.index, { candidate: structuredClone(candidate), payload: SecretMaterial.fromUtf8(JSON.stringify(parsed.payloads[index]!)) });
+            const payload = SecretMaterial.fromUtf8(JSON.stringify(parsed.payloads[index]!));
+            try {
+              const sealed = payload.use((bytes) => sealCapture(bytes, ctx.components.captureKeys.publicKey(), `${session.id}_${candidate.index}`));
+              rows.set(candidate.index, { candidate: structuredClone(candidate), sealed });
+            } finally { payload.dispose(); }
           });
-          for (const row of session.rows.values()) row.payload.dispose();
           session.rows = rows;
           session.skipped = structuredClone(parsed.skipped);
           session.format = parsed.format;
           session.uploaded = true;
-          adopted = true;
           return { data: { importId: session.id, format: parsed.format, candidates: parsed.candidates.map((candidate) => ({
             index: candidate.index, type: candidate.type, name: candidate.name, origin: candidate.origin, originError: candidate.originError ?? null,
             username: candidate.username, hasPassword: candidate.hasPassword, hasTotp: candidate.hasTotp, duplicateOf: candidate.duplicateOf ?? null,
@@ -98,7 +98,6 @@ export function createImportHandlers(): HandlersFor<ImportOp> {
         throw error;
       } finally {
         plaintext?.dispose();
-        if (!adopted) for (const row of rows.values()) row.payload.dispose();
         session.busy = false;
         if (Date.parse(session.expiresAt) <= ctx.clock.now().getTime()) discard(session);
       }
@@ -122,10 +121,12 @@ export function createImportHandlers(): HandlersFor<ImportOp> {
             if (!row.include) { skipped.push({ index: row.index, reason: 'excluded' }); continue; }
             if (ctx.signal.aborted) throw VaultError.reason('vault_unavailable');
             const entry = session.rows.get(row.index)!;
+            let unsealed: SecretMaterial | null = null;
             let adjusted: SecretMaterial | null = null;
             let parsed: ReturnType<typeof parseCapturePayload> | null = null;
             try {
-              const payload = entry.payload.use((bytes) => JSON.parse(bytes.toString('utf8')) as CapturePayload);
+              unsealed = SecretMaterial.adopt(ctx.components.captureKeys.open(entry.sealed, `${session.id}_${row.index}`, VAULT_MAX_IMPORT_CIPHERTEXT));
+              const payload = unsealed.use((bytes) => JSON.parse(bytes.toString('utf8')) as CapturePayload);
               if (row.name !== undefined) payload.name = row.name;
               if (payload.type === 'login') {
                 if (entry.candidate.originError && row.originOverride === undefined) throw VaultError.reason('origin_refused');
@@ -145,7 +146,7 @@ export function createImportHandlers(): HandlersFor<ImportOp> {
               if (error instanceof OriginRefusal || (error instanceof CapturePayloadError && error.code === 'origin_refused')) throw VaultError.reason('origin_refused');
               if (error instanceof CapturePayloadError) throw new VaultError('invalid_input');
               throw error;
-            } finally { parsed?.secret.dispose(); adjusted?.dispose(); }
+            } finally { parsed?.secret.dispose(); adjusted?.dispose(); unsealed?.dispose(); }
           }
           await appendAudit(ctx, tx, 'import.committed', null, { created: created.length, skipped: skipped.length });
           return { data: { importId: session.id, created, skipped, deleteSourceAdvice: true as const } };

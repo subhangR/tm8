@@ -92,7 +92,7 @@ export async function createBrokerServer(options: BrokerServerOptions): Promise<
   const write = (res: ServerResponse, result: BrokerResponse, requestId: string): void => {
     if (res.destroyed || res.writableEnded) return;
     res.writeHead(result.status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store',
-      'x-content-type-options': 'nosniff', 'x-tm8-request-id': requestId, ...result.headers });
+      'x-content-type-options': 'nosniff', ...(result.body === '' ? {} : { 'x-tm8-request-id': requestId }), ...result.headers });
     res.end(result.body);
   };
 

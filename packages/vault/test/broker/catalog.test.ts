@@ -44,6 +44,7 @@ describe('acceptance 1: catalog-generated response boundary', () => {
     } });
     expect(response.status).toBe(500);
     expect(response.text.includes(planted)).toBe(false);
+    expect(JSON.stringify(response.headers).includes(planted)).toBe(false);
     expect((h.components.alerts as RecordingAlertSink).kinds()).toEqual(['canary_detected']);
   });
 });

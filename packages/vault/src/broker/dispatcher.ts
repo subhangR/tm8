@@ -222,7 +222,8 @@ export function createBrokerDispatcher(deps: BrokerDependencies): (request: Brok
 /** Runs on errors as well as successes, before headers or body are written. */
 export function sweepBrokerResponse(response: BrokerResponse, request: Pick<BrokerRequest, 'caller' | 'requestId'>, deps: BrokerDependencies): BrokerResponse {
   try {
-    if (!deps.components.canaries.matches(Buffer.from(response.body, 'utf8'))) return response;
+    if (!deps.components.canaries.matches(Buffer.from(response.body, 'utf8'))
+      && !deps.components.canaries.matches(JSON.stringify(response.headers))) return response;
     try {
       deps.components.alerts.raise({ kind: 'canary_detected', memberId: request.caller.memberId, spaceId: request.caller.spaceId,
         itemId: null, params: {}, at: (deps.clock ?? systemClock).now().toISOString() });
