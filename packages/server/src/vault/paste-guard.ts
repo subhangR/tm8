@@ -35,7 +35,8 @@
  *     placeholder or a reference (`passwordValue`);
  *   - `<secret|token|api_key|...> = | : <value>` and signed-URL signatures when the value is 16 or
  *     more characters with letters and digits, and not a URL, path, placeholder or reference
- *     (`secretValue`). Sharing a signed URL therefore redacts its signature: send the file instead.
+ *     (`secretValue`; a value shaped like an AWS secret key is not taken for a path, `pathLike`).
+ *     Sharing a signed URL therefore redacts its signature: send the file instead.
  * A bare high-entropy string is never redacted: ids, hashes and paths fill ordinary messages.
  */
 import {
@@ -129,9 +130,21 @@ function passwordValue(raw: string, quoted: boolean): boolean {
 function secretValue(raw: string): boolean {
   const value = raw.replace(TRAILING_PUNCTUATION, '');
   if (placeholder(raw, value) || reference(value)) return false;
-  if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(value) || /^(?:~|\.{1,2})?\/[\w./-]+$/u.test(value)
-    || /^[a-z0-9._-]+(?:\/[a-z0-9._-]+){2,}$/u.test(value)) return false;
+  if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(value) || pathLike(value)) return false;
   return [...value].length >= 16 && LETTER.test(value) && DIGIT.test(value);
+}
+
+/** An AWS secret access key's shape, as the detector reads one: 40 characters of the base64 alphabet. */
+const AWS_SECRET_SHAPE = /^[A-Za-z0-9/+=]{40}$/u;
+
+/**
+ * A file path or a resource name: `/etc/tm8/relay.key`, `projects/p/secrets/db`. An AWS secret key can begin
+ * with a slash and then reads as an absolute path, so a value with the key's exact shape and both letter cases
+ * is not taken for one. Before this rule the gate passed over 42 of 4,000 random keys.
+ */
+function pathLike(value: string): boolean {
+  if (AWS_SECRET_SHAPE.test(value) && /[A-Z]/u.test(value) && /[a-z]/u.test(value)) return false;
+  return /^(?:~|\.{1,2})?\/[\w./-]+$/u.test(value) || /^[a-z0-9._-]+(?:\/[a-z0-9._-]+){2,}$/u.test(value);
 }
 
 /**

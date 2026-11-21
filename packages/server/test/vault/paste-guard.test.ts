@@ -86,6 +86,18 @@ describe('paste guard: what it redacts', () => {
     expect(result.kinds).toEqual(['aws_access_key', 'aws_secret_key']);
   });
 
+  it('redacts an AWS secret key in a secret-named assignment, one that begins with a slash included', () => {
+    // A key's 40 characters can begin with a slash and then read like an absolute path: the value gate took
+    // 42 of 4,000 random keys for one before it knew the key's shape.
+    const secret = ['/Kq7Rz2Lp', 'Xv9Wb4Nt', '/Hm3Jc8Fd', 'Gs5Yk1Pw', 'Ue6Ta0'].join('');
+    expect(secret.length).toBe(40);
+    for (const text of [`aws_secret_access_key = ${secret}`, `AWS_SECRET_ACCESS_KEY=${secret}`]) {
+      const result = guard.redact(text);
+      expect(leaks(result.text, secret)).toBe(false);
+      expect(result.kinds).toEqual(['generic_secret_assignment']);
+    }
+  });
+
   const passwords: { name: string; text: (value: string) => string; value: string }[] = [
     { name: 'password is <value>', text: (v) => `the password is ${v}`, value: passwordWord() },
     { name: 'a quoted value of six or more', text: (v) => `pwd: "${v}"`, value: ['let', 'me', 'in'].join('') },
@@ -175,6 +187,8 @@ describe('paste guard: what it leaves alone', () => {
     // Locations, not values.
     'token_url = https://auth.example.com/oauth/token',
     'secret_file: /etc/tm8/vault/relay.key',
+    // A path with an AWS secret key's length and alphabet, in one letter case: still a path.
+    'token_path = /var/lib/tm8/secrets/tokens/relay/keys01',
     'secret_name: projects/p1/secrets/db-password',
     'api_key: short1',
     'token = abcdefghijklmnopqrstuvwxyz',
