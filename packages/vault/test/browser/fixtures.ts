@@ -9,6 +9,11 @@ import { zeroize } from '../../src/secret-material.js';
 
 export const E2E_REASON = 'requires TM8_VAULT_BROWSER_E2E=1 (local Chromium, /proc and SIGKILL harness)';
 export const e2eEnabled = process.env.TM8_VAULT_BROWSER_E2E === '1';
+// Review F06: on a GitHub runner these suites are a release gate. A run that would skip them
+// fails to load instead, so a CI job that drops the switch or its Chromium cannot go green.
+if (!e2eEnabled && process.env.GITHUB_ACTIONS === 'true') {
+  throw new Error(`vault browser suites cannot be skipped on a CI runner: ${E2E_REASON}`);
+}
 
 export async function localServer(handler: (request: IncomingMessage, response: ServerResponse) => void) {
   const server = createServer(handler);

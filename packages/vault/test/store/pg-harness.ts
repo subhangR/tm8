@@ -11,6 +11,11 @@ import type { StoreHarness } from '../support/store-conformance.js';
 const run = promisify(execFile);
 export const PG_REASON = 'TM8_VAULT_PG_URL is unset; requires an isolated PG16 scratch cluster on 127.0.0.1:55400-55499';
 export const PG_ENABLED = Boolean(process.env.TM8_VAULT_PG_URL);
+// Review F06: on a GitHub runner the database security suites are a release gate. Without a
+// scratch cluster they fail to load there, instead of warning and skipping.
+if (!PG_ENABLED && process.env.GITHUB_ACTIONS === 'true') {
+  throw new Error(`vault Postgres suites cannot be skipped on a CI runner: ${PG_REASON}`);
+}
 if (!PG_ENABLED) console.warn(`Vault Postgres tests SKIPPED: ${PG_REASON}`);
 
 /**

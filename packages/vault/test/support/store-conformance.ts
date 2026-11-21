@@ -9,7 +9,7 @@
  * clock: `tx.now`, lazy expiry and audit `at` all come from it.
  */
 import { randomUUID } from 'node:crypto';
-import { afterEach, beforeEach, describe, expect, it, type TestContext } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   AUDIT_GENESIS_HASH,
   AuditUnavailableError,
@@ -57,19 +57,23 @@ import { replayDeletionLedger } from '../../src/store/deletion-ledger.js';
 export interface StoreHarness {
   readonly store: VaultStore;
   readonly clock: FixedClock;
+  /**
+   * Every hook is required (review F06). Optional hooks let a conformance test skip, or drop an
+   * assertion, on a harness that lacks one; now such a harness fails the vault's test typecheck.
+   */
   readonly hooks: {
     /** Every later call fails as if the database went away. */
-    setUnavailable?(on: boolean): void;
+    setUnavailable(on: boolean): void;
     /** Every later audit append fails. */
-    setAuditAppendFailure?(on: boolean): void;
+    setAuditAppendFailure(on: boolean): void;
     /** Edit a stored event behind the chain's back. */
-    tamperAuditEvent?(seq: number, patch: Partial<AuditEventRecord>): Promise<void>;
-    deleteAuditEvent?(seq: number): Promise<void>;
+    tamperAuditEvent(seq: number, patch: Partial<AuditEventRecord>): Promise<void>;
+    deleteAuditEvent(seq: number): Promise<void>;
     /** A database backup and restore (test 17). */
-    snapshot?(): Promise<unknown>;
-    restore?(snapshot: unknown): Promise<void>;
+    snapshot(): Promise<unknown>;
+    restore(snapshot: unknown): Promise<void>;
     /** Stored secret versions for an item, whatever its state. */
-    secretVersionCount?(itemId: string): Promise<number>;
+    secretVersionCount(itemId: string): Promise<number>;
   };
   dispose(): Promise<void>;
 }
@@ -244,7 +248,7 @@ export function describeStoreConformance(name: string, makeHarness: () => Promis
         const live = await as(testCaller, (tx) => tx.items.currentSecret(item.id));
         expect(live?.version).toBe(2);
         expect(Buffer.compare(live!.ciphertext, next.ciphertext)).toBe(0);
-        if (h.hooks.secretVersionCount) expect(await h.hooks.secretVersionCount(item.id)).toBe(1);
+        expect(await h.hooks.secretVersionCount(item.id)).toBe(1);
 
         // What the store hands out is a copy.
         live!.ciphertext.fill(0);
@@ -337,7 +341,7 @@ export function describeStoreConformance(name: string, makeHarness: () => Promis
         const dead = await as(testCaller, (tx) => tx.items.tombstone(item.id, item.version, actorOf(testCaller)));
         expect(dead).toMatchObject({ state: 'tombstoned', tombstonedAt: h.clock.iso(), version: item.version + 1 });
         expect(await as(testCaller, (tx) => tx.items.currentSecret(item.id))).toBeNull();
-        if (h.hooks.secretVersionCount) expect(await h.hooks.secretVersionCount(item.id)).toBe(0);
+        expect(await h.hooks.secretVersionCount(item.id)).toBe(0);
         const grants = await as(testCaller, (tx) => tx.grants.listForItem(item.id));
         expect(grants.find((row) => row.id === grant.id)).toMatchObject({ revokedAt: h.clock.iso(), revokedBy: actorOf(testCaller) });
         expect(await as(otherCaller, (tx) => tx.items.get(item.id))).toBeNull();
@@ -361,8 +365,7 @@ export function describeStoreConformance(name: string, makeHarness: () => Promis
         expect(await sys('deletionLedger', (tx) => tx.items.forceTombstone(entry))).toBe(false);
       });
 
-      it('test 17: restoring a backup never revives a deleted item', async (ctx: TestContext) => {
-        if (!h.hooks.snapshot || !h.hooks.restore) return ctx.skip();
+      it('test 17: restoring a backup never revives a deleted item', async () => {
         const ledger = new MemoryDeletionLedger();
         const item = await seed();
         const grant = await share(item.id);
@@ -396,7 +399,7 @@ export function describeStoreConformance(name: string, makeHarness: () => Promis
         expect(await as(testCaller, (tx) => tx.items.currentSecret(item.id))).toBeNull();
         expect(await as(otherCaller, (tx) => tx.items.get(item.id))).toBeNull();
         expect((await as(testCaller, (tx) => tx.grants.get(grant.id)))?.revokedBy).toEqual(SYSTEM_ACTOR);
-        if (h.hooks.secretVersionCount) expect(await h.hooks.secretVersionCount(item.id)).toBe(0);
+        expect(await h.hooks.secretVersionCount(item.id)).toBe(0);
         const events = (await as(testCaller, (tx) => tx.audit.list({ action: 'item.tombstone_replayed' }))).rows;
         expect(events.map((row) => row.itemId)).toEqual([item.id]);
         expect(await replay()).toBe(0);
@@ -449,8 +452,7 @@ export function describeStoreConformance(name: string, makeHarness: () => Promis
         for (const row of [approved, pending]) expect(await sys('deletionLedger', (tx) => tx.approvals.forceConsume(consume(row.id)))).toBe(false);
       });
 
-      it('test 17: restoring a backup never revives a revoked grant or a consumed approval', async (ctx: TestContext) => {
-        if (!h.hooks.snapshot || !h.hooks.restore) return ctx.skip();
+      it('test 17: restoring a backup never revives a revoked grant or a consumed approval', async () => {
         const ledger = new MemoryDeletionLedger();
         const item = await seed();
         const grant = await share(item.id);
@@ -875,8 +877,7 @@ export function describeStoreConformance(name: string, makeHarness: () => Promis
         expect(await sys('audit', (tx) => tx.audit.latestCheckpoint())).toEqual(checkpoint);
       });
 
-      it('verification finds an edited or a deleted event', async (ctx: TestContext) => {
-        if (!h.hooks.tamperAuditEvent || !h.hooks.deleteAuditEvent) return ctx.skip();
+      it('verification finds an edited or a deleted event', async () => {
         for (const action of ['session.signed_in', 'session.refreshed', 'session.ended', 'session.revoked']) {
           await as(testCaller, (tx) => tx.audit.append(event(testCaller, action, null, { n: 1 })));
         }
@@ -913,9 +914,8 @@ export function describeStoreConformance(name: string, makeHarness: () => Promis
         expect(at).toBe(h.clock.iso(-1000));
       });
 
-      it('an unavailable store fails closed and the transaction is dead', async (ctx: TestContext) => {
+      it('an unavailable store fails closed and the transaction is dead', async () => {
         const setUnavailable = h.hooks.setUnavailable;
-        if (!setUnavailable) return ctx.skip();
         const item = newLogin();
         const outcome = as(testCaller, async (tx) => {
           await tx.items.create(item, fakeSecret());
@@ -933,9 +933,8 @@ export function describeStoreConformance(name: string, makeHarness: () => Promis
         setUnavailable(false);
       });
 
-      it('an audit outage rolls the action back (test 18)', async (ctx: TestContext) => {
+      it('an audit outage rolls the action back (test 18)', async () => {
         const setAuditAppendFailure = h.hooks.setAuditAppendFailure;
-        if (!setAuditAppendFailure) return ctx.skip();
         const item = await seed();
         setAuditAppendFailure(true);
         const operationId = randomUUID();
