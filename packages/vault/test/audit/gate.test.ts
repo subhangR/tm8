@@ -327,6 +327,36 @@ describe('VaultAuditGate with a retained anchor (review F01)', () => {
     expect(kit.failures).toEqual([]);
   });
 
+  it('review addendum 2, C2: a flood of requests waits behind at most one walk of each kind, each begun after it was asked', async () => {
+    const kit = anchorKit(); const store = new MemoryVaultStore();
+    for (let n = 0; n < 3; n += 1) await append(store, n);
+    await kit.checkpointer(store).checkpoint();
+    const gate = new VaultAuditGate({ store, anchor: kit.anchor() });
+    let release!: () => void;
+    kit.faults.beforeLatest = () => new Promise<void>((resolve) => { release = resolve; });
+    const first = gate.verifyIncremental();
+    while (kit.latestCalls.length === 0) await new Promise((resolve) => setImmediate(resolve));
+    // The first walk has started, so nothing that asks from now on may share it.
+    const flood = [
+      ...Array.from({ length: 10 }, () => gate.verifyIncremental()),
+      ...Array.from({ length: 10 }, () => gate.verifyAll()),
+      ...Array.from({ length: 10 }, () => gate.verifyIncremental()),
+    ];
+    // The next walk to start appends an event before it reads the chain.
+    kit.faults.beforeLatest = async () => { await append(store, 3); };
+    release();
+    const [head, ...rest] = await Promise.all([first, ...flood]);
+    expect(head).toMatchObject({ status: 'verified', checkedThroughSeq: 3 });
+    for (const verification of rest) expect(verification).toMatchObject({ status: 'verified', checkedThroughSeq: 4 });
+    // One incremental and one full walk served all thirty, and each caller has its own result.
+    expect(kit.latestCalls).toHaveLength(3);
+    expect(new Set(rest).size).toBe(rest.length);
+    // Nothing stays queued: the next request walks again.
+    expect(await gate.verifyIncremental()).toMatchObject({ status: 'verified', checkedThroughSeq: 4 });
+    expect(kit.latestCalls).toHaveLength(4);
+    expect(kit.failures).toEqual([]);
+  });
+
   it('refuses an anchor budget that is not a positive integer; a failing log cannot change an outcome', async () => {
     const kit = anchorKit(); const store = new MemoryVaultStore();
     for (const budgetMs of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {

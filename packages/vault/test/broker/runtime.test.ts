@@ -10,7 +10,9 @@ import { signAttestation } from '../../src/relay/attestation.js';
 import { BROKER_BODY_LIMITS, createBrokerServer } from '../../src/broker/server.js';
 import { startBroker } from '../../src/broker/start.js';
 import { buildCanarySet } from '../../src/canary/index.js';
-import { RecordingAlertSink, fakeStepUpProof, newLogin, seedItem, testBroker, testCaller } from '../support/kit.js';
+import { BROKER_RATE_LIMITS, BROKER_SHARED_LIMITS } from '../../src/broker/rate-limit.js';
+import { RECOVERY_CODE_COUNT } from '../../src/owner-auth/codes.js';
+import { RecordingAlertSink, agentOf, fakeStepUpProof, makeCaller, newLogin, otherCaller, seedItem, testBroker, testCaller } from '../support/kit.js';
 import { ID, ORIGIN, harness, stubHandlers, validInput, withoutRequestId, type Harness } from './support.js';
 
 const opened: Harness[] = [];
@@ -159,6 +161,56 @@ describe('authority, modes and output boundary', () => {
     expect(response.status).toBe(429);
     expect(Number(response.headers['retry-after'])).toBeGreaterThan(0);
     expect((await h.send('vault.status')).status).toBe(200);
+  });
+  it("review addendum 2, C2: an agent's refused calls do not use up its member's sign-in or kill-switch budget", async () => {
+    const h = await setup({ realCore: false });
+    const agent = agentOf(testCaller);
+    for (const [op, burst] of [['vault.session.begin', BROKER_RATE_LIMITS.auth.capacity], ['vault.grants.revoke', BROKER_RATE_LIMITS.command.capacity]] as const) {
+      for (let n = 0; n < burst; n += 1) expect((await h.send(op, { caller: agent })).status, op).toBe(403);
+      expect((await h.send(op, { caller: agent })).status, op).toBe(429);
+      expect((await h.send(op)).status, op).toBe(200);
+    }
+  });
+  it("review addendum 2, C2: one member's agents cannot use up another member's capture links through the host's shared address", async () => {
+    const h = await setup({ realCore: false });
+    const mine = agentOf({ ...testCaller, ip: '127.0.0.1' });
+    const theirs = agentOf({ ...otherCaller, ip: '127.0.0.1' });
+    for (let n = 0; n < BROKER_RATE_LIMITS.capture.capacity; n += 1) expect((await h.send('vault.captureLinks.create', { caller: mine })).status).toBe(200);
+    expect((await h.send('vault.captureLinks.create', { caller: mine })).status).toBe(429);
+    expect((await h.send('vault.captureLinks.create', { caller: theirs })).status).toBe(200);
+  });
+  it('review addendum 2, C2: full audit verification has its own, stricter budget', async () => {
+    const h = await setup({ realCore: false });
+    for (let n = 0; n < BROKER_RATE_LIMITS.verify.capacity; n += 1) expect((await h.send('vault.audit.verify')).status).toBe(200);
+    const refused = await h.send('vault.audit.verify');
+    expect(refused.status).toBe(429);
+    expect(refused.headers['retry-after']).toBe(String(Math.ceil(1 / BROKER_RATE_LIMITS.verify.refillPerSecond)));
+    expect((await h.send('vault.audit.list')).status).toBe(200);
+  });
+  it('review addendum 2, C2: Argon2id work has one budget for the whole broker, and a refused request costs it nothing', async () => {
+    const h = await setup({ realCore: false });
+    const { capacity, refillPerSecond } = BROKER_SHARED_LIMITS.kdf;
+    // Refused before the charge: an agent, no attested origin, a failed step-up.
+    for (let n = 0; n < 5; n += 1) expect((await h.send('vault.passkeys.registerBegin', { caller: agentOf(testCaller) })).status).toBe(403);
+    for (let n = 0; n < 3; n += 1) expect((await h.send('vault.passkeys.registerBegin', { origin: null })).status).toBe(403);
+    h.auth.mode = 'invalid';
+    expect((await h.send('vault.recovery.codes.create')).json.error.details.reason).toBe('step_up_invalid');
+    h.auth.mode = 'ok';
+    // A passkey added under step-up verifies no code.
+    const underStepUp = { clientMutationId: randomUUID(), name: 'test-only', stepUp: fakeStepUpProof() };
+    expect((await h.send('vault.passkeys.registerBegin', { input: underStepUp })).status).toBe(200);
+    // So the whole budget is left: one code each for `capacity` people at different addresses.
+    const person = (n: number) => makeCaller({ memberId: `00000000-0000-4000-8000-${String(100 + n).padStart(12, '0')}`, ip: `192.0.2.${100 + n}` });
+    for (let n = 0; n < capacity; n += 1) expect((await h.send('vault.passkeys.registerBegin', { caller: person(n) })).status, String(n)).toBe(200);
+    const refused = await h.send('vault.passkeys.registerBegin', { caller: person(capacity) });
+    expect(refused.status).toBe(429);
+    expect(refused.headers['retry-after']).toBe(String(Math.ceil(1 / refillPerSecond)));
+    // New recovery codes wait until the budget holds a hash for every code.
+    h.clock.advanceSeconds((RECOVERY_CODE_COUNT - 1) / refillPerSecond);
+    expect((await h.send('vault.recovery.codes.create')).status).toBe(429);
+    h.clock.advanceSeconds(2 / refillPerSecond);
+    expect((await h.send('vault.recovery.codes.create')).status).toBe(200);
+    expect((await h.send('vault.recovery.codes.create')).status).toBe(429);
   });
   it('rejects a schema-invalid result before emitting any of its fields', async () => {
     const handlers = stubHandlers();

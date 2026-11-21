@@ -1,9 +1,12 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import { setImmediate as nextTurn } from 'node:timers/promises';
 import { argon2id, argon2Verify } from 'hash-wasm';
 import { SYSTEM_ACTOR, VaultError, type CodeRecord, type VaultStore } from '../core-types.js';
 import { expiresAfter } from './primitives.js';
 
 export const CODE_ARGON2 = Object.freeze({ memorySize: 65_536, iterations: 3, parallelism: 1, hashLength: 32 });
+/** VaultRecoveryCodesSchema requires exactly this many. broker/rate-limit.ts kdfCost charges one per hash. */
+export const RECOVERY_CODE_COUNT = 10;
 function prefix(id: string): string {
   return id.replaceAll('-', '').slice(-12);
 }
@@ -37,7 +40,11 @@ const DUMMY_HASH = `$argon2id$v=19$m=65536,t=3,p=1$${'A'.repeat(22)}$${'A'.repea
 export async function newCodeBatch(count: number): Promise<Awaited<ReturnType<typeof newCode>>[]> {
   for (;;) {
     const fresh: Awaited<ReturnType<typeof newCode>>[] = [];
-    for (let i = 0; i < count; i += 1) fresh.push(await newCode());
+    for (let i = 0; i < count; i += 1) {
+      // Each hash holds the event loop (review addendum 2, C2): let waiting requests run between them.
+      if (i > 0) await nextTurn();
+      fresh.push(await newCode());
+    }
     if (new Set(fresh.map((row) => prefix(row.id))).size === count) return fresh;
   }
 }

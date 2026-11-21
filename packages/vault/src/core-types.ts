@@ -999,9 +999,10 @@ export interface AuditGate {
    * Verifies from the last verified seq to the head, and with an anchor checks
    * the head the sink itself retains. A break, a rollback, a conflict or an
    * unverifiable anchor trips the gate until an operator restarts the broker.
+   * Concurrent requests may share one verification that began after each of them asked.
    */
   verifyIncremental(): Promise<AuditVerification>;
-  /** Full walk from seq 1 (`vault.audit.verify`, and the broker's periodic full verification). */
+  /** Full walk from seq 1 (`vault.audit.verify`, and the broker's periodic full verification). Shared like verifyIncremental. */
   verifyAll(): Promise<AuditVerification>;
   status(): 'ok' | 'unavailable' | 'disabled';
 }

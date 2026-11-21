@@ -9,7 +9,7 @@ import {
   type OwnerAuth, type VaultCaller, type VaultCookies, type VaultHandlers, type VaultSetCookie, type VaultStore,
 } from '../core-types.js';
 import { KmsUnavailableError } from '../crypto/kms.js';
-import { BrokerRateLimiter, rateClass } from './rate-limit.js';
+import { BrokerRateLimiter, kdfCost, rateClass } from './rate-limit.js';
 import { matchVaultRoute, type VaultRoute } from '../relay/routes.js';
 
 /** The relay and the broker share one route table (relay/routes.ts). */
@@ -187,6 +187,9 @@ export function createBrokerDispatcher(deps: BrokerDependencies): (request: Brok
         const count = await store.transaction(memberScope(request.caller), (tx) => tx.items.countOwned());
         if (count >= config.preReview.maxItemsPerMember) throw VaultError.reason('pre_review_limit');
       }
+      // Review addendum 2, C2: charged after every authority check, so a refused request costs the shared budget nothing.
+      const kdf = kdfCost(row.name, input);
+      if (kdf > 0) limiter.takeShared('kdf', kdf);
       if (request.signal.aborted) throw VaultError.reason('vault_unavailable');
       const ctx: HandlerContext = { op: row.name, requestId: request.requestId, caller: request.caller, actor: actorOf(request.caller),
         config, clock, store, auth, audit, components, ownerSession, stepUp, cookies, signal: request.signal };

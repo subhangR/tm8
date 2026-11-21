@@ -46,6 +46,9 @@ type Outcome =
   | { kind: 'verified'; cursor: ChainCursor; oldestUnanchoredAt: number | null }
   | { kind: 'broken'; verification: AuditVerification; reason: AuditAnchorFailure | null };
 
+/** A queued verification that has not started yet, and whether it walks from seq 1. */
+interface QueuedVerification { all: boolean; run: Promise<AuditVerification> }
+
 /**
  * A chain break or an anchor failure that is evidence is sticky for the lifetime
  * of this instance. Outages cool down; an anchor outage is bounded by the budget.
@@ -66,6 +69,8 @@ export class VaultAuditGate implements AuditGate {
   #broken: AuditVerification | null = null;
   #verified: ChainCursor = { seq: 0, hash: AUDIT_GENESIS_HASH };
   #tail: Promise<unknown> = Promise.resolve();
+  /** The newest queued verification that has not started. Requests it covers join it. */
+  #pending: QueuedVerification | null = null;
   /** The newest retained seq this instance has verified; -1 before any. It never goes back. */
   #anchoredSeq = -1;
   /** Clock time of the last verification whose anchor read, signature and containment all passed. */
@@ -111,10 +116,28 @@ export class VaultAuditGate implements AuditGate {
     return now - this.#anchorCheckedAt > budget || (this.#oldestUnanchoredAt !== null && now - this.#oldestUnanchoredAt > budget);
   }
 
+  /**
+   * Verifications run one at a time. A request joins the newest queued one that has not started, if
+   * that one walks at least as far: a full walk covers either kind, an incremental one covers only
+   * another incremental request. So however many requests arrive, at most one walk of each kind
+   * waits behind the one running, and the maintenance tick is never further back than that (review
+   * addendum 2, C2). A request never joins a walk that has already started, so each caller still
+   * gets a verification that began after it asked, and each gets its own copy.
+   */
   #queue(all: boolean): Promise<AuditVerification> {
-    const run = this.#tail.then(() => this.#verify(all));
-    this.#tail = run.then(() => undefined, () => undefined);
-    return run;
+    let entry = this.#pending;
+    if (!entry || (all && !entry.all)) {
+      const queued: QueuedVerification = {
+        all,
+        run: this.#tail.then(() => {
+          if (this.#pending === queued) this.#pending = null;
+          return this.#verify(all);
+        }),
+      };
+      this.#tail = queued.run.then(() => undefined, () => undefined);
+      this.#pending = entry = queued;
+    }
+    return entry.run.then((verification) => ({ ...verification }));
   }
 
   #report(reason: AuditAnchorFailure): void {

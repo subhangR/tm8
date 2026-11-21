@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { VAULT_OPERATIONS, VAULT_OUTPUT_SCHEMAS } from '@tm8/contract';
 import { BROKER_ENV_KNOBS, BrokerConfigError, loadBrokerConfig } from '../../src/broker/config.js';
-import { BrokerRateLimiter, BROKER_RATE_LIMITS } from '../../src/broker/rate-limit.js';
+import { BrokerRateLimiter, BROKER_RATE_LIMITS, BROKER_SHARED_LIMITS, kdfCost, rateClass } from '../../src/broker/rate-limit.js';
 import { parseVaultCookies, serializeVaultCookie } from '../../src/broker/dispatcher.js';
-import { FixedClock, makeCaller, testCaller } from '../support/kit.js';
+import { RECOVERY_CODE_COUNT } from '../../src/owner-auth/codes.js';
+import { FixedClock, agentOf, makeCaller, testCaller } from '../support/kit.js';
+import { sourceFiles } from '../support/sql-sweep.js';
 
 describe('broker config and closed runtime settings', () => {
   it('defaults to off and spend stays false in every admitted mode', () => {
@@ -71,5 +77,94 @@ describe('cookies and token buckets', () => {
     expect(() => limiter.take(testCaller, 'read')).not.toThrow();
     clock.advanceSeconds(6);
     expect(() => limiter.take(testCaller, 'auth')).not.toThrow();
+  });
+  it("review addendum 2, C2: an agent has its own buckets, so it cannot use up its member's sign-in, capture or kill-switch budget", () => {
+    const limiter = new BrokerRateLimiter(new FixedClock());
+    const agent = agentOf(testCaller);
+    for (const group of ['auth', 'capture', 'command', 'read', 'verify'] as const) {
+      for (let n = 0; n < BROKER_RATE_LIMITS[group].capacity; n += 1) limiter.take(agent, group);
+      expect(() => limiter.take(agent, group), group).toThrow('rate_limited');
+      // Every agent session of one member shares that member's agent budget.
+      expect(() => limiter.take(agentOf(testCaller), group), group).toThrow('rate_limited');
+      // The member's browser does not.
+      expect(() => limiter.take(testCaller, group), group).not.toThrow();
+    }
+  });
+  it("review addendum 2, C2: agents share the host's address, so they are not limited by it; humans are", () => {
+    const limiter = new BrokerRateLimiter(new FixedClock());
+    const loopback = '127.0.0.1';
+    const mine = agentOf(makeCaller({ ip: loopback }));
+    const theirs = agentOf(makeCaller({ memberId: '00000000-0000-4000-8000-000000000056', ip: loopback }));
+    for (let n = 0; n < BROKER_RATE_LIMITS.capture.capacity; n += 1) limiter.take(mine, 'capture');
+    expect(() => limiter.take(mine, 'capture')).toThrow('rate_limited');
+    expect(() => limiter.take(theirs, 'capture')).not.toThrow();
+    // Two people behind one address still share its sign-in and capture budgets.
+    const human = makeCaller({ ip: loopback });
+    const neighbour = makeCaller({ memberId: '00000000-0000-4000-8000-000000000057', ip: loopback });
+    for (const group of ['auth', 'capture'] as const) {
+      for (let n = 0; n < BROKER_RATE_LIMITS[group].capacity; n += 1) limiter.take(human, group);
+      expect(() => limiter.take(neighbour, group), group).toThrow('rate_limited');
+    }
+  });
+  it('review addendum 2, C2: a full audit verification has the strictest read budget', () => {
+    expect(rateClass('vault.audit.verify', true)).toBe('verify');
+    expect(rateClass('vault.audit.list', true)).toBe('read');
+    expect(BROKER_RATE_LIMITS.verify.capacity).toBeLessThan(BROKER_RATE_LIMITS.read.capacity);
+    expect(BROKER_RATE_LIMITS.verify.refillPerSecond).toBeLessThan(BROKER_RATE_LIMITS.read.refillPerSecond);
+    const clock = new FixedClock();
+    const limiter = new BrokerRateLimiter(clock);
+    for (let n = 0; n < BROKER_RATE_LIMITS.verify.capacity; n += 1) limiter.take(testCaller, 'verify');
+    expect(() => limiter.take(testCaller, 'verify')).toThrow('rate_limited');
+    expect(() => limiter.take(testCaller, 'read')).not.toThrow();
+    clock.advanceSeconds(1 / BROKER_RATE_LIMITS.verify.refillPerSecond);
+    expect(() => limiter.take(testCaller, 'verify')).not.toThrow();
+  });
+  it('review addendum 2, C2: Argon2id work is charged per hash to one budget for the whole broker', () => {
+    expect(kdfCost('vault.recovery.codes.create', {})).toBe(RECOVERY_CODE_COUNT);
+    // The charge is the batch the contract requires.
+    const batch = (n: number) => ({ codes: Array.from({ length: n }, (_, i) => `test-only-${i}`), createdAt: new Date(0).toISOString() });
+    const result = VAULT_OUTPUT_SCHEMAS['vault.recovery.codes.create'];
+    expect(result.safeParse(batch(RECOVERY_CODE_COUNT)).success).toBe(true);
+    for (const n of [RECOVERY_CODE_COUNT - 1, RECOVERY_CODE_COUNT + 1]) expect(result.safeParse(batch(n)).success, String(n)).toBe(false);
+    expect(kdfCost('vault.passkeys.registerBegin', { enrollmentCode: 'test-only' })).toBe(1);
+    expect(kdfCost('vault.passkeys.registerBegin', { recoveryCode: 'test-only' })).toBe(1);
+    expect(kdfCost('vault.passkeys.registerBegin', { stepUp: {} })).toBe(0);
+    for (const row of VAULT_OPERATIONS) {
+      if (row.name === 'vault.recovery.codes.create' || row.name === 'vault.passkeys.registerBegin') continue;
+      expect(kdfCost(row.name, { enrollmentCode: 'test-only', recoveryCode: 'test-only' }), row.name).toBe(0);
+    }
+    const clock = new FixedClock();
+    const limiter = new BrokerRateLimiter(clock);
+    const { capacity, refillPerSecond } = BROKER_SHARED_LIMITS.kdf;
+    limiter.takeShared('kdf', RECOVERY_CODE_COUNT);
+    for (let n = RECOVERY_CODE_COUNT; n < capacity; n += 1) limiter.takeShared('kdf', 1);
+    let refusal: unknown;
+    try { limiter.takeShared('kdf', 1); } catch (error) { refusal = error; }
+    expect(refusal).toMatchObject({ code: 'rate_limited', extra: { retryAfterSeconds: Math.ceil(1 / refillPerSecond) } });
+    // A batch waits for the whole of its cost.
+    clock.advanceSeconds((RECOVERY_CODE_COUNT - 1) / refillPerSecond);
+    expect(() => limiter.takeShared('kdf', RECOVERY_CODE_COUNT)).toThrow('rate_limited');
+    clock.advanceSeconds(2 / refillPerSecond);
+    expect(() => limiter.takeShared('kdf', RECOVERY_CODE_COUNT)).not.toThrow();
+    for (const cost of [0, -1, 1.5, Number.NaN, capacity + 1]) expect(() => limiter.takeShared('kdf', cost), String(cost)).toThrow('invalid rate cost');
+    expect(() => new BrokerRateLimiter(clock, BROKER_RATE_LIMITS, 100_000, { kdf: { capacity: RECOVERY_CODE_COUNT - 1, refillPerSecond: 1 } }))
+      .toThrow('invalid rate limit');
+    expect(() => new BrokerRateLimiter(clock, BROKER_RATE_LIMITS, 100_000, { kdf: { capacity: 20, refillPerSecond: 0 } })).toThrow('invalid rate limit');
+  });
+  it('review addendum 2, C2: only the two charged operations reach Argon2id through the API', () => {
+    const src = fileURLToPath(new URL('../../src', import.meta.url));
+    const calls = sourceFiles(src).filter((file) => !file.endsWith('/owner-auth/codes.ts')).flatMap((file) =>
+      [...readFileSync(file, 'utf8').matchAll(/\b(findCode|newCodeBatch|newCode|mintEnrollmentCode|argon2id|argon2Verify|argon2i|argon2d|bcrypt|scrypt\w*|pbkdf2\w*)\(/g)]
+        .map((match) => `${relative(src, file)} ${match[1]}`));
+    // The enroll CLI is out of band: a broker operator runs it, never an operation handler.
+    expect(calls.sort()).toEqual(['owner-auth/enroll-cli.ts mintEnrollmentCode', 'owner-auth/handlers.ts findCode', 'owner-auth/handlers.ts newCodeBatch']);
+    const handlers = readFileSync(`${src}/owner-auth/handlers.ts`, 'utf8');
+    const body = (op: string) => {
+      const start = handlers.indexOf(`'${op}': async`);
+      const next = handlers.slice(start + 1).search(/\n {4}'vault\./);
+      return handlers.slice(start, next < 0 ? undefined : start + 1 + next);
+    };
+    expect(body('vault.passkeys.registerBegin')).toContain('await findCode(');
+    expect(body('vault.recovery.codes.create')).toContain('await newCodeBatch(RECOVERY_CODE_COUNT)');
   });
 });

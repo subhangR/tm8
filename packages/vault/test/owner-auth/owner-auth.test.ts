@@ -22,7 +22,7 @@ import { RecordingStore } from './recording-store.js';
 
 vi.mock('hash-wasm', async (importOriginal) => {
   const actual = await importOriginal<typeof import('hash-wasm')>();
-  return { ...actual, argon2Verify: vi.fn(actual.argon2Verify) };
+  return { ...actual, argon2id: vi.fn(actual.argon2id), argon2Verify: vi.fn(actual.argon2Verify) };
 });
 
 type WithOptionalMutation<T> = T extends unknown ? Omit<T, 'clientMutationId'> & { clientMutationId?: string } : never;
@@ -152,6 +152,16 @@ describe('registration and out-of-band codes', () => {
     expect(new Set(records.map((row) => row.code.split('.')[0])).size).toBe(2);
     expect(records.every((row) => Buffer.from(row.code.split('.')[1]!, 'base64url').length >= 10)).toBe(true);
   }, 30_000);
+
+  it('review addendum 2, C2: a batch of new codes lets waiting requests run between its hashes', async () => {
+    const order: string[] = [];
+    const hash = vi.mocked(argon.argon2id);
+    for (let n = 0; n < 3; n += 1) hash.mockImplementationOnce(async () => { order.push('hash'); return 'test-only-hash'; });
+    const batch = newCodeBatch(3);
+    setImmediate(() => order.push('waiting request'));
+    expect(await batch).toHaveLength(3);
+    expect(order).toEqual(['hash', 'waiting request', 'hash', 'hash']);
+  });
 
   it('requires exactly one authorization, a live owner session and a correctly bound step-up', async () => {
     const h = harness();

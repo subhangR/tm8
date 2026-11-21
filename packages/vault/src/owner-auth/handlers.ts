@@ -14,7 +14,7 @@ import {
   type PasskeyRecord, type VaultSessionRecord, type VaultSetCookie, type VaultTx,
 } from '../core-types.js';
 import { bindingHash, matchesChallenge, verifyAssertion } from './auth.js';
-import { findCode, newCodeBatch } from './codes.js';
+import { RECOVERY_CODE_COUNT, findCode, newCodeBatch } from './codes.js';
 import { audit, expiresAfter, liveSession, randomToken, sha256, validToken } from './primitives.js';
 
 function owner(ctx: HandlerContext): OwnerSession {
@@ -313,7 +313,7 @@ export function createOwnerAuthHandlers(): HandlersFor<OwnerAuthOp> {
       owner(ctx);
       if (!ctx.stepUp) throw VaultError.reason('step_up_required');
       // Sequential hashing bounds peak memory at 64 MiB per request.
-      const fresh = await newCodeBatch(10);
+      const fresh = await newCodeBatch(RECOVERY_CODE_COUNT);
       const createdAt = await ctx.store.transaction(memberScope(ctx.caller), async (tx) => {
         await tx.recoveryCodes.replaceAll(fresh.map(({ id, hash }) => ({ id, hash })));
         await audit(tx, ctx.caller, 'recovery.codes_created');
