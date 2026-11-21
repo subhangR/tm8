@@ -22,6 +22,7 @@ export const VAULT_FIXTURE_IDS = {
   capture: '77777777-7777-4777-8777-777777777777',
   challenge: '88888888-8888-4888-8888-888888888888',
   operation: '99999999-9999-4999-8999-999999999999',
+  space: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
 } as const;
 
 export interface VaultFixtureOptions {
@@ -33,6 +34,8 @@ export interface VaultFixtureOptions {
   authenticator?: VaultAuthenticator;
   responses?: Partial<Record<VaultOperationName, unknown>>;
   errors?: Partial<Record<VaultOperationName, unknown>>;
+  /** The transport's space; null is a single-membership caller. */
+  spaceId?: string | null;
 }
 
 export function createVaultFixture(options: VaultFixtureOptions = {}) {
@@ -99,7 +102,9 @@ export function createVaultFixture(options: VaultFixtureOptions = {}) {
   const missing = () => { throw { code: 'not_found' }; };
   const find = <T extends { id: string }>(rows: T[], id: string | undefined): T => rows.find((row) => row.id === id) ?? missing();
 
+  const spaceId = options.spaceId === undefined ? ids.space : options.spaceId;
   const transport: VaultTransport = {
+    spaceId,
     async call<T>(op: VaultOperationName, opts?: VaultCallOptions): Promise<T> {
       // No returned recovery-code payload is retained by the fixture.
       const body = (opts?.body ?? {}) as Record<string, unknown>;
@@ -119,7 +124,7 @@ export function createVaultFixture(options: VaultFixtureOptions = {}) {
         case 'vault.items.activity': output = { itemId: find(items, opts?.params?.itemId).id, windowDays: 7,
           uses: [{ actor, fills: 2, apiCalls: 1, origins: ['https://github.com'], hosts: [], lastAt: at }], recent: events }; break;
         case 'vault.captureLinks.create': output = { captureId: ids.capture,
-          url: `${location.origin}/vault/capture/${ids.capture}#t=${'f'.repeat(43)}`,
+          url: `${location.origin}/vault/capture/${ids.capture}#t=${'f'.repeat(43)}&s=${spaceId ?? ids.space}`,
           itemType: body.itemType, purpose: body.purpose, expiresAt: future(600_000) }; break;
         case 'vault.approvals.list': output = { approvals, nextCursor: null }; break;
         case 'vault.approvals.get': output = find(approvals, opts?.params?.approvalId); break;

@@ -178,7 +178,7 @@ describe('import page', () => {
     h.win.document.querySelector<HTMLButtonElement>('[data-cancel]')!.click(); await state(h, 'cancelled');
     release!(response({ importId: h.importId, candidates: [], skipped: [], expiresAt: new Date(Date.now() + 10000).toISOString() }));
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(h.win.document.querySelector('#vault-page')?.dataset.state).toBe('cancelled');
+    expect(h.win.document.querySelector<HTMLElement>('#vault-page')?.dataset.state).toBe('cancelled');
     expect(h.requests.some((request) => request.operation === 'vault.imports.commit')).toBe(false);
   });
 
@@ -190,7 +190,7 @@ describe('import page', () => {
     h.win.document.querySelector<HTMLButtonElement>('[data-cancel]')!.click(); await state(h, 'cancelled');
     release!(response({ importId: h.importId, expiresAt: new Date(Date.now() + 10000).toISOString(), publicKey: h.broker.publicKey(), maxCiphertextBytes: 8 * 1024 * 1024 }));
     await vi.waitFor(() => expect(h.requests.at(-1)?.operation).toBe('vault.imports.cancel'));
-    expect(h.win.document.querySelector('#vault-page')?.dataset.state).toBe('cancelled');
+    expect(h.win.document.querySelector<HTMLElement>('#vault-page')?.dataset.state).toBe('cancelled');
   });
 
   it('aborts a pending authenticator when the owner cancels the import', async () => {
@@ -206,6 +206,6 @@ describe('import page', () => {
     expect(signal!.aborted).toBe(true); release!();
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(h.requests.some((request) => request.operation === 'vault.imports.commit')).toBe(false);
-    expect(h.win.document.querySelector('#vault-page')?.dataset.state).toBe('cancelled');
+    expect(h.win.document.querySelector<HTMLElement>('#vault-page')?.dataset.state).toBe('cancelled');
   });
 });

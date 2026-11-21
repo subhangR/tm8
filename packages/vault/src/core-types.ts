@@ -1059,7 +1059,7 @@ export interface BrokerConfig {
   mode: VaultMode;
   /** `passed` only after the independent review AND the pen test. `production` mode refuses to start without it. */
   reviewGate: 'open' | 'passed';
-  /** The tm8 public origin: capture links are `${publicOrigin}/vault/capture/<id>#t=<token>`. */
+  /** The tm8 public origin: capture links are `${publicOrigin}/vault/capture/<id>#t=<token>&s=<spaceId>`. */
   publicOrigin: string;
   webauthn: { rpId: string; rpName: string; origins: string[] };
   features: { capture: boolean; fill: boolean; callApi: boolean; spend: false; import: boolean; grants: boolean };

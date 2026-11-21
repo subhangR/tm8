@@ -11,10 +11,10 @@ import { errorCopy, PageError } from './errors.js';
 import { buildPayload, CAPTURE_FIELDS } from './payload.js';
 import type { Field } from './payload.js';
 import { webCryptoSeal } from './seal.js';
-import { tm8Authorization } from './tm8-auth.js';
 import { getAssertion, stepUp } from './webauthn.js';
 
 type PageWindow = Window & typeof globalThis;
+const SPACE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 type Mode = { kind: 'capture'; captureId: string } | { kind: 'import' } | { kind: 'invalid' };
 export function pageMode(pathname: string): Mode {
   if (pathname === VAULT_IMPORT_PAGE_PATH) return { kind: 'import' };
@@ -23,7 +23,6 @@ export function pageMode(pathname: string): Mode {
 }
 export interface PageDependencies {
   fetch?: typeof globalThis.fetch;
-  authorization?: () => string | null;
   crypto?: Crypto;
   credentials?: Pick<CredentialsContainer, 'get'>;
 }
@@ -38,6 +37,7 @@ export class CapturePage {
   private readonly abort: AbortController;
   private credentialAbort: AbortController | null = null;
   private readonly mode: Mode;
+  private readonly linkValid: boolean;
   private token: string | null = null;
   private capture: CaptureOpen | null = null;
   private importSession: ImportSession | null = null;
@@ -52,19 +52,26 @@ export class CapturePage {
   private sequence = 0;
 
   constructor(private readonly win: PageWindow, dependencies: PageDependencies = {}) {
-    // Strip the fragment synchronously, before auth reads or a single fetch.
+    // Strip the fragment synchronously, before a single fetch.
     const fragment = new URLSearchParams(win.location.hash.slice(1));
     const tokens = fragment.getAll('t');
+    const spaces = fragment.getAll('s');
     this.mode = pageMode(win.location.pathname);
     if (this.mode.kind === 'capture' && tokens.length === 1 && /^[A-Za-z0-9_-]{43}$/.test(tokens[0] ?? '')) this.token = tokens[0] ?? null;
+    // A capture link names exactly one space; the import page may name none, and
+    // the relay then requires a single membership. A malformed or repeated space
+    // makes the link invalid rather than letting the relay choose one.
+    const candidate = spaces.length === 1 ? spaces[0] ?? '' : '';
+    const spaceId = SPACE_ID.test(candidate) ? candidate : null;
+    this.linkValid = spaces.length === 0 ? this.mode.kind !== 'capture' : spaceId !== null;
     win.history.replaceState(null, '', win.location.pathname);
-    fragment.delete('t');
+    fragment.delete('t'); fragment.delete('s');
     tokens.fill('');
     this.root = win.document.getElementById('vault-page') ?? win.document.body;
     this.crypto = dependencies.crypto ?? win.crypto;
     this.credentials = dependencies.credentials ?? win.navigator.credentials;
     this.abort = new win.AbortController();
-    this.api = new VaultApi(dependencies.fetch ?? win.fetch.bind(win), dependencies.authorization ?? tm8Authorization, this.crypto, this.abort.signal);
+    this.api = new VaultApi(dependencies.fetch ?? win.fetch.bind(win), spaceId, this.crypto, this.abort.signal);
     win.addEventListener('pagehide', this.onPageHide);
     this.ready = this.start().catch((error: unknown) => {
       if (!this.disposed) { this.clear(); this.token = null; this.shell('Unable to open vault'); this.message(errorCopy(error), true); }
@@ -202,7 +209,7 @@ export class CapturePage {
   }
 
   private async start(): Promise<void> {
-    if (this.mode.kind === 'invalid' || (this.mode.kind === 'capture' && !this.token)) throw new PageError('invalid_link');
+    if (this.mode.kind === 'invalid' || !this.linkValid || (this.mode.kind === 'capture' && !this.token)) throw new PageError('invalid_link');
     this.status = await this.api.call<VaultStatus>('vault.status');
     this.assertActive();
     if (this.status.mode === 'off') throw new PageError('vault_disabled');

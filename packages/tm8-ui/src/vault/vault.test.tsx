@@ -198,8 +198,14 @@ describe('metadata items, capture and use-only sharing', () => {
     const fixture = await mount({ status: { reviewGate: 'passed', testSecretsOnly: false,
       features: { capture: true, import: true, grants: true, fill: true, callApi: true, spend: false } } });
     fireEvent.click(screen.getByRole('button', { name: 'Import' }));
-    expect(window.open).toHaveBeenCalledWith(VAULT_IMPORT_PAGE_PATH, '_blank', 'noopener,noreferrer');
+    expect(window.open).toHaveBeenCalledWith(`${VAULT_IMPORT_PAGE_PATH}#s=${ids.space}`, '_blank', 'noopener,noreferrer');
     expect(fixture.calls.some((call) => call.op.startsWith('vault.imports.'))).toBe(false);
+  });
+  it('opens import with no space for a single-membership transport', async () => {
+    await mount({ spaceId: null, status: { reviewGate: 'passed', testSecretsOnly: false,
+      features: { capture: true, import: true, grants: true, fill: true, callApi: true, spend: false } } });
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }));
+    expect(window.open).toHaveBeenCalledWith(VAULT_IMPORT_PAGE_PATH, '_blank', 'noopener,noreferrer');
   });
   it('does not render item details or actions from a partial response', async () => {
     await mount({ responses: { 'vault.items.get': { name: 'Partial metadata' } } });

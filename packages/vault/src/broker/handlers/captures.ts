@@ -46,7 +46,7 @@ export function createCaptureHandlers(): HandlersFor<CaptureOp> {
           expiresAt, createdBy: { ...ctx.actor, name: null } });
         await appendAudit(ctx, tx, 'capture.link_created', input.itemId ?? null, { purpose: input.purpose, itemType: input.itemType });
       });
-      return { data: { captureId: id, url: `${ctx.config.publicOrigin}/vault/capture/${id}#t=${token}`, itemType: input.itemType, purpose: input.purpose, expiresAt } };
+      return { data: { captureId: id, url: `${ctx.config.publicOrigin}/vault/capture/${id}#t=${token}&s=${ctx.caller.spaceId}`, itemType: input.itemType, purpose: input.purpose, expiresAt } };
     },
     'vault.captures.open': async (ctx, { params, input }) => {
       assertOwnerSession(ctx);

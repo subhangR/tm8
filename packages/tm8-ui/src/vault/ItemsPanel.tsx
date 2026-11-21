@@ -27,7 +27,7 @@ export function ItemsPanel(props: SurfaceProps) {
         () => port.captureLinkCreate({ itemType, purpose: 'create' }), openVaultCapture,
       )}>New item</button>
       <button type="button" disabled={readOnly || !hasOwnerSession(status) || !status.features.import || status.reviewGate === 'open'}
-        onClick={openVaultImport}>Import</button>
+        onClick={() => openVaultImport(port.spaceId)}>Import</button>
       <button type="button" onClick={resource.reload}>Refresh items</button>
     </div>
     {!status.features.import || status.reviewGate === 'open' ? <p>Import is disabled until the review gate passes and import is enabled.</p> : null}

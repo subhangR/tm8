@@ -6,13 +6,15 @@ import { VAULT_INPUT_SCHEMAS, VAULT_OPERATIONS as CONTRACT_OPERATIONS } from '..
 import { CaptureKeyPair } from '../../src/capture/seal.js';
 import { mountCapturePage } from '../src/page.js';
 import type { CapturePage } from '../src/page.js';
-import { VAULT_OPERATIONS } from '../src/contract.js';
+import { VAULT_OPERATIONS, VAULT_SPACE_HEADER } from '../src/contract.js';
 import type { ItemType, Operation } from '../src/contract.js';
 
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 export interface RequestRecord { operation: Operation; url: string; init: RequestInit; body: Record<string, any> }
 export interface HarnessOptions {
   mode?: 'capture' | 'import'; itemType?: ItemType; path?: string; session?: boolean;
+  /** The space the default link names; null leaves it out. */
+  space?: string | null;
   expiresAt?: string; maxCiphertextBytes?: number; fail?: Operation; reason?: string;
   candidates?: Record<string, unknown>[];
   onRequest?: (request: RequestRecord) => Response | Promise<Response> | undefined;
@@ -25,14 +27,18 @@ export function harness(options: HarnessOptions = {}) {
   const captureId = randomUUID();
   const importId = randomUUID();
   const linkToken = randomBytes(32).toString('base64url');
+  const spaceId = options.space === undefined ? randomUUID() : options.space;
+  const spaceFragment = spaceId === null ? '' : `s=${spaceId}`;
   const expiresAt = options.expiresAt ?? new Date(Date.now() + 600_000).toISOString();
-  const path = options.path ?? (options.mode === 'import' ? '/vault/capture/import' : `/vault/capture/${captureId}#t=${linkToken}`);
+  const path = options.path ?? (options.mode === 'import'
+    ? `/vault/capture/import${spaceFragment ? `#${spaceFragment}` : ''}`
+    : `/vault/capture/${captureId}#t=${linkToken}${spaceFragment ? `&${spaceFragment}` : ''}`);
   const dom = new JSDOM(html, { url: `https://vault.example${path}` });
   const win = dom.window as unknown as Window & typeof globalThis;
   const broker = CaptureKeyPair.generate();
   const requests: RequestRecord[] = [];
   const assertionId = randomBytes(16).toString('base64url');
-  const credentials = { get: vi.fn(async () => ({
+  const credentials = { get: vi.fn(async (_options: CredentialRequestOptions): Promise<unknown> => ({
     id: assertionId, rawId: Uint8Array.from([1, 2, 3]).buffer, type: 'public-key',
     response: {
       clientDataJSON: Uint8Array.from([4, 5, 6]).buffer,
@@ -48,6 +54,11 @@ export function harness(options: HarnessOptions = {}) {
     expect(init.credentials).toBe('same-origin');
     expect(init.referrerPolicy).toBe('no-referrer');
     expect(init.redirect).toBe('error');
+    // The tm8 session cookie is the only credential; the space is the link's own.
+    const headers = new Headers(init.headers);
+    expect(headers.has('authorization')).toBe(false);
+    expect(headers.get(VAULT_SPACE_HEADER)).toBe(spaceId);
+    expect([...headers.keys()].sort()).toEqual(spaceId === null ? ['content-type'] : ['content-type', VAULT_SPACE_HEADER]);
     const url = String(input);
     const operation = (Object.keys(VAULT_OPERATIONS) as Operation[]).find((name) => {
       const row = CONTRACT_OPERATIONS.find((entry) => entry.name === name)!;
@@ -98,12 +109,11 @@ export function harness(options: HarnessOptions = {}) {
   });
   let page: CapturePage | undefined;
   return {
-    dom, win, broker, fetch, credentials, requests, captureId, importId, linkToken,
+    dom, win, broker, fetch, credentials, requests, captureId, importId, linkToken, spaceId,
     mount() {
       page = mountCapturePage(win, {
         fetch: fetch as typeof globalThis.fetch, credentials: credentials as unknown as CredentialsContainer,
         crypto: webcrypto as unknown as Crypto,
-        authorization: () => ['Bearer ', 'synthetic', '-human-pass'].join(''),
       });
       return page;
     },

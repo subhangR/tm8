@@ -4,6 +4,7 @@
  * compare these rows and all outgoing command schemas against that source.
  */
 export const VAULT_IMPORT_PAGE_PATH = '/vault/capture/import';
+export const VAULT_SPACE_HEADER = 'x-tm8-vault-space';
 export const VAULT_MAX_CAPTURE_CIPHERTEXT = 64 * 1024;
 export const VAULT_MAX_IMPORT_CIPHERTEXT = 8 * 1024 * 1024;
 export const VAULT_OPERATIONS = {

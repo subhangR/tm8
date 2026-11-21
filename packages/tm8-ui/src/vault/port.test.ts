@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { VAULT_ERROR_REASONS, VAULT_OUTPUT_SCHEMAS, vaultStepUpBoundParams, type VaultOperationName } from '@tm8/contract';
+import { VAULT_ERROR_REASONS, VAULT_IMPORT_PAGE_PATH, VAULT_OUTPUT_SCHEMAS, vaultStepUpBoundParams, type VaultOperationName } from '@tm8/contract';
 import { createVaultFixture, VAULT_FIXTURE_IDS as ids } from './fixture';
 import { VAULT_ERROR_COPY, VaultUiError, vaultError } from './errors';
-import { createStepUpRequester, type VaultPort, type VaultCallOptions } from './port';
+import { createStepUpRequester, createVaultPort, type VaultPort, type VaultCallOptions } from './port';
 import { browserVaultAuthenticator } from './webauthn';
 import { generatedCanary, installFakeCredentials } from './test-fixtures';
-import { openVaultCapture } from './links';
+import { openVaultCapture, vaultImportPageUrl } from './links';
 
 beforeEach(() => { installFakeCredentials(); vi.spyOn(navigator.credentials, 'get'); vi.spyOn(navigator.credentials, 'create'); });
 afterEach(() => { vi.restoreAllMocks(); });
@@ -239,6 +239,32 @@ describe('standalone capture navigation', () => {
     const fixture = createVaultFixture(); const link = await fixture.port.captureLinkCreate({ itemType: 'login', purpose: 'create' });
     expect(() => openVaultCapture({ ...link, url })).toThrow(VaultUiError);
     expect(open).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['no space', (url: URL) => { url.hash = url.hash.replace(/&s=.*$/, ''); }],
+    ['an upper-case space', (url: URL) => { url.hash = url.hash.replace(/&s=(.*)$/, (_m, space: string) => `&s=${space.toUpperCase()}`); }],
+    ['a second space', (url: URL) => { url.hash += `&s=${ids.space}`; }],
+    ['the space before the token', (url: URL) => { const [token, space] = url.hash.slice(1).split('&'); url.hash = `#${space}&${token}`; }],
+    ['an extra fragment parameter', (url: URL) => { url.hash += '&x=1'; }],
+  ])('refuses a capture fragment with %s', async (_label, mutate) => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    const fixture = createVaultFixture(); const link = await fixture.port.captureLinkCreate({ itemType: 'login', purpose: 'create' });
+    const url = new URL(link.url); mutate(url);
+    expect(url.href).not.toBe(link.url);
+    expect(() => openVaultCapture({ ...link, url: url.href })).toThrow(VaultUiError);
+    expect(open).not.toHaveBeenCalled();
+  });
+  it('builds the import page address only from a canonical space', () => {
+    expect(vaultImportPageUrl(null)).toBe(VAULT_IMPORT_PAGE_PATH);
+    expect(vaultImportPageUrl(ids.space)).toBe(`${VAULT_IMPORT_PAGE_PATH}#s=${ids.space}`);
+    for (const bad of ['', 'space-a', ids.space.toUpperCase(), `${ids.space}&t=x`]) {
+      expect(() => vaultImportPageUrl(bad)).toThrow(VaultUiError);
+    }
+  });
+  it('exposes the transport space and refuses a malformed one', () => {
+    expect(createVaultFixture().port.spaceId).toBe(ids.space);
+    expect(createVaultFixture({ spaceId: null }).port.spaceId).toBeNull();
+    expect(() => createVaultPort({ spaceId: 'space-a', call: async () => { throw new Error('unreachable'); } })).toThrow(VaultUiError);
   });
   it('refuses a query string even on an otherwise correct URL', async () => {
     const fixture = createVaultFixture(); const link = await fixture.port.captureLinkCreate({ itemType: 'login', purpose: 'create' });

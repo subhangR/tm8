@@ -1,0 +1,10 @@
+{
+  "//": "Test-file typecheck gate. vitest compiles test/** but does not typecheck it, and tsconfig.json covers only src, so without this config a type error in a page test or the harness is invisible. Run: npx tsc -p tsconfig.test.json. It emits nothing.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["src", "test"]
+}

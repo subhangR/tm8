@@ -5,12 +5,15 @@ changing its browser contracts. The page has no runtime dependencies or bundler.
 
 ```sh
 cd packages/vault/capture-page
-npx tsc -p .
+npm run build                  # rm -rf dist && tsc -p .
+npx tsc -p tsconfig.test.json  # typechecks the tests, which vitest does not
 npx vitest run
 ```
 
 TypeScript emits `dist/capture.js` and its neighboring ES modules. Build output
-is ignored by git. The nested package.json makes `npx` run from this directory
+is ignored by git. The build clears `dist` first, and a test requires `dist` to
+hold exactly the modules built from `src`: a module deleted from `src` must not
+linger in `dist`, where the server would still serve it. The nested package.json makes `npx` run from this directory
 instead of changing to the parent vault package. jsdom is a pinned, test-only
 dependency in `packages/vault/package.json`.
 
@@ -36,18 +39,27 @@ X-Content-Type-Options: nosniff
 Cross-Origin-Opener-Policy: same-origin
 ```
 
-The capture link token is read from `#t=…`, then history is replaced with the
-pathname before auth reads or fetch. Queries and fragments are discarded. Do
-not move the token into a query parameter or introduce document analytics.
+The capture link is `/vault/capture/<captureId>#t=<linkToken>&s=<spaceId>`. The
+page reads the token and the space from the fragment, then replaces history with
+the pathname before its first fetch. Queries and other fragment parameters are
+discarded. A capture link must name exactly one lower-case UUID space; a
+missing, repeated or malformed space is an invalid link, never a fallback to a
+space the relay picks. The import page (`/vault/capture/import`, opened by the
+SPA as `#s=<spaceId>`) may omit the space. Do not move the token into a query
+parameter or introduce document analytics.
 
 ## Authentication and API wiring (WS-A)
 
-`src/tm8-auth.ts` exports the single `tm8Authorization(): string | null` seam.
-It ports only `authTokenFor(LOCAL_SERVER_ID)` from the SPA: read
-`tm8ui.auth.passes.v1`, choose `window.location.origin`, validate the token and
-account shape, and return its Bearer header. There is no storage write and no
-fallback to another SPA server connection. This is implemented, not a stub.
-Keep the page on the SPA/relay origin so this existing human pass is available.
+The page holds no tm8 credential. Every call relies on the HttpOnly, Secure,
+SameSite=Strict `__Host-tm8-session` cookie that browser sign-in sets (and that
+the SPA's reload check refreshes for an older pass), sent because the page is on
+the SPA/relay origin and fetches with `credentials: 'same-origin'`. The page
+never reads web storage, so the bearer the SPA keeps in `localStorage` never
+reaches it, and it sends no `Authorization` header. A missing or expired tm8
+session answers 401, shown as "Sign in to tm8 in this browser". The space from
+the fragment rides in `x-tm8-vault-space` (`VAULT_SPACE_HEADER`); the relay
+accepts it only when it names one of the caller's memberships. With no space,
+the relay needs the caller to have a single membership.
 
 `vault.status` checks for a vault session. If missing, a user clicks the passkey
 sign-in button; the page calls challenge, `navigator.credentials.get`, then
@@ -63,7 +75,8 @@ validate outgoing inputs with its schemas, and compare challenge and submit
 bindings using `vaultStepUpBoundParams`.
 
 The page expects the existing `{data}` / `{error}` envelope, reads only typed
-error reasons, and shows fixed copy. Reserved operations returning 501 show an
+error reasons, and shows fixed copy. A body that is not JSON (a proxy's error
+page) is mapped by status alone. Reserved operations returning 501 show an
 unavailable state. WS-A must provide the broker/relay operations; this lane
 implements no server routes. `secret_in_metadata` fixed copy is included for
 the broker addition after this lane's base commit.

@@ -96,7 +96,7 @@ describe('capture page', () => {
     const plaintextBuffers: Uint8Array[] = [];
     const fixture = payloadFixture('login');
     const encode = TextEncoder.prototype.encode;
-    vi.spyOn(TextEncoder.prototype, 'encode').mockImplementation(function (value?: string) {
+    vi.spyOn(TextEncoder.prototype, 'encode').mockImplementation(function (this: TextEncoder, value?: string) {
       const bytes = encode.call(this, value);
       if (value?.includes(String(fixture.password))) plaintextBuffers.push(bytes);
       return bytes;

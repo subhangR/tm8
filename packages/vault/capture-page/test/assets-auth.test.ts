@@ -5,12 +5,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   VAULT_IMPORT_FORMATS, VAULT_IMPORT_PAGE_PATH as CONTRACT_IMPORT_PATH,
   VAULT_MAX_CAPTURE_CIPHERTEXT as CONTRACT_MAX_CAPTURE, VAULT_MAX_IMPORT_CIPHERTEXT as CONTRACT_MAX_IMPORT,
-  VAULT_OPERATIONS as CONTRACT_OPERATIONS, VAULT_ITEM_TYPES,
+  VAULT_OPERATIONS as CONTRACT_OPERATIONS, VAULT_ITEM_TYPES, VAULT_SPACE_HEADER as CONTRACT_SPACE_HEADER,
 } from '../../../contract/src/vault.js';
 import { CAPTURE_RESPONSE_HEADERS } from '../src/headers.js';
 import { CAPTURE_FIELDS } from '../src/payload.js';
-import { IMPORT_FORMATS, VAULT_IMPORT_PAGE_PATH, VAULT_MAX_CAPTURE_CIPHERTEXT, VAULT_MAX_IMPORT_CIPHERTEXT, VAULT_OPERATIONS } from '../src/contract.js';
-import { tm8Authorization } from '../src/tm8-auth.js';
+import { IMPORT_FORMATS, VAULT_IMPORT_PAGE_PATH, VAULT_MAX_CAPTURE_CIPHERTEXT, VAULT_MAX_IMPORT_CIPHERTEXT, VAULT_OPERATIONS, VAULT_SPACE_HEADER } from '../src/contract.js';
+import { harness, response } from './page-harness.js';
+import type { Harness } from './page-harness.js';
 import { PageError, errorCopy, remoteError } from '../src/errors.js';
 
 const doms: JSDOM[] = [];
@@ -55,6 +56,7 @@ describe('standalone assets and contract parity', () => {
       expect(row).toEqual({ method: authoritative?.method, path: authoritative?.path });
     }
     expect(VAULT_IMPORT_PAGE_PATH).toBe(CONTRACT_IMPORT_PATH);
+    expect(VAULT_SPACE_HEADER).toBe(CONTRACT_SPACE_HEADER);
     expect(IMPORT_FORMATS).toEqual(VAULT_IMPORT_FORMATS);
     expect(Object.keys(CAPTURE_FIELDS)).toEqual([...VAULT_ITEM_TYPES]);
     expect(VAULT_MAX_CAPTURE_CIPHERTEXT).toBe(CONTRACT_MAX_CAPTURE);
@@ -65,54 +67,88 @@ describe('standalone assets and contract parity', () => {
     const dist = new URL('../dist/', import.meta.url);
     const names = readdirSync(dist);
     expect(names).toContain('capture.js');
+    // Only modules built from src: a stale module would still be served.
+    expect(names.filter((name) => name.endsWith('.js')).sort()).toEqual(readdirSync(new URL('../src/', import.meta.url)).filter((name) => name.endsWith('.ts')).map((name) => name.replace(/\.ts$/, '.js')).sort());
     for (const name of names.filter((name) => name.endsWith('.js'))) {
       const source = readFileSync(new URL(name, dist), 'utf8');
       for (const match of source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)) expect(match[1]).toMatch(/^\.\/[a-z0-9-]+\.js$/);
-      expect(source).not.toMatch(/\bconsole\s*[.[]|\b(?:localStorage|sessionStorage)\.(?:setItem|removeItem|clear)|\bindexedDB\b|\bclipboard\b|document\.cookie\s*=/);
+      // No web storage or cookie access at all, and no bearer: the HttpOnly tm8 session cookie is the only credential.
+      expect(source).not.toMatch(/\bconsole\s*[.[]|\b(?:localStorage|sessionStorage)\b|\bindexedDB\b|\bclipboard\b|\bdocument\.cookie\b|\bauthorization\b/i);
     }
     expect(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).dependencies).toBeUndefined();
   });
 });
 
-describe('read-only same-origin tm8 authorization', () => {
-  function setup(value?: string) {
-    const dom = new JSDOM('', { url: 'https://vault.example/vault/capture/import' }); doms.push(dom);
-    if (value !== undefined) dom.window.localStorage.setItem('tm8ui.auth.passes.v1', value);
-    vi.stubGlobal('window', dom.window);
-    const writes = ['setItem', 'removeItem', 'clear'].map((key) => vi.spyOn(dom.window.Storage.prototype, key as 'setItem'));
-    return { dom, writes };
-  }
+describe('cookie-only tm8 authentication and the link space', () => {
+  const pages: Harness[] = [];
+  const make = (options: Parameters<typeof harness>[0] = {}) => { const h = harness(options); pages.push(h); return h; };
+  afterEach(() => { for (const h of pages.splice(0)) h.close(); });
+  const pass = () => ['tm8', 's_', randomUUID(), '.', randomBytes(32).toString('base64url')].join('');
 
-  it('reads only the pass for this origin, independent of a different active SPA server', () => {
-    const token = ['tm8', 's_', randomUUID(), '.', randomBytes(32).toString('base64url')].join('');
-    const { dom, writes } = setup(JSON.stringify({
-      'https://vault.example': { token, account: { handle: '@fixture' } },
-      'https://another.example': { token: 'other-synthetic-pass', account: { handle: '@other' } },
-    }));
-    dom.window.localStorage.setItem('tm8ui.servers.active.v1', 'another-server');
-    writes.forEach((spy) => spy.mockClear());
-    expect(tm8Authorization()).toBe(`Bearer ${token}`);
-    for (const spy of writes) expect(spy).not.toHaveBeenCalled();
+  it('never reads web storage, so a bearer the SPA keeps there never leaves the page', async () => {
+    const h = make();
+    const token = pass();
+    h.win.localStorage.setItem('tm8ui.auth.passes.v1', JSON.stringify({ [h.win.location.origin]: { token, account: { handle: '@fixture' } } }));
+    const reads = [vi.spyOn(h.win.Storage.prototype, 'getItem'), vi.spyOn(h.win.Storage.prototype, 'key')];
+    await h.mount().ready;
+    expect(h.requests.map((request) => request.operation)).toEqual(['vault.status', 'vault.captures.open']);
+    for (const spy of reads) expect(spy).not.toHaveBeenCalled();
+    for (const request of h.requests) {
+      expect(new Headers(request.init.headers).has('authorization')).toBe(false);
+      expect(JSON.stringify([request.url, [...new Headers(request.init.headers)], request.body])).not.toContain(token);
+    }
   });
 
-  it.each([undefined, '', 'broken JSON', '[]', '{}', '{"https://vault.example":{"token":"synthetic"}}'])(
-    'fails closed on missing or corrupt pass records', (value) => {
-      const { writes } = setup(value);
-      expect(tm8Authorization()).toBeNull();
-      for (const spy of writes) expect(spy).not.toHaveBeenCalled();
-    },
-  );
-
-  it('fails closed if storage is blocked and never includes exception data', () => {
-    const { dom, writes } = setup();
-    vi.spyOn(dom.window.Storage.prototype, 'getItem').mockImplementation(() => { throw new Error(`synthetic-${randomUUID()}`); });
-    expect(tm8Authorization()).toBeNull();
-    for (const spy of writes) expect(spy).not.toHaveBeenCalled();
+  it('sends the space the link names on every call and strips it with the token', async () => {
+    const h = make();
+    await h.mount().ready;
+    expect(h.win.location.hash).toBe('');
+    expect(h.requests.length).toBeGreaterThan(0);
+    for (const request of h.requests) expect(new Headers(request.init.headers).get(VAULT_SPACE_HEADER)).toBe(h.spaceId);
   });
 
-  it('rejects a stored pass with header control characters', () => {
-    setup(JSON.stringify({ 'https://vault.example': { token: 'synthetic\r\nheader', account: { handle: '@fixture' } } }));
-    expect(tm8Authorization()).toBeNull();
+  it.each([
+    ['no space', (h: Harness) => `#t=${h.linkToken}`],
+    ['an empty space', (h: Harness) => `#t=${h.linkToken}&s=`],
+    ['an upper-case space', (h: Harness) => `#t=${h.linkToken}&s=${randomUUID().toUpperCase()}`],
+    ['two spaces', (h: Harness) => `#t=${h.linkToken}&s=${randomUUID()}&s=${randomUUID()}`],
+    ['a space that is not a UUID', (h: Harness) => `#t=${h.linkToken}&s=space-a`],
+  ])('makes no request from a capture link with %s', async (_label, fragment) => {
+    const h = make();
+    h.win.history.replaceState(null, '', `${h.win.location.pathname}${fragment(h)}`);
+    await h.mount().ready;
+    expect(h.fetch).not.toHaveBeenCalled();
+    expect(h.win.location.hash).toBe('');
+    expect(h.win.document.body.textContent).toContain('Invalid link');
+  });
+
+  it('opens the import page with no space, sending none, so the relay needs a single membership', async () => {
+    const h = make({ mode: 'import', space: null });
+    await h.mount().ready;
+    expect(h.requests.length).toBeGreaterThan(0);
+    for (const request of h.requests) expect(new Headers(request.init.headers).has(VAULT_SPACE_HEADER)).toBe(false);
+  });
+
+  it('opens the import page in the space it names, and refuses a malformed one', async () => {
+    const named = make({ mode: 'import' });
+    await named.mount().ready;
+    for (const request of named.requests) expect(new Headers(request.init.headers).get(VAULT_SPACE_HEADER)).toBe(named.spaceId);
+    const malformed = make({ mode: 'import', path: `/vault/capture/import#s=${randomUUID()}&s=${randomUUID()}` });
+    await malformed.mount().ready;
+    expect(malformed.fetch).not.toHaveBeenCalled();
+    expect(malformed.win.document.body.textContent).toContain('Invalid link');
+  });
+
+  it.each([
+    ['a tm8 401', () => response({ message: 'Untrusted upstream error' }, 401), 'Sign in to tm8 in this browser'],
+    ['a proxy 401 page', () => new Response('<html>401</html>', { status: 401, headers: { 'Content-Type': 'text/html' } }), 'Sign in to tm8 in this browser'],
+    ['a proxy 502 page', () => new Response('<html>502</html>', { status: 502, headers: { 'Content-Type': 'text/html' } }), 'The vault is unavailable'],
+  ])('maps %s on the first call to fixed copy', async (_label, reply, copy) => {
+    const h = make({ onRequest: (request) => request.operation === 'vault.status' ? reply() : undefined });
+    await h.mount().ready;
+    expect(h.win.document.getElementById('vault-page')?.dataset.state).toBe('error');
+    expect(h.win.document.body.textContent).toContain(copy);
+    expect(h.win.document.body.textContent).not.toContain('<html>');
   });
 });
 

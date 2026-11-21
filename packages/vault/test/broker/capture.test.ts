@@ -37,6 +37,10 @@ describe('acceptance 20: capture link boundary', () => {
     expect(created.url.pathname).toBe(`/vault/capture/${created.id}`);
     expect(created.url.search).toBe('');
     expect(created.token).toHaveLength(43);
+    // The fragment carries the token and the space the page must act in, nothing else.
+    const fragment = new URLSearchParams(created.url.hash.slice(1));
+    expect([...fragment.keys()]).toEqual(['t', 's']);
+    expect(fragment.get('s')).toBe(testCaller.spaceId);
     expect(Date.parse(created.expiresAt) - h.clock.now().getTime()).toBe(VAULT_CAPTURE_LINK_TTL_SECONDS * 1000);
     const rows = await h.store.transaction({ kind: 'system', purpose: 'audit' }, (tx) => tx.audit.range(1, 10));
     expect(JSON.stringify(rows).includes(created.token)).toBe(false);

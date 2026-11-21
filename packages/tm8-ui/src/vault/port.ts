@@ -14,7 +14,14 @@ export interface VaultCallOptions {
 /** WS-A supplies the catalog adapter. This module never imports HttpClient or a seam. */
 export interface VaultTransport {
   call<T>(op: VaultOperationName, opts?: VaultCallOptions): Promise<T>;
+  /**
+   * The tm8 space every call acts in, sent as VAULT_SPACE_HEADER; null or absent
+   * when the caller has a single membership. The import page is opened in it.
+   */
+  readonly spaceId?: string | null;
 }
+
+const SPACE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export type VaultStepUpBody<A extends VaultStepUpAction> = Omit<VaultInput<A>, 'stepUp'>;
 export type VaultValidatedCall = <N extends VaultOperationName>(
@@ -76,6 +83,8 @@ export type PasskeyAuthorization =
 
 export function createVaultPort(transport: VaultTransport, options: { authenticator?: VaultAuthenticator } = {}) {
   const authenticator = options.authenticator ?? browserVaultAuthenticator;
+  const spaceId = transport.spaceId ?? null;
+  if (spaceId !== null && !SPACE_ID.test(spaceId)) throw new VaultUiError('invalid_input');
   const call: VaultValidatedCall = async (op, opts) => {
     try {
       const input = VAULT_INPUT_SCHEMAS[op].safeParse(opts?.body ?? opts?.query ?? {});
@@ -90,6 +99,7 @@ export function createVaultPort(transport: VaultTransport, options: { authentica
   };
   const requestStepUp = createStepUpRequester(call, authenticator);
   return {
+    spaceId,
     status: () => call('vault.status'),
     itemsList: (query: VaultInput<'vault.items.list'> = {}) => call('vault.items.list', { query }),
     itemGet: (itemId: string) => call('vault.items.get', { params: { itemId } }),

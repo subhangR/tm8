@@ -81,7 +81,11 @@ const StepUpLabel = (max: number) => z.string().min(1).max(max).regex(/^\S(?:[\s
 // ---------------------------------------------------------------------------
 
 export const VAULT_BASE_PATH = '/v2/vault';
-/** The standalone capture page (not the SPA). The link is `<origin>/vault/capture/<captureId>#t=<linkToken>`. */
+/**
+ * The standalone capture page (not the SPA). The link is
+ * `<origin>/vault/capture/<captureId>#t=<linkToken>&s=<spaceId>`; the page strips
+ * the fragment before its first request, and sends the space as VAULT_SPACE_HEADER.
+ */
 export const VAULT_CAPTURE_PAGE_PATH = '/vault/capture/';
 /**
  * The import page: the same standalone page, in import mode. The plaintext export
@@ -89,6 +93,14 @@ export const VAULT_CAPTURE_PAGE_PATH = '/vault/capture/';
  * import operation already requires the owner's vault session.
  */
 export const VAULT_IMPORT_PAGE_PATH = '/vault/capture/import';
+/**
+ * The tm8 space a browser vault call acts in, for a caller with more than one
+ * membership. The relay accepts it only when it names one of the caller's
+ * memberships, and a session pinned to a space must name that space. It is an
+ * identifier, never a credential: browser vault calls authenticate with the
+ * HttpOnly tm8 session cookie alone.
+ */
+export const VAULT_SPACE_HEADER = 'x-tm8-vault-space';
 export const VAULT_SESSION_COOKIE = 'tm8_vault_session';
 export const VAULT_REFRESH_COOKIE = 'tm8_vault_refresh';
 export const VAULT_CAPTURE_LINK_TTL_SECONDS = 600;
