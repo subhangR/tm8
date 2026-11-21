@@ -47,7 +47,10 @@ async function pendingOwned(tx: VaultTx, ctx: HandlerContext, approvalId: string
   const approval = await tx.approvals.get(approvalId);
   if (!approval || approval.ownerMemberId !== ctx.caller.memberId) throw new VaultError('not_found');
   if (effectiveApprovalState(approval, tx.now) !== 'pending') throw VaultError.reason('approval_not_pending');
-  if (approval.intentHash !== hash || approval.intentHash !== intentHash(approval.kind, approval.boundParams)) {
+  const bound = approval.boundParams;
+  if (approval.intentHash !== hash || approval.intentHash !== intentHash(approval.kind, bound)
+    || bound.kind !== approval.kind || bound.itemId !== approval.itemId
+    || bound.requesterMemberId !== approval.requesterMemberId || bound.expiresAt !== approval.expiresAt) {
     throw VaultError.reason('approval_hash_mismatch');
   }
   return approval;

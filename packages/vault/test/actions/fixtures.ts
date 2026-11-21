@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { vi } from 'vitest';
 import type { VaultInput } from '@tm8/contract';
 import { createAgentActionHandlers } from '../../src/actions/handlers.js';
-import { actorOf, type AgentActionOp, type BrokerConfig, type HandlerContext, type PolicyInput,
+import { actorOf, type AgentActionOp, type BrokerConfig, type PolicyInput,
   type VaultCaller, type VaultHandler, type VaultPathParams } from '../../src/core-types.js';
 import type { FillDriver, EgressExecutor } from '../../src/types.js';
 import { newApiKey, newLogin, scopeOf, testBroker, testCaller, testSecret, fakeStepUpProof, type TestBroker } from '../support/kit.js';

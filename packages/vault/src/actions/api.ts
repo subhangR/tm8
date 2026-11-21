@@ -1,5 +1,5 @@
 import type { VaultCallApiResult } from '@tm8/contract';
-import { VaultError, type ItemRecord, type PolicyRecord, type SecretVersionRecord, type VaultHandler } from '../core-types.js';
+import { VaultError, type ItemRecord, type SecretVersionRecord, type VaultHandler } from '../core-types.js';
 import { decryptSecretVersion } from '../crypto/aead.js';
 import { KmsRefusedError, KmsUnavailableError } from '../crypto/kms.js';
 import { SecretMaterial } from '../secret-material.js';
@@ -29,7 +29,7 @@ export const callApi: VaultHandler<'vault.callApi'> = async (ctx, { params, inpu
     intentHash: hashIntent({ action: 'call_api', itemId: params.itemId, request: input.request, purpose: input.purpose }) };
   const prepared = await transaction(ctx, async (tx) => {
     const previous = await tx.operations.get(input.operationId);
-    if (previous) return { result: storedResult('vault.callApi', replay(previous, intent)) };
+    if (previous) return { result: storedResult('vault.callApi', replay(previous, intent, ctx.caller.spaceId)) };
     const item = await liveItem(tx, params.itemId, 'api_key');
     const grants = await liveGrants(tx, ctx, item);
     const storedPolicy = await tx.policies.get(item.id);

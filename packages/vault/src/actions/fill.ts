@@ -2,7 +2,6 @@ import type { VaultFillResult } from '@tm8/contract';
 import { VaultError, type ApprovalRecord, type ItemRecord, type SecretVersionRecord, type VaultHandler, type VaultTx } from '../core-types.js';
 import { decryptSecretVersion } from '../crypto/aead.js';
 import { KmsRefusedError, KmsUnavailableError } from '../crypto/kms.js';
-import { intentHash } from '../intent/hash.js';
 import { normalizeOrigin } from '../origin/normalize.js';
 import { SecretMaterial } from '../secret-material.js';
 import type { FillOutcome, MaskedScreenshot } from '../types.js';
@@ -40,7 +39,7 @@ export const fill: VaultHandler<'vault.fill'> = async (ctx, { params, input }) =
       startUrl: input.startUrl ?? null, submit: input.submit, purpose: input.purpose }) };
   const prepared = await transaction(ctx, async (tx) => {
     const previous = await tx.operations.get(input.operationId);
-    if (previous) return { result: storedResult('vault.fill', replay(previous, intent)) };
+    if (previous) return { result: storedResult('vault.fill', replay(previous, intent, ctx.caller.spaceId)) };
     const item = await liveItem(tx, params.itemId, 'login');
     const grants = await liveGrants(tx, ctx, item);
     const origin = exactOrigin(input.origin, item);

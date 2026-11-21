@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { VAULT_OUTPUT_SCHEMAS, type VaultApprovalView, type VaultOperationName, type VaultOutput } from '@tm8/contract';
+import { VAULT_OUTPUT_SCHEMAS, type VaultApprovalView, type VaultOutput } from '@tm8/contract';
 import {
   AuditUnavailableError, StoreNotFoundError, StoreStateError, StoreUnavailableError, VaultError,
   effectiveApprovalState, memberScope,
   type ActorRecord, type ApprovalKind, type ApprovalRecord, type AuditParam, type GrantRecord,
   type HandlerContext, type ItemRecord, type NewApproval, type OperationKind, type OperationRecord,
-  type VaultAlertKind, type VaultTx,
+  type StoreScope, type VaultAlertKind, type VaultTx,
 } from '../core-types.js';
 import { intentHash } from '../intent/hash.js';
 import { normalizeOrigin, OriginRefusal } from '../origin/normalize.js';
@@ -19,8 +19,12 @@ export function actionActor(ctx: HandlerContext): ActorRecord {
 }
 
 export async function transaction<T>(ctx: HandlerContext, work: (tx: VaultTx) => Promise<T>): Promise<T> {
+  return storeTransaction(ctx, memberScope(ctx.caller), work);
+}
+
+export async function storeTransaction<T>(ctx: HandlerContext, scope: StoreScope, work: (tx: VaultTx) => Promise<T>): Promise<T> {
   try {
-    return await ctx.store.transaction(memberScope(ctx.caller), work);
+    return await ctx.store.transaction(scope, work);
   } catch (error) {
     if (error instanceof VaultError) throw error;
     if (error instanceof AuditUnavailableError) {
@@ -183,7 +187,8 @@ export interface ActionIntent {
   intentHash: string;
 }
 
-export function replay(operation: OperationRecord, intent: ActionIntent): OperationRecord {
+export function replay(operation: OperationRecord, intent: ActionIntent, spaceId: string): OperationRecord {
+  if (operation.spaceId !== spaceId) throw new VaultError('not_found');
   if (operation.intentHash !== intent.intentHash || operation.kind !== intent.kind || operation.itemId !== intent.itemId) {
     throw VaultError.reason('operation_id_reused');
   }
@@ -194,7 +199,7 @@ export function replay(operation: OperationRecord, intent: ActionIntent): Operat
 export async function reserve(tx: VaultTx, ctx: HandlerContext, item: ItemRecord, intent: ActionIntent,
   params: Record<string, AuditParam>, approvalId: string | null): Promise<OperationRecord | null> {
   const reserved = await tx.operations.reserve({ ...intent, actor: actionActor(ctx), approvalId });
-  if (!reserved.created) return replay(reserved.operation, intent);
+  if (!reserved.created) return replay(reserved.operation, intent, ctx.caller.spaceId);
   await audit(tx, ctx, `${auditKind(intent.kind)}.started`, item, { operationId: intent.operationId,
     intentHash: intent.intentHash, ...params });
   return null;
@@ -229,5 +234,3 @@ export function ownerSession(ctx: HandlerContext): NonNullable<HandlerContext['o
     || Date.parse(session.expiresAt) <= ctx.clock.now().getTime()) throw VaultError.reason('vault_session_required');
   return session;
 }
-
-export type ActionOp = Extract<VaultOperationName, 'vault.fill' | 'vault.callApi' | 'vault.spend.execute'>;

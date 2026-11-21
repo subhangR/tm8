@@ -2,12 +2,12 @@ import { createHash } from 'node:crypto';
 import type { VaultOutput } from '@tm8/contract';
 import {
   SYSTEM_ACTOR, VaultError, effectiveApprovalState, type ApprovalRecord, type AuditParam, type HandlerContext,
-  type ItemRecord, type OperationRecord, type SpendCharge, type SpendRequestRecord, type VaultHandler,
+  type ItemRecord, type SpendCharge, type SpendRequestRecord, type VaultHandler,
 } from '../core-types.js';
 import { intentHash } from '../intent/hash.js';
 import {
   approvalRequested, approvalView, audit, consumeApproval, hashIntent, liveGrants, liveItem, metadataText,
-  refuseCanaryInput, replay, requestApproval, reserve, storedResult, transaction, type ActionIntent,
+  refuseCanaryInput, replay, requestApproval, reserve, storedResult, storeTransaction, transaction, type ActionIntent,
 } from './common.js';
 
 type SpendResult = VaultOutput<'vault.spend.execute'>;
@@ -73,20 +73,23 @@ function chargeResult(operationId: string, approvalId: string, request: SpendReq
 
 /** Lookup is the only processor call allowed for an approval with an unknown prior attempt. */
 async function reconcile(ctx: HandlerContext, approval: ApprovalRecord): Promise<boolean> {
-  const unknown = await ctx.store.transaction({ kind: 'system', purpose: 'reconcile' }, async (tx) =>
+  const unknown = await storeTransaction(ctx, { kind: 'system', purpose: 'reconcile' }, async (tx) =>
     (await tx.operations.listUnknown('spend')).filter((operation) => operation.approvalId === approval.id
       && operation.memberId === ctx.caller.memberId && operation.spaceId === ctx.caller.spaceId));
   let unresolved = false;
   for (const operation of unknown) {
     const request = await transaction(ctx, (tx) => tx.spend.getByApproval(approval.id));
-    if (!request || !boundSpend(approval, request)) { unresolved = true; continue; }
+    if (!request || !boundSpend(approval, request) || approval.consumedByOperationId !== operation.operationId) {
+      unresolved = true;
+      continue;
+    }
     let charge: Awaited<ReturnType<HandlerContext['components']['spend']['lookup']>>;
     try { charge = await ctx.components.spend.lookup(operation.operationId); } catch { charge = { state: 'unknown' }; }
     const result: SpendResult = charge.state === 'not_found'
       ? { state: 'refused', operationId: operation.operationId, approvalId: approval.id, code: 'processor_declined' }
       : chargeResult(operation.operationId, approval.id, request, charge);
     if (result.state === 'unknown') { unresolved = true; continue; }
-    await ctx.store.transaction({ kind: 'system', purpose: 'reconcile' }, async (tx) => {
+    await storeTransaction(ctx, { kind: 'system', purpose: 'reconcile' }, async (tx) => {
       const stillUnknown = (await tx.operations.listUnknown('spend')).some((row) =>
         row.memberId === operation.memberId && row.operationId === operation.operationId);
       if (!stillUnknown) return;
@@ -112,7 +115,7 @@ export const executeSpend: VaultHandler<'vault.spend.execute'> = async (ctx, { p
   const initial = await transaction(ctx, async (tx) => {
     const previous = await tx.operations.get(input.operationId);
     if (previous) {
-      replay(previous, { kind: 'spend', itemId: previous.itemId, operationId: input.operationId, intentHash: hash });
+      replay(previous, { kind: 'spend', itemId: previous.itemId, operationId: input.operationId, intentHash: hash }, ctx.caller.spaceId);
       if (previous.approvalId !== params.approvalId) throw VaultError.reason('operation_id_reused');
       if (previous.state !== 'unknown') return { result: storedResult('vault.spend.execute', previous) };
     }
@@ -127,7 +130,7 @@ export const executeSpend: VaultHandler<'vault.spend.execute'> = async (ctx, { p
   const prepared = await transaction(ctx, async (tx) => {
     const previous = await tx.operations.get(input.operationId);
     const intent: ActionIntent = { kind: 'spend', itemId: approval.itemId, operationId: input.operationId, intentHash: hash };
-    if (previous) return { result: storedResult('vault.spend.execute', replay(previous, intent)) };
+    if (previous) return { result: storedResult('vault.spend.execute', replay(previous, intent, ctx.caller.spaceId)) };
     if (unresolved) throw VaultError.reason('operation_in_progress');
     const current = await tx.approvals.get(params.approvalId);
     if (!current || current.requesterMemberId !== ctx.caller.memberId) throw new VaultError('not_found');
@@ -136,7 +139,7 @@ export const executeSpend: VaultHandler<'vault.spend.execute'> = async (ctx, { p
     const request = await tx.spend.getByApproval(current.id);
     let code: Refusal | null = !ctx.components.spend.configured ? 'processor_not_configured' : null;
     const state = effectiveApprovalState(current, tx.now);
-    if (state === 'consumed' || current.consumedAt !== null || request?.executedAt !== null && request?.executedAt !== undefined) code = 'approval_consumed';
+    if (state === 'consumed' || current.consumedAt !== null || (request && request.executedAt !== null)) code = 'approval_consumed';
     else if (state !== 'approved' || current.kind !== 'spend' || !current.oneUse) code = 'approval_not_approved';
     else if (!request || !boundSpend(current, request)) code = 'amount_mismatch';
     const already = await reserve(tx, ctx, item, intent, { approvalId: current.id,
