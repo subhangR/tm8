@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { stat, statfs } from 'node:fs/promises';
 import { PlaywrightFillDriver } from '../../src/browser/playwright-driver.js';
 import { RemoteFillDriver } from '../../src/browser/remote-driver.js';
 import { SecretMaterial, zeroize } from '../../src/secret-material.js';
@@ -13,6 +14,11 @@ describe.skipIf(!e2eEnabled)(`browser acceptance 2, 3, 4, 6, 7 (test-only single
   let collected = 0;
   let submitted = 0;
   let fontResponses: import('node:http').ServerResponse[] = [];
+  /** The Cookie header of every request the first origin received, in order. */
+  const cookieHeaders: string[] = [];
+  // /slow sets this cookie (test 7). Both halves are random per run.
+  const cookieName = ['probe', randomUUID().replaceAll('-', '')].join('_');
+  const cookiePair = `${cookieName}=${['cookie', 'canary', randomUUID()].join('-')}`;
   const originalTmpdir = process.env.TMPDIR;
 
   beforeAll(async () => {
@@ -23,6 +29,7 @@ describe.skipIf(!e2eEnabled)(`browser acceptance 2, 3, 4, 6, 7 (test-only single
     });
     first = await localServer((request, response) => {
       const path = new URL(request.url ?? '/', first.origin).pathname;
+      cookieHeaders.push(request.headers.cookie ?? '');
       response.setHeader('Content-Type', 'text/html');
       const signal = 'password.addEventListener("input",()=>{fetch("/filled")});';
       if (path === '/filled') { passwordEvents += 1; response.end('ok'); return; }
@@ -53,6 +60,8 @@ describe.skipIf(!e2eEnabled)(`browser acceptance 2, 3, 4, 6, 7 (test-only single
       if (path === '/no-button') { response.end(loginPage('/session').replace('<button type="submit">Log in</button>', '')); return; }
       if (path === '/submit-override') { response.end(loginPage('/session', '', signal).replace('button type="submit"', `button type="submit" formaction="${second.origin}/collect"`)); return; }
       if (path === '/slow') {
+        // A persistent cookie, so that a profile kept on disk would carry it into the next fill.
+        response.setHeader('Set-Cookie', `${cookiePair}; Path=/; Max-Age=3600; SameSite=Lax`);
         response.end(loginPage('/session', '<style>@font-face{font-family:hold;src:url(/font)}body{font-family:hold}</style><p>Font hold</p>', signal)); return;
       }
       if (path === '/fallback') {
@@ -157,25 +166,52 @@ describe.skipIf(!e2eEnabled)(`browser acceptance 2, 3, 4, 6, 7 (test-only single
     expectRefusal(await fill('/forward', true), 'cross_origin_form_action');
     expect(collected).toBe(before);
   });
-  it('7: browser process tree has no TCP listener or debug port; extensions and API access are blocked', async () => {
+  it('7: browser process tree has no TCP listener or debug port; extensions and API access are blocked; its cookies die with the fill', async () => {
     const browser = driver();
-    const password = SecretMaterial.fromUtf8(['canary', randomUUID()].join('-'));
-    const before = passwordEvents;
-    const pending = browser.fill({ intent: { operationId: randomUUID(), itemId: 'fixture-login', origin: first.origin,
-      startUrl: `${first.origin}/slow`, submit: false, devMode: true }, material: { username: 'fixture-user', password, totp: null } });
     try {
-      await until(() => passwordEvents > before);
-      const inspection = await inspectBrowserProcesses(await descendants(process.pid));
-      expect(inspection.commandLines.length > 0).toBe(true);
-      expect(inspection.listeningOwned).toEqual([]);
-      expect(inspection.commandLines.every((parts) => parts.every((part) => !part.startsWith('--remote-debugging-port')))).toBe(true);
-      expect(inspection.commandLines.some((parts) => parts.includes('--disable-extensions'))).toBe(true);
-      expect(Object.getOwnPropertyNames(PlaywrightFillDriver.prototype).sort()).toEqual(['close', 'constructor', 'fill']);
-      expect(Object.getOwnPropertyNames(RemoteFillDriver.prototype).sort()).toEqual(['close', 'constructor', 'fill']);
-    } finally {
-      for (const response of fontResponses) response.end(); fontResponses = [];
-      const outcome = await pending; zeroize(outcome.screenshot?.data);
-      password.dispose(); await browser.close();
-    }
+      const password = SecretMaterial.fromUtf8(['canary', randomUUID()].join('-'));
+      const before = passwordEvents;
+      const heard = cookieHeaders.length;
+      const pending = browser.fill({ intent: { operationId: randomUUID(), itemId: 'fixture-login', origin: first.origin,
+        startUrl: `${first.origin}/slow`, submit: false, devMode: true }, material: { username: 'fixture-user', password, totp: null } });
+      let profile = '';
+      try {
+        await until(() => passwordEvents > before);
+        const inspection = await inspectBrowserProcesses(await descendants(process.pid));
+        expect(inspection.commandLines.length > 0).toBe(true);
+        expect(inspection.listeningOwned).toEqual([]);
+        expect(inspection.commandLines.every((parts) => parts.every((part) => !part.startsWith('--remote-debugging-port')))).toBe(true);
+        expect(inspection.commandLines.some((parts) => parts.includes('--disable-extensions'))).toBe(true);
+        expect(Object.getOwnPropertyNames(PlaywrightFillDriver.prototype).sort()).toEqual(['close', 'constructor', 'fill']);
+        expect(Object.getOwnPropertyNames(RemoteFillDriver.prototype).sort()).toEqual(['close', 'constructor', 'fill']);
+        // The page's cookie is live inside the fill: the browser sends it back on the page's own requests.
+        expect(cookieHeaders.slice(heard).some((header) => header.split('; ').includes(cookiePair))).toBe(true);
+        // The fill's profile is one throwaway directory, on tmpfs and owner-only.
+        const profiles = [...new Set(inspection.commandLines.flatMap((parts) => parts.filter((part) => part.startsWith('--user-data-dir='))
+          .map((part) => part.slice('--user-data-dir='.length))))];
+        expect(profiles).toHaveLength(1);
+        profile = profiles[0]!;
+        expect((await stat(profile)).mode & 0o077).toBe(0);
+        expect(Number((await statfs(profile)).type)).toBe(0x01021994);
+      } finally {
+        for (const response of fontResponses) response.end(); fontResponses = [];
+        const outcome = await pending; zeroize(outcome.screenshot?.data);
+        password.dispose();
+      }
+      // The end of the fill deletes the profile, cookie store included.
+      await expect(stat(profile)).rejects.toMatchObject({ code: 'ENOENT' });
+
+      // The same driver's next fill of the same origin starts with an empty cookie jar.
+      const again = SecretMaterial.fromUtf8(['canary', randomUUID()].join('-'));
+      const heardAgain = cookieHeaders.length;
+      try {
+        const outcome = await browser.fill({ intent: { operationId: randomUUID(), itemId: 'fixture-login', origin: first.origin,
+          startUrl: `${first.origin}/`, submit: false, devMode: true }, material: { username: 'fixture-user', password: again, totp: null } });
+        try { expect(outcome.ok).toBe(true); } finally { zeroize(outcome.screenshot?.data); }
+      } finally { again.dispose(); }
+      const sentAgain = cookieHeaders.slice(heardAgain);
+      expect(sentAgain.length > 0).toBe(true);
+      expect(sentAgain.some((header) => header.includes(cookieName))).toBe(false);
+    } finally { await browser.close(); }
   });
 });
