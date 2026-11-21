@@ -1,9 +1,9 @@
 import { useCallback, useState } from 'react';
-import { VAULT_ITEM_TYPES, type VaultItemView, type VaultItemType } from '@tm8/contract';
+import { VAULT_ITEM_TYPES, type VaultItemView, type VaultItemType, type VaultPolicyView } from '@tm8/contract';
 import { openVaultCapture, openVaultImport } from './links';
 import { GrantsPanel } from './GrantsPanel';
 import {
-  CommandNotice, LoadState, Metadata, PageControls, TestSecretsNotice, actorLabel, dateLabel,
+  CommandNotice, GenericModeNotice, LoadState, Metadata, PageControls, TestSecretsNotice, actorLabel, dateLabel,
   hasOwnerSession, useVaultCommand, useVaultResource, type SurfaceProps,
 } from './ui';
 
@@ -66,6 +66,26 @@ export function ItemMetadata({ item, compact = false }: { item: VaultItemView; c
   </>;
 }
 
+const KEY_PLACEMENT: Record<VaultPolicyView['injection']['kind'], string> = {
+  bearer: 'Authorization header (bearer)', header: 'Named request header', basic: 'HTTP basic authentication',
+  query: 'Request URL (query parameter)',
+};
+
+/** An API key's egress policy, with generic mode labelled weaker (brief addendum 5). */
+function ApiPolicySummary({ policy }: { policy: VaultPolicyView | null }) {
+  if (!policy) return <p>No API policy is set. API calls with this key are refused.</p>;
+  return <section aria-label="API policy">
+    <h4>API policy</h4>
+    {policy.mode === 'generic' ? <GenericModeNotice keyInUrl={policy.injection.kind === 'query'} /> : null}
+    <Metadata entries={[
+      ['Mode', policy.mode === 'generic' ? 'Generic (weaker)' : `Vetted connector: ${policy.connector ?? 'unnamed'}`],
+      ['Hosts', policy.hosts.join(', ')], ['Methods', policy.methods.join(', ')],
+      ['Path prefixes', policy.pathPrefixes.join(', ')], ['Key placement', KEY_PLACEMENT[policy.injection.kind]],
+      ['Policy version', policy.version],
+    ]} />
+  </section>;
+}
+
 function ItemDetailPanel(props: SurfaceProps & { itemId: string; onBack(): void }) {
   const { port, status, itemId, readOnly, onBack } = props;
   const load = useCallback(async () => {
@@ -81,6 +101,7 @@ function ItemDetailPanel(props: SurfaceProps & { itemId: string; onBack(): void 
     <TestSecretsNotice status={status} /><LoadState {...resource} /><CommandNotice command={command} />
     {item && activity ? <>
       <h3>{item.name}</h3><ItemMetadata item={item} />
+      {item.type === 'api_key' ? <ApiPolicySummary policy={item.policy} /> : null}
       {item.access === 'owner' && item.state !== 'tombstoned' ? <button type="button"
         disabled={readOnly || command.busy || !status.features.capture} onClick={() => void command.run(
           () => port.captureLinkCreate({ itemType: item.type, purpose: 'replace', itemId: item.id, name: item.name }), openVaultCapture,

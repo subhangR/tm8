@@ -2,7 +2,7 @@
 import {
   type VaultActor, type VaultApprovalView, type VaultAuditEventView, type VaultGrantView,
   type VaultItemDetail, type VaultItemView, type VaultOperationName, type VaultPasskeyView,
-  type VaultSessionView, type VaultStatus,
+  type VaultPolicyView, type VaultSessionView, type VaultStatus,
 } from '@tm8/contract';
 import { createVaultPort, type VaultCallOptions, type VaultTransport } from './port';
 import type { VaultAuthenticator } from './webauthn';
@@ -11,9 +11,11 @@ export const VAULT_FIXTURE_IDS = {
   item: '11111111-1111-4111-8111-111111111111',
   blocked: '11111111-1111-4111-8111-222222222222',
   deleted: '11111111-1111-4111-8111-333333333333',
+  apiItem: '11111111-1111-4111-8111-444444444444',
   owner: '22222222-2222-4222-8222-222222222222',
   approval: '33333333-3333-4333-8333-333333333333',
   spendApproval: '33333333-3333-4333-8333-444444444444',
+  useApproval: '33333333-3333-4333-8333-555555555555',
   grant: '44444444-4444-4444-8444-444444444444',
   passkey: '55555555-5555-4555-8555-555555555555',
   otherPasskey: '55555555-5555-4555-8555-666666666666',
@@ -36,6 +38,14 @@ export interface VaultFixtureOptions {
   errors?: Partial<Record<VaultOperationName, unknown>>;
   /** The transport's space; null is a single-membership caller. */
   spaceId?: string | null;
+  /**
+   * Adds an active API key with this policy and, with `approval`, a pending per-use API approval
+   * for it that binds the mode the broker enforced and where the key is sent.
+   */
+  api?: {
+    policy: VaultPolicyView | null;
+    approval?: { policyMode: VaultPolicyView['mode']; keyInjection: VaultPolicyView['injection']['kind'] };
+  };
 }
 
 export function createVaultFixture(options: VaultFixtureOptions = {}) {
@@ -70,6 +80,23 @@ export function createVaultFixture(options: VaultFixtureOptions = {}) {
     spend: { merchant: `${label} merchant`, amountMinor: 1234, currency: 'USD', itemSummary: 'Test order', instrumentTier: 'tier1' },
     createdAt: at, expiresAt: future(), decidedAt: null, decidedBy: null, consumedAt: null,
   }];
+  if (options.api) {
+    const apiItem: VaultItemView = { ...base, id: ids.apiItem, name: `${label} API key`, type: 'api_key', exposureTier: 'a', origins: [] };
+    items.push(apiItem);
+    const bound = options.api.approval;
+    if (bound) {
+      const expiresAt = future();
+      approvals.push({
+        id: ids.useApproval, kind: 'use', state: 'pending', oneUse: true, intentHash: 'c'.repeat(64),
+        itemId: ids.apiItem, itemName: apiItem.name, boundParams: {
+          itemId: ids.apiItem, action: 'call_api', actionIntentHash: 'd'.repeat(64), requesterMemberId: ids.owner,
+          host: 'api.example.test', method: 'GET', path: '/v1/resource', policyMode: bound.policyMode,
+          keyInjection: bound.keyInjection, kind: 'use', expiresAt,
+        }, requestedBy: actor, purpose: `${label} API call`, lookalike: [], spend: null,
+        createdAt: at, expiresAt, decidedAt: null, decidedBy: null, consumedAt: null,
+      });
+    }
+  }
   const grants: VaultGrantView[] = [{
     id: ids.grant, itemId: ids.item, grantee: { kind: 'member', id: ids.owner, name: `${label} teammate` },
     constraints: { origins: ['https://github.com'], hosts: [], requireApprovalPerUse: true },
@@ -119,7 +146,8 @@ export function createVaultFixture(options: VaultFixtureOptions = {}) {
       switch (op) {
         case 'vault.status': output = status; break;
         case 'vault.items.list': output = { items, nextCursor: null }; break;
-        case 'vault.items.get': output = { ...find(items, opts?.params?.itemId), policy: null,
+        case 'vault.items.get': output = { ...find(items, opts?.params?.itemId),
+          policy: opts?.params?.itemId === ids.apiItem ? options.api?.policy ?? null : null,
           pendingApprovals: 1, activeGrants: grants.filter((grant) => !grant.revokedAt).length } satisfies VaultItemDetail; break;
         case 'vault.items.activity': output = { itemId: find(items, opts?.params?.itemId).id, windowDays: 7,
           uses: [{ actor, fills: 2, apiCalls: 1, origins: ['https://github.com'], hosts: [], lastAt: at }], recent: events }; break;

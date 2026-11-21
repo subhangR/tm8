@@ -1,6 +1,8 @@
 import { useCallback, useState, type FormEvent } from 'react';
 import type { VaultItemDetail } from '@tm8/contract';
-import { CommandNotice, LoadState, Metadata, dateLabel, hasOwnerSession, useVaultCommand, useVaultResource, type SurfaceProps } from './ui';
+import {
+  CommandNotice, GenericModeNotice, LoadState, Metadata, dateLabel, hasOwnerSession, useVaultCommand, useVaultResource, type SurfaceProps,
+} from './ui';
 
 export function GrantsPanel({ port, status, readOnly, item }: SurfaceProps & { item: VaultItemDetail }) {
   const load = useCallback(() => port.grantsList(item.id), [port, item.id]);
@@ -52,7 +54,9 @@ export function GrantsPanel({ port, status, readOnly, item }: SurfaceProps & { i
         <label key={origin}><input type="checkbox" checked={origins.includes(origin)} onChange={(event) => setOrigins(
           event.target.checked ? [...origins, origin] : origins.filter((value) => value !== origin),
         )} />{origin}</label>) : <p>No bound origins.</p>}</fieldset>
-      <fieldset><legend>Allowed API hosts</legend>{item.policy?.hosts.length ? item.policy.hosts.map((host) =>
+      <fieldset><legend>Allowed API hosts</legend>
+        {item.policy?.mode === 'generic' ? <GenericModeNotice keyInUrl={item.policy.injection.kind === 'query'} /> : null}
+        {item.policy?.hosts.length ? item.policy.hosts.map((host) =>
         <label key={host}><input type="checkbox" checked={hosts.includes(host)} onChange={(event) => setHosts(
           event.target.checked ? [...hosts, host] : hosts.filter((value) => value !== host),
         )} />{host}</label>) : <p>No API policy hosts.</p>}</fieldset>

@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import type { VaultApprovalView } from '@tm8/contract';
 import { vaultError } from './errors';
 import {
-  CommandNotice, LoadState, Metadata, PageControls, actorLabel, dateLabel, hasOwnerSession,
+  CommandNotice, GenericModeNotice, LoadState, Metadata, PageControls, actorLabel, dateLabel, hasOwnerSession,
   useVaultCommand, useVaultNow, useVaultResource, type SurfaceProps,
 } from './ui';
 
@@ -43,6 +43,8 @@ function ApprovalMetadata({ approval }: { approval: VaultApprovalView }) {
         </li>)}</ul>
       </> : <p>No lookalike finding was reported. Check the exact origin before approving.</p>}
     </div> : null}
+    {approval.boundParams.policyMode === 'generic'
+      ? <GenericModeNotice keyInUrl={approval.boundParams.keyInjection === 'query'} /> : null}
     <Metadata entries={[
       ['Item', approval.itemName], ['Item ID', approval.itemId], ['Requesting actor', actorLabel(approval.requestedBy)],
       ['Actor kind', approval.requestedBy.kind], ['Requesting member', approval.requestedBy.memberId], ['Actor session', approval.requestedBy.sessionId],

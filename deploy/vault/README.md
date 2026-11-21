@@ -367,8 +367,18 @@ on `01a1fa87` holds the full set with severities. The headline items:
   XML-RPC/SOAP and batch requests, and method-override fields in the query, a form, a multipart
   part or top-level JSON. Still open:
   - Generic mode is the weaker mode. It checks the host, method, prefix, the generic deny
-    segments and these detectors, but no schema. The UI does not yet label a generic policy as
-    weaker.
+    segments and these detectors, but no schema.
+    - The UI labels it weaker (brief addendum 5) in three places: the item's API policy, the
+      grant form, and each per-use API approval, above Approve.
+    - Each per-use API approval binds the mode the policy runs in (`enforcedMode`) and where the
+      key goes. So an approval given under one mode never authorizes a request under the other.
+    - A stored connector policy whose template lists no vetted operations is bound as generic.
+      `vault.policies.set` refuses to store one, and a test fails if a built-in template loses
+      its operations.
+    - Only a grantee whose grants all require approval per use gets an approval. The owner's own
+      sessions and agents get none: their authorization is the owner's step-up
+      `vault.policies.set` call that chose generic mode. No UI makes that call, so a policy can
+      be set only through the API.
   - The detectors are heuristics. They miss a multiplexer at an unremarkable path in a format
     they do not parse, a document id sent without variables, and query languages over HTTP
     (SQL and kin). In generic mode they also refuse some ordinary requests:

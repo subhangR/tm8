@@ -2,6 +2,7 @@ import type { VaultCallApiResult } from '@tm8/contract';
 import { VaultError, type ItemRecord, type SecretVersionRecord, type VaultHandler } from '../core-types.js';
 import { decryptSecretVersion, VaultCryptoError } from '../crypto/aead.js';
 import { KmsRefusedError, KmsUnavailableError } from '../crypto/kms.js';
+import { enforcedMode } from '../egress/connectors.js';
 import { SecretMaterial } from '../secret-material.js';
 import { EgressRefusal, type ApiRequestSpec, type ApiResponseOutcome, type BrokerPolicy } from '../types.js';
 import {
@@ -49,8 +50,11 @@ export const callApi: VaultHandler<'vault.callApi'> = async (ctx, { params, inpu
     const host = parsed?.host ?? null;
     const eligible = grants?.filter((grant) => grant.constraints.hosts === null || (host !== null && grant.constraints.hosts.includes(host))) ?? null;
     if (eligible !== null && eligible.length === 0) code = 'grant_constraint';
+    // The mode the policy runs in and where the key goes are bound too (brief addendum 5): the owner
+    // sees a generic, weaker mode before approving, and an approval never carries across a change.
     const bound = { ...useParams(ctx, item.id, 'call_api', intent.intentHash),
-      host, method: input.request.method, path: parsed?.path ?? null };
+      host, method: input.request.method, path: parsed?.path ?? null,
+      policyMode: policy ? enforcedMode(policy) : null, keyInjection: policy?.injection.kind ?? null };
     if (parsed) metadataText(ctx, parsed.path);
     const needUse = eligible !== null && eligible.length > 0 && eligible.every((grant) => grant.constraints.requireApprovalPerUse);
     const approval = needUse && code === null ? await usableApproval(tx, item.id, 'use', bound) : null;

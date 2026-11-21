@@ -16,7 +16,7 @@ import {
 } from './operations.js';
 import { nodeHttpsTransport, type EgressTransport, type PinnedHttpsResponse } from './transport.js';
 
-export { CONNECTORS, GENERIC_DENY_SEGMENTS, findConnector, vettedConnector } from './connectors.js';
+export { CONNECTORS, GENERIC_DENY_SEGMENTS, enforcedMode, findConnector, vettedConnector } from './connectors.js';
 export type { ConnectorTemplate, ConnectorRegistry, ConnectorDenyEntry } from './connectors.js';
 export {
   catalogProblems, checkBody, checkQuery, dispositionNames, headerAllowed, matchOperation, multiplexedBody, multiplexedJson,

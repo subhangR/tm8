@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { HttpMethod, KeyInjection } from '../types.js';
+import type { EgressMode, HttpMethod, KeyInjection } from '../types.js';
 import type { ConnectorOperation, ValueRule } from './operations.js';
 
 export interface ConnectorDenyEntry {
@@ -339,4 +339,15 @@ export function findConnector(registry: ConnectorRegistry, id: string | null | u
 export function vettedConnector(registry: ConnectorRegistry, id: string | null | undefined): ConnectorTemplate | undefined {
   const connector = findConnector(registry, id);
   return connector?.operations && connector.operations.length > 0 ? connector : undefined;
+}
+
+/**
+ * The mode a policy actually runs in (review F02, brief addendum 5): `connector` only when it
+ * names a template with vetted operations, otherwise the weaker `generic`. The broker binds this
+ * into each per-use API approval, so the owner sees it before approving, and an approval given
+ * under one mode never authorizes a request under the other. The default registry is the one the
+ * broker's executor uses and the one `vault.policies.set` admits connector policies against.
+ */
+export function enforcedMode(policy: { mode: EgressMode; connector: string | null }, registry: ConnectorRegistry = CONNECTORS): EgressMode {
+  return policy.mode === 'connector' && vettedConnector(registry, policy.connector) ? 'connector' : 'generic';
 }

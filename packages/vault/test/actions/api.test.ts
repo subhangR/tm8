@@ -2,10 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import { createBrokerCoreHandlers } from '../../src/broker/handlers/index.js';
-import { createEgressExecutor, type ConnectorRegistry, type EgressTransport } from '../../src/egress/index.js';
+import { CONNECTORS, createEgressExecutor, enforcedMode, type ConnectorRegistry, type EgressTransport } from '../../src/egress/index.js';
 import { buildCanarySet } from '../../src/canary/index.js';
 import { EgressRefusal, type ApiRequestSpec, type EgressExecutor } from '../../src/types.js';
-import { RecordingAlertSink, otherCaller, scopeOf, testCaller } from '../support/kit.js';
+import { actorOf, type PolicyInput } from '../../src/core-types.js';
+import { RecordingAlertSink, otherCaller, scopeOf, testCaller, type TestBroker } from '../support/kit.js';
 import { HOST, apiInput, apiKey, approve, events, harness, invoke, login, policyInput, share } from './fixtures.js';
 
 function fakeNetwork(body = '{"ok":true}', connectors?: ConnectorRegistry) {
@@ -15,6 +16,13 @@ function fakeNetwork(body = '{"ok":true}', connectors?: ConnectorRegistry) {
   const executor = createEgressExecutor({ resolve, transport, ...(connectors ? { connectors } : {}) });
   const execute = vi.fn<EgressExecutor['execute']>((input) => executor.execute(input));
   return { execute, transport, resolve };
+}
+
+async function setPolicy(broker: TestBroker, itemId: string, policy: PolicyInput) {
+  await broker.store.transaction(scopeOf(testCaller), async (tx) => {
+    const current = await tx.items.get(itemId);
+    await tx.policies.set(itemId, current!.version, policy, actorOf(testCaller));
+  });
 }
 
 describe('agent API actions', () => {
@@ -118,6 +126,63 @@ describe('agent API actions', () => {
     expect(changed.data.state).toBe('approval_required');
     expect((await invoke(broker, 'vault.callApi', { itemId: item.id }, { ...input, operationId: randomUUID() }, { caller: otherCaller })).data.state).toBe('done');
     expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  // Brief addendum 5: the owner sees the mode a key runs in before approving, and an approval given
+  // under a vetted connector never authorizes the same request once the key runs in generic mode.
+  it('binds the enforced API mode, so a connector-mode approval does not carry over to generic mode', async () => {
+    const { broker, execute } = harness();
+    const github = CONNECTORS.github!;
+    const vetted: PolicyInput = { ...policyInput, mode: 'connector', connector: 'github', hosts: [...github.hosts],
+      pathPrefixes: ['/user'], injection: github.injection };
+    const item = await apiKey(broker, vetted);
+    await share(broker, item.id, otherCaller, { hosts: null, origins: null, requireApprovalPerUse: true });
+    const request: ApiRequestSpec = { method: 'GET', url: 'https://api.github.com/user' };
+    const first = await invoke(broker, 'vault.callApi', { itemId: item.id }, apiInput({ request }), { caller: otherCaller });
+    if (first.data.state !== 'approval_required') throw new Error('expected approval');
+    const { data: underConnector } = await approve(broker, first.data.approvalId);
+    expect(underConnector.boundParams).toMatchObject({ policyMode: 'connector', keyInjection: 'bearer', host: 'api.github.com', path: '/user' });
+    await setPolicy(broker, item.id, { ...vetted, mode: 'generic', connector: null });
+    const second = await invoke(broker, 'vault.callApi', { itemId: item.id }, apiInput({ request }), { caller: otherCaller });
+    if (second.data.state !== 'approval_required') throw new Error('expected a new approval');
+    expect(second.data.approvalId).not.toBe(first.data.approvalId);
+    expect(execute).not.toHaveBeenCalled();
+    const { data: underGeneric } = await invoke(broker, 'vault.approvals.get', { approvalId: second.data.approvalId }, {});
+    expect(underGeneric.boundParams).toMatchObject({ policyMode: 'generic', keyInjection: 'bearer', host: 'api.github.com', path: '/user' });
+    expect(underGeneric.intentHash).not.toBe(underConnector.intentHash);
+    await approve(broker, second.data.approvalId);
+    expect((await invoke(broker, 'vault.callApi', { itemId: item.id }, apiInput({ request }), { caller: otherCaller })).data.state).toBe('done');
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0]![0].policy).toMatchObject({ mode: 'generic', connector: null });
+    const { data: unused } = await invoke(broker, 'vault.approvals.get', { approvalId: first.data.approvalId }, {});
+    expect(unused).toMatchObject({ state: 'approved', consumedAt: null });
+  });
+
+  it.each([
+    ['a stored connector policy whose template is not vetted', { ...policyInput, mode: 'connector', connector: 'retired_connector' }, 'bearer'],
+    ['a generic policy that sends the key in the URL', { ...policyInput, injection: { kind: 'query', name: 'api_key' } }, 'query'],
+  ] as const)('binds generic mode for %s', async (_name, policy, keyInjection) => {
+    const { broker, execute } = harness();
+    const item = await apiKey(broker, policy);
+    await share(broker, item.id, otherCaller, { hosts: null, origins: null, requireApprovalPerUse: true });
+    const { data } = await invoke(broker, 'vault.callApi', { itemId: item.id }, apiInput(), { caller: otherCaller });
+    if (data.state !== 'approval_required') throw new Error('expected approval');
+    const { data: view } = await invoke(broker, 'vault.approvals.get', { approvalId: data.approvalId }, {});
+    expect(view.boundParams).toMatchObject({ policyMode: 'generic', keyInjection });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('labels a connector policy generic unless its template lists vetted operations', () => {
+    const unrestricted: ConnectorRegistry = { test_connector: { id: 'test_connector', hosts: [HOST],
+      injection: { kind: 'bearer' }, defaultPathPrefixes: ['/v1'], deny: [] } };
+    for (const id of Object.keys(CONNECTORS)) expect(enforcedMode({ mode: 'connector', connector: id })).toBe('connector');
+    expect(enforcedMode({ mode: 'generic', connector: null })).toBe('generic');
+    expect(enforcedMode({ mode: 'connector', connector: 'test_connector' }, unrestricted)).toBe('generic');
+    expect(enforcedMode({ mode: 'connector', connector: 'test_connector' },
+      { test_connector: { ...unrestricted.test_connector!, operations: [] } })).toBe('generic');
+    for (const id of ['retired_connector', 'constructor', 'hasOwnProperty', null]) {
+      expect(enforcedMode({ mode: 'connector', connector: id })).toBe('generic');
+    }
   });
 
   it('keeps egress refusal params fixed and disposes the key after an executor error', async () => {

@@ -76,6 +76,19 @@ export function TestSecretsNotice({ status }: { status: VaultStatus }) {
     : null;
 }
 
+/**
+ * Generic API mode is weaker than a vetted connector (review F02, brief addendum 5). Shown wherever
+ * the owner authorizes use of such a key: the per-use approval, the item's API policy, a new grant.
+ */
+export function GenericModeNotice({ keyInUrl }: { keyInUrl: boolean }) {
+  return <div className="vault-warning" role="note" aria-label="Weaker API mode">
+    <strong>Weaker mode: generic API access, not a vetted connector.</strong>
+    <p>The owner entered this key&apos;s hosts. No vetted operation list limits the request: the query and body are sent
+      as the agent wrote them, inside the policy&apos;s hosts, methods and path prefixes and the vault&apos;s fixed deny rules.</p>
+    {keyInUrl ? <p>The key is sent in the request URL, so upstream logs may keep it.</p> : null}
+  </div>;
+}
+
 export function Metadata({ entries }: { entries: [string, React.ReactNode][] }) {
   return <dl className="vault-metadata">{entries.map(([label, value]) =>
     <div key={label}><dt>{label}</dt><dd>{value ?? '—'}</dd></div>)}</dl>;

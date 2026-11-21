@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { VAULT_IMPORT_PAGE_PATH } from '@tm8/contract';
+import { VAULT_IMPORT_PAGE_PATH, type VaultPolicyView } from '@tm8/contract';
 import { VaultSection } from './VaultSection';
 import { MaskedScreenshot } from './ActivityPanels';
 import { createVaultFixture, VAULT_FIXTURE_IDS as ids, type VaultFixtureOptions } from './fixture';
@@ -234,6 +234,68 @@ describe('metadata items, capture and use-only sharing', () => {
     await screen.findByRole('heading', { name: 'Example deleted note' });
     expect(screen.queryByRole('button', { name: 'Rotate' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Create grant with passkey' })).toBeNull();
+  });
+});
+
+// Review F02, brief addendum 5: generic API mode is weaker than a vetted connector, and the owner
+// sees that wherever use of such a key is authorized, before the decision.
+describe('generic API mode is labelled weaker', () => {
+  const policy = (mode: 'connector' | 'generic', injection: VaultPolicyView['injection'] = { kind: 'bearer' }): VaultPolicyView => ({
+    version: 1, mode, connector: mode === 'connector' ? 'github' : null, hosts: ['api.example.test'], methods: ['GET', 'POST'],
+    pathPrefixes: ['/v1'], maxRequestBytes: 4096, maxResponseBytes: 4096, injection,
+  });
+  const weaker = () => screen.queryAllByRole('note', { name: 'Weaker API mode' });
+
+  async function openApiKey() {
+    fireEvent.click(await screen.findByRole('button', { name: 'Example API key' }));
+    await screen.findByRole('heading', { name: 'Example API key' });
+    await screen.findByText('No grants for this item.');
+  }
+
+  it('shows the weaker mode on a per-use API approval, in the inbox and before Approve', async () => {
+    const fixture = await mount({ api: { policy: policy('generic', { kind: 'query', name: 'api_key' }),
+      approval: { policyMode: 'generic', keyInjection: 'query' } } });
+    await openScreen('Approvals');
+    await screen.findByRole('button', { name: 'Review Example API key' });
+    expect(weaker()).toHaveLength(1);
+    expect(weaker()[0]!.textContent).toContain('Weaker mode: generic API access, not a vetted connector.');
+    fireEvent.click(screen.getByRole('button', { name: 'Review Example API key' }));
+    await screen.findByRole('heading', { name: 'Approval details' });
+    await screen.findByText('Requesting actor');
+    const [notice] = weaker();
+    expect(notice!.textContent).toContain('the query and body are sent as the agent wrote them');
+    expect(notice!.textContent).toContain('The key is sent in the request URL, so upstream logs may keep it.');
+    const approveButton = screen.getByRole('button', { name: 'Approve with passkey' });
+    expect(notice!.compareDocumentPosition(approveButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(approveButton);
+    await screen.findByText('Approval approved.');
+    expect(fixture.calls.filter((call) => call.op === 'vault.approvals.decide')).toHaveLength(1);
+  });
+
+  it('does not label an approval bound to a vetted connector weaker', async () => {
+    await mount({ api: { policy: policy('connector'), approval: { policyMode: 'connector', keyInjection: 'bearer' } } });
+    await openApproval('Example API key');
+    expect(weaker()).toHaveLength(0);
+    expect(screen.getByText('Bound policyMode').nextSibling?.textContent).toBe('connector');
+  });
+
+  it('labels the API policy and the grant form of a generic-mode key', async () => {
+    await mount({ api: { policy: policy('generic', { kind: 'query', name: 'api_key' }) } }); await openApiKey();
+    const summary = screen.getByRole('region', { name: 'API policy' });
+    expect(summary.textContent).toContain('Generic (weaker)');
+    expect(summary.textContent).toContain('Request URL (query parameter)');
+    expect(weaker()).toHaveLength(2);
+    expect(screen.getByRole('group', { name: 'Allowed API hosts' }).textContent).toContain('Weaker mode: generic API access');
+  });
+
+  it('shows a vetted connector plainly and a key with no policy as refused', async () => {
+    await mount({ api: { policy: policy('connector') } }); await openApiKey();
+    expect(screen.getByRole('region', { name: 'API policy' }).textContent).toContain('Vetted connector: github');
+    expect(weaker()).toHaveLength(0);
+    cleanup();
+    await mount({ api: { policy: null } }); await openApiKey();
+    expect(screen.getByText('No API policy is set. API calls with this key are refused.')).toBeDefined();
+    expect(weaker()).toHaveLength(0);
   });
 });
 
