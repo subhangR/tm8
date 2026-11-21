@@ -44,15 +44,25 @@ import { startBroker } from './start.js';
  * a socket. Every value below is read only here; BROKER_ENV_KNOBS (config.ts)
  * covers the policy knobs. No startup error prints an environment value.
  */
+/**
+ * The broker's own socket. Its directory must be 0700 and the broker's own
+ * (listen() refuses anything else), so it is never /run/tm8-vault: the fill
+ * worker's tmpfiles.conf makes that one group-shared (2770) with the worker.
+ * Under systemd, `RuntimeDirectory=tm8-vault-broker` with mode 0700 creates it.
+ */
+export const DEFAULT_BROKER_SOCKET = '/run/tm8-vault-broker/broker.sock';
+/** The fill worker's socket: the path its unit (deploy/vault/fill-worker) listens on. */
+export const DEFAULT_FILL_SOCKET = '/run/tm8-vault/fill.sock';
+
 export const BROKER_RUNTIME_ENV_KNOBS = [
   { name: 'TM8_VAULT_DATABASE_URL', default: '', meaning: 'Postgres URL of a LOGIN role whose only membership is tm8_vault_broker; no inline password (use PGPASSFILE); required unless mode is off' },
-  { name: 'TM8_VAULT_BROKER_SOCKET', default: '/run/tm8-vault/broker.sock', meaning: 'Unix socket in an owner-only (0700) directory' },
+  { name: 'TM8_VAULT_BROKER_SOCKET', default: DEFAULT_BROKER_SOCKET, meaning: 'Unix socket in an owner-only (0700) directory' },
   { name: 'TM8_VAULT_RELAY_PUBLIC_KEY_FILE', default: '', meaning: 'Ed25519 public key (PEM) that verifies relay attestations; required unless mode is off' },
   { name: 'TM8_VAULT_BROKER_MTLS_LISTEN', default: '', meaning: 'host:port of the mTLS listener for a relay on another host; required in production' },
   { name: 'TM8_VAULT_BROKER_TLS_KEY_FILE', default: '', meaning: 'mTLS listener private key (PEM)' },
   { name: 'TM8_VAULT_BROKER_TLS_CERT_FILE', default: '', meaning: 'mTLS listener certificate (PEM)' },
   { name: 'TM8_VAULT_BROKER_TLS_CA_FILE', default: '', meaning: 'CA (PEM) that issues the relay client certificate' },
-  { name: 'TM8_VAULT_FILL_SOCKET', default: '/run/tm8-vault-fill/fill.sock', meaning: 'Fill worker socket; the worker reads the same knob' },
+  { name: 'TM8_VAULT_FILL_SOCKET', default: DEFAULT_FILL_SOCKET, meaning: 'Fill worker socket; the worker reads the same knob' },
   { name: 'TM8_VAULT_FILL_TIMEOUT_MS', default: String(DEFAULT_FILL_TIMEOUT_MS), meaning: 'Fill timeout 100..120000; the worker reads the same knob' },
   { name: 'TM8_VAULT_LOCAL_KEK_FILE', default: '', meaning: 'local-dev KEK file, created 0600 when absent; dev and pre_review only' },
   { name: 'TM8_VAULT_GCP_KMS_KEY', default: '', meaning: 'Cloud KMS cryptoKey resource name when TM8_VAULT_KMS_KIND=gcp-kms' },
@@ -288,10 +298,10 @@ export async function composeBroker(env: Env, options: { gcp?: GcpEndpoints; log
   if (mode === 'production') productionPrerequisites(env);
   const log = options.log ?? logLine;
   const connectionString = databaseUrl(env);
-  const socketPath = path(env, 'TM8_VAULT_BROKER_SOCKET', '/run/tm8-vault/broker.sock', 100);
+  const socketPath = path(env, 'TM8_VAULT_BROKER_SOCKET', DEFAULT_BROKER_SOCKET, 100);
   const relayPublicKeyFile = path(env, 'TM8_VAULT_RELAY_PUBLIC_KEY_FILE');
   const ledgerFile = ledgerPath(env);
-  const fillSocket = path(env, 'TM8_VAULT_FILL_SOCKET', '/run/tm8-vault-fill/fill.sock', 100);
+  const fillSocket = path(env, 'TM8_VAULT_FILL_SOCKET', DEFAULT_FILL_SOCKET, 100);
   const fillTimeoutMs = integer(env, 'TM8_VAULT_FILL_TIMEOUT_MS', DEFAULT_FILL_TIMEOUT_MS, 100, 120_000);
   const intervalMs = integer(env, 'TM8_VAULT_CHECKPOINT_INTERVAL_MS', 300_000, 10_000, 86_400_000);
   const mtls = mtlsOptions(env, mode as VaultMode);
