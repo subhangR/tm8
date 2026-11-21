@@ -113,6 +113,25 @@ describe('core item, grant and audit handlers', () => {
     expect(good.json.data.policy.hosts).toEqual(['api.example.com']);
     expect(good.json.data.version).toBe(2);
   });
+  it('stores a connector policy only for a built-in template with vetted operations (review F02)', async () => {
+    const h = await setup();
+    const api = await seedItem(h.store, testCaller, newApiKey());
+    const github = { mode: 'connector', connector: 'github', hosts: ['api.github.com'], methods: ['GET'], pathPrefixes: ['/repos'],
+      maxRequestBytes: 1024, maxResponseBytes: 1024, injection: { kind: 'bearer' } };
+    // 'constructor' passes the contract's id pattern and used to reach Object.prototype through
+    // the registry lookup; 'unknown' names no template.
+    for (const connector of ['constructor', 'unknown']) {
+      const refused = await h.send('vault.policies.set', { params: { itemId: api.id }, input: { ...stepCommand(), expectedVersion: 1,
+        policy: { ...github, connector } } });
+      expect(refused.status).toBe(400);
+      expect(refused.json.error.code).toBe('invalid_input');
+    }
+    expect((await h.send('vault.policies.set', { params: { itemId: api.id }, input: { ...stepCommand(), expectedVersion: 1,
+      policy: { ...github, hosts: ['api.github.com', 'uploads.github.com'] } } })).status).toBe(400);
+    const good = await h.send('vault.policies.set', { params: { itemId: api.id }, input: { ...stepCommand(), expectedVersion: 1, policy: github } });
+    expect(good.status).toBe(200);
+    expect(good.json.data.policy).toMatchObject({ mode: 'connector', connector: 'github', hosts: ['api.github.com'] });
+  });
   it('creates use-only grants, projects constrained metadata and revokes with only a session', async () => {
     const h = await setup();
     const item = await seedItem(h.store, testCaller, newLogin(testCaller, { origins: ['https://example.com', 'https://other.example.com'] }));

@@ -8,11 +8,20 @@ import {
 import { createResponseFilter } from '../filter/index.js';
 import { EgressRefusal, type ApiResponseOutcome, type BrokerPolicy, type EgressExecutor,
   type EgressExecuteInput, type KeyInjection, type TokenSpanScanner } from '../types.js';
-import { CONNECTORS, GENERIC_DENY_SEGMENTS, type ConnectorRegistry } from './connectors.js';
+import { CONNECTORS, GENERIC_DENY_SEGMENTS, findConnector, type ConnectorRegistry, type ConnectorTemplate } from './connectors.js';
+import {
+  checkBody, checkQuery, dispositionNames, headerAllowed, matchOperation, multiplexedBody, multiplexedParams, multiplexedPath,
+  type ConnectorOperation,
+} from './operations.js';
 import { nodeHttpsTransport, type EgressTransport, type PinnedHttpsResponse } from './transport.js';
 
-export { CONNECTORS, GENERIC_DENY_SEGMENTS } from './connectors.js';
+export { CONNECTORS, GENERIC_DENY_SEGMENTS, findConnector, vettedConnector } from './connectors.js';
 export type { ConnectorTemplate, ConnectorRegistry, ConnectorDenyEntry } from './connectors.js';
+export {
+  catalogProblems, checkBody, checkQuery, dispositionNames, headerAllowed, matchOperation, multiplexedBody, multiplexedJson,
+  multiplexedParams, multiplexedPath,
+} from './operations.js';
+export type { CheckedBody, ConnectorOperation, OperationBody, ValueRule } from './operations.js';
 export { nodeHttpsTransport } from './transport.js';
 export type { EgressTransport, PinnedHttpsRequest, PinnedHttpsResponse } from './transport.js';
 
@@ -38,8 +47,12 @@ const BLOCKED_HEADERS = new Set(['authorization', 'cookie', 'host', 'forwarded',
   'x-client-ip', 'true-client-ip', 'x-originating-ip', 'x-remote-ip', 'x-remote-addr',
   'client-ip', 'x-cluster-client-ip', 'cf-connecting-ip', 'fastly-client-ip']);
 const METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']);
-/** Rails (Rack), Laravel/Symfony and Express middleware can take `_method` as the real method. */
-const METHOD_FIELD = /^_method$/i;
+/**
+ * A method override field. Rails (Rack), Laravel/Symfony and Express middleware take `_method`
+ * as the real method, Salesforce takes `_HttpMethod`, and some frameworks read the override
+ * headers' names as fields. A plain `method` or `payment_method` is ordinary data.
+ */
+const METHOD_FIELD = /^(?:(?:_{1,2}|\$)(?:http_?)?method|x-(?:http-)?method(?:-override)?)$/i;
 const systemResolver: HostResolver = async (host) => (await dnsLookup(host, { all: true }))
   .map(({ address, family }) => ({ address, family: family as 4 | 6 }));
 
@@ -76,15 +89,16 @@ function validateHeader(name: string, value: string): void {
 }
 
 /**
- * A `_method` field in the body the upstream will parse. Rack parses a POST
- * without a content type as a form, so a missing type is checked as one.
+ * A method override field in the body the upstream will parse. Rack parses a POST without a
+ * content type as a form, so a missing type is checked as one, and it parses `multipart/related`
+ * and `multipart/mixed` as a form too, so every multipart type is checked.
  */
 function spoofsMethod(text: string, contentType: string | undefined): boolean {
   const mime = (contentType ?? '').split(';', 1)[0]!.trim().toLowerCase();
   if (mime === '' || mime === 'application/x-www-form-urlencoded') {
     return [...new URLSearchParams(text).keys()].some((key) => METHOD_FIELD.test(key));
   }
-  if (mime === 'multipart/form-data') return /(?:^|[;\s])name\*?\s*=\s*(?:"_method"|_method(?=[;\s]|$))/im.test(text);
+  if (mime.startsWith('multipart/')) return dispositionNames(text).some((name) => METHOD_FIELD.test(name));
   if (mime === 'application/json' || mime.endsWith('+json')) {
     let value: unknown;
     try { value = JSON.parse(text); } catch { return false; }
@@ -107,7 +121,15 @@ function prefixMatches(path: string, prefix: string): boolean {
   return path === base || path.startsWith(`${base}/`);
 }
 
-function parseDestination(input: EgressExecuteInput, connectors: ConnectorRegistry): { url: URL; path: string } {
+/** Where a request goes. `operation` is set for a connector template with vetted operations. */
+interface Destination {
+  url: URL;
+  path: string;
+  connector?: ConnectorTemplate;
+  operation?: ConnectorOperation;
+}
+
+function parseDestination(input: EgressExecuteInput, connectors: ConnectorRegistry): Destination {
   const { request, policy } = input;
   let url: URL;
   try { url = new URL(request.url); } catch { throw new EgressRefusal('url_refused'); }
@@ -120,12 +142,15 @@ function parseDestination(input: EgressExecuteInput, connectors: ConnectorRegist
     /%(?:2f|5c|00)/i.test(url.pathname) || originalPath.includes('\\')) throw new EgressRefusal('url_refused');
   const host = url.hostname;
   if (isIP(host.replace(/^\[|\]$/g, '')) || !policy.hosts.includes(host)) throw new EgressRefusal('host_not_allowed');
-  let connector;
+  let connector: ConnectorTemplate | undefined;
   if (policy.mode === 'connector') {
-    connector = policy.connector ? connectors[policy.connector] : undefined;
+    connector = findConnector(connectors, policy.connector);
     if (!connector || !connector.hosts.includes(host)) throw new EgressRefusal('host_not_allowed');
     if (!sameInjection(policy.injection, connector.injection)) throw new EgressRefusal('header_refused');
   }
+  // A template without a vetted operation list is unrestricted, so it is held to generic mode's
+  // rules on top of its own deny list. An empty list matches nothing and refuses everything.
+  const operations = connector?.operations;
   if (!METHODS.has(request.method) || !policy.methods.includes(request.method)) throw new EgressRefusal('method_not_allowed');
   if ([...url.searchParams.keys()].some((key) => METHOD_FIELD.test(key))) throw new EgressRefusal('method_not_allowed');
   let path: string;
@@ -135,15 +160,23 @@ function parseDestination(input: EgressExecuteInput, connectors: ConnectorRegist
   // the allowed prefix after these checks pass.
   if (/[\0-\x1f\x7f\\;]/.test(path) || /%(?:2f|5c|00|2e|25)/i.test(path)) throw new EgressRefusal('url_refused');
   // Deny wins even when an owner selected an overly broad path prefix.
-  const denied = connector ? connector.deny.some((entry) =>
-    entry.methods.includes(request.method) && new RegExp(entry.pathPattern.source, entry.pathPattern.flags.replace(/[gy]/g, '')).test(path)) :
-    path.toLowerCase().split('/').some((segment) => GENERIC_DENY_SEGMENTS.has(segment));
-  if (denied) throw new EgressRefusal('token_management_denied');
+  const connectorDenied = connector?.deny.some((entry) =>
+    entry.methods.includes(request.method) && new RegExp(entry.pathPattern.source, entry.pathPattern.flags.replace(/[gy]/g, '')).test(path)) ?? false;
+  const genericDenied = !operations && path.toLowerCase().split('/').some((segment) => GENERIC_DENY_SEGMENTS.has(segment));
+  if (connectorDenied || genericDenied) throw new EgressRefusal('token_management_denied');
+  // GraphQL, JSON-RPC and batch envelopes hide the real operation from every check here (F02).
+  if (multiplexedParams(url.searchParams)) throw new EgressRefusal('multiplexer_refused');
+  if (!operations && multiplexedPath(path)) throw new EgressRefusal('multiplexer_refused');
   if (!policy.pathPrefixes.some((prefix) => prefixMatches(path, prefix))) throw new EgressRefusal('path_not_allowed');
-  return { url, path };
+  if (!operations) return { url, path, connector };
+  const operation = matchOperation(operations, request.method, path);
+  if (!operation) throw new EgressRefusal(multiplexedPath(path) ? 'multiplexer_refused' : 'operation_not_allowed');
+  // The upstream receives the query rebuilt from the checked pairs, not the agent's raw text.
+  url.search = checkQuery(operation, url);
+  return { url, path, connector, operation };
 }
 
-function prepare(input: EgressExecuteInput, url: URL): { headers: Record<string, string>; body?: Buffer } {
+function prepare(input: EgressExecuteInput, { url, connector, operation }: Destination): { headers: Record<string, string>; body?: Buffer } {
   const { policy, request, canaries } = input;
   const injection = policy.injection;
   if (injection.kind === 'query' && policy.mode !== 'generic') throw new EgressRefusal('url_refused');
@@ -160,11 +193,14 @@ function prepare(input: EgressExecuteInput, url: URL): { headers: Record<string,
     const name = rawName.toLowerCase();
     validateHeader(rawName, value);
     if (blockedHeader(name) || name === injectionHeader(injection) || Object.hasOwn(headers, name)) throw new EgressRefusal('header_refused');
+    // A vetted operation takes only its template's agent headers, each value checked by its rule.
+    if (operation && !headerAllowed(connector?.headers, name, value)) throw new EgressRefusal('header_refused');
     headerBytes += Buffer.byteLength(rawName) + Buffer.byteLength(value) + 4;
     if (headerBytes > 8192) throw new EgressRefusal('header_refused');
     headers[name] = value;
   }
   let body: Buffer | undefined;
+  let rebuilt: Buffer | undefined;
   try {
     if (request.body) {
       const text = request.body.kind === 'json' ? JSON.stringify(request.body.value) : request.body.value;
@@ -174,13 +210,27 @@ function prepare(input: EgressExecuteInput, url: URL): { headers: Record<string,
       const contentType = request.body.kind === 'json' ? 'application/json' : request.body.contentType;
       if (contentType !== undefined) { validateHeader('content-type', contentType); headers['content-type'] ??= contentType; }
       if (spoofsMethod(text, headers['content-type'])) throw new EgressRefusal('method_not_allowed');
+      if (multiplexedBody(text, headers['content-type'])) throw new EgressRefusal('multiplexer_refused');
     }
-    if (canaries.matches(request.url) || canaries.matches(url.href) || Object.values(headers).some((value) => canaries.matches(value)) || (body && canaries.matches(body))) {
+    if (operation) {
+      // The operation fixes the body and its content type. A form goes upstream rebuilt from the
+      // checked pairs; the agent's own text is still what the canary check below reads.
+      const checked = checkBody(operation, request.body);
+      if (checked) headers['content-type'] = checked.contentType;
+      if (checked?.text !== undefined) {
+        if (Buffer.byteLength(checked.text) > policy.maxRequestBytes) throw new EgressRefusal('body_too_large');
+        rebuilt = Buffer.from(checked.text);
+      }
+    }
+    if (canaries.matches(request.url) || canaries.matches(url.href) || Object.values(headers).some((value) => canaries.matches(value)) ||
+      (body && canaries.matches(body)) || (rebuilt && canaries.matches(rebuilt))) {
       throw new EgressRefusal('canary_in_request');
     }
+    if (rebuilt) { body?.fill(0); body = rebuilt; rebuilt = undefined; }
     return { headers, body };
   } catch (error) {
     body?.fill(0);
+    rebuilt?.fill(0);
     if (error instanceof EgressRefusal) throw error;
     throw new EgressRefusal('body_too_large');
   }
@@ -273,8 +323,9 @@ export function createEgressExecutor(options: EgressExecutorOptions = {}): Egres
   const transport = options.transport ?? nodeHttpsTransport;
   return {
     async execute(input): Promise<ApiResponseOutcome> {
-      const { url } = parseDestination(input, options.connectors ?? CONNECTORS);
-      const prepared = prepare(input, url);
+      const destination = parseDestination(input, options.connectors ?? CONNECTORS);
+      const { url } = destination;
+      const prepared = prepare(input, destination);
       const controller = new AbortController();
       const onAbort = () => controller.abort();
       let response: PinnedHttpsResponse | undefined;

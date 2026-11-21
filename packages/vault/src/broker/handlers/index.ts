@@ -3,7 +3,7 @@ import type { VaultOutput } from '@tm8/contract';
 import {
   memberScope, StoreNotFoundError, StoreStateError, VaultError, type BrokerCoreOp, type HandlersFor, type HandlerContext, type PolicyInput,
 } from '../../core-types.js';
-import { CONNECTORS } from '../../egress/connectors.js';
+import { CONNECTORS, vettedConnector } from '../../egress/connectors.js';
 import { canonicalJson } from '../../intent/hash.js';
 import { normalizeOrigin, OriginRefusal } from '../../origin/normalize.js';
 import { createCaptureHandlers } from './captures.js';
@@ -32,7 +32,9 @@ function validatePolicy(ctx: HandlerContext, policy: PolicyInput): void {
     || policy.pathPrefixes.some((path) => /[?#;\\\u0000-\u0020]/.test(path) || /%2f|%5c|%00/i.test(path)
       || path.split('/').some((segment) => segment === '.' || segment === '..'))) throw new VaultError('invalid_input');
   if (policy.mode === 'connector') {
-    const connector = policy.connector ? CONNECTORS[policy.connector] : undefined;
+    // Only a template with vetted operations backs a connector policy (F02); an unknown id,
+    // an inherited name such as `constructor`, or an unrestricted template is refused.
+    const connector = vettedConnector(CONNECTORS, policy.connector);
     if (!connector || policy.hosts.some((host) => !connector.hosts.includes(host))
       || canonicalJson(policy.injection) !== canonicalJson(connector.injection)) throw new VaultError('invalid_input');
   } else if (policy.connector !== null) throw new VaultError('invalid_input');

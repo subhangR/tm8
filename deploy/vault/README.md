@@ -306,7 +306,26 @@ on `01a1fa87` holds the full set with severities. The headline items:
 - Revoking the last passkey.
 
 **Grants and connectors**
-- GraphQL bodies bypass the connector path deny-list.
+- Connector requests (review F02). A connector policy is stored only for a built-in template
+  that has vetted operations. It admits only those operations: the exact method and path, a
+  rule for each query parameter, a strict body schema, and an allowlist of agent headers. The
+  broker rebuilds the query and the form body it forwards. Both modes refuse GraphQL, JSON-RPC,
+  XML-RPC/SOAP and batch requests, and method-override fields in the query, a form, a multipart
+  part or top-level JSON. Still open:
+  - Generic mode is the weaker mode. It checks the host, method, prefix, the generic deny
+    segments and these detectors, but no schema. The UI does not yet label a generic policy as
+    weaker.
+  - The detectors are heuristics. They miss a multiplexer at an unremarkable path in a format
+    they do not parse, a document id sent without variables, and query languages over HTTP
+    (SQL and kin). In generic mode they also refuse some ordinary requests:
+    - a path segment named `batch`, `bulk` or `rpc`;
+    - top-level JSON with a string `method` and `params`;
+    - JSON with a document id and `variables`;
+    - a multipart body with a `name=` of `query`, `operations` and kin anywhere in it.
+  - Stripe PaymentIntent reads are not offered. A PaymentIntent carries its `client_secret`, and
+    the response filter does not remove it.
+  - A new connector needs its own vetted operation list. `catalogProblems` checks the rules'
+    form, not the vendor's semantics.
 - `startUrl` restriction.
 - `devMode` must come from broker config.
 - An origin change should require step-up.

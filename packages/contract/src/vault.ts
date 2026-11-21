@@ -712,6 +712,8 @@ export const VAULT_EGRESS_REFUSAL_CODES = [
   'url_refused', 'scheme_refused', 'credentials_in_url', 'host_not_allowed', 'method_not_allowed', 'path_not_allowed',
   'token_management_denied', 'header_refused', 'body_too_large', 'private_address', 'dns_failed', 'redirect_refused',
   'canary_in_request', 'upstream_unreachable', 'timeout', 'policy_missing', 'grant_constraint', 'kms_unavailable',
+  // Independent review F02: connector operations and multiplexer surfaces.
+  'operation_not_allowed', 'request_schema_refused', 'multiplexer_refused',
 ] as const;
 export const VaultEgressRefusalCodeSchema = z.enum(VAULT_EGRESS_REFUSAL_CODES);
 

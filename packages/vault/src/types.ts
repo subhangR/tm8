@@ -96,10 +96,17 @@ export type EgressRefusalCode =
   | 'scheme_refused'
   | 'credentials_in_url'
   | 'host_not_allowed'
-  /** Off the policy's method list, or a `_method` override field in the query or a form/multipart/JSON body. */
+  /** Off the policy's method list, or a method override field (`_method`, `_HttpMethod` and kin) in the query or a form/multipart/JSON body. */
   | 'method_not_allowed'
   | 'path_not_allowed'
   | 'token_management_denied'
+  /** Connector mode: no vetted operation of the template has this method and path (F02). */
+  | 'operation_not_allowed'
+  /** Connector mode: the query or body breaks the matched operation's schema (F02). */
+  | 'request_schema_refused'
+  /** A GraphQL, JSON-RPC, XML-RPC/SOAP or batch request, which hides the real operation (F02). Refused in both modes. */
+  | 'multiplexer_refused'
+  /** A blocked or duplicate header; in connector mode also any agent header the template does not list, or a failed value rule. */
   | 'header_refused'
   | 'body_too_large'
   | 'private_address'
