@@ -55,8 +55,10 @@ SameSite=Strict `__Host-tm8-session` cookie that browser sign-in sets (and that
 the SPA's reload check refreshes for an older pass), sent because the page is on
 the SPA/relay origin and fetches with `credentials: 'same-origin'`. The page
 never reads web storage, so the bearer the SPA keeps in `localStorage` never
-reaches it, and it sends no `Authorization` header. A missing or expired tm8
-session answers 401, shown as "Sign in to tm8 in this browser". The space from
+reaches it, and it sends no `Authorization` header. Like the SPA, it sends
+`X-TM8-Client` on every call: the server's CSRF gate (S6) refuses a command
+that carries the tm8 cookie without it. A missing or expired tm8 session
+answers 401, shown as "Sign in to tm8 in this browser". The space from
 the fragment rides in `x-tm8-vault-space` (`VAULT_SPACE_HEADER`); the relay
 accepts it only when it names one of the caller's memberships. With no space,
 the relay needs the caller to have a single membership.

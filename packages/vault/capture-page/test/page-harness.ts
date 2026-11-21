@@ -6,7 +6,7 @@ import { VAULT_INPUT_SCHEMAS, VAULT_OPERATIONS as CONTRACT_OPERATIONS } from '..
 import { CaptureKeyPair } from '../../src/capture/seal.js';
 import { mountCapturePage } from '../src/page.js';
 import type { CapturePage } from '../src/page.js';
-import { VAULT_OPERATIONS, VAULT_SPACE_HEADER } from '../src/contract.js';
+import { TM8_CLIENT_HEADER, VAULT_OPERATIONS, VAULT_PAGE_CLIENT_LABEL, VAULT_SPACE_HEADER } from '../src/contract.js';
 import type { ItemType, Operation } from '../src/contract.js';
 
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
@@ -58,7 +58,8 @@ export function harness(options: HarnessOptions = {}) {
     const headers = new Headers(init.headers);
     expect(headers.has('authorization')).toBe(false);
     expect(headers.get(VAULT_SPACE_HEADER)).toBe(spaceId);
-    expect([...headers.keys()].sort()).toEqual(spaceId === null ? ['content-type'] : ['content-type', VAULT_SPACE_HEADER]);
+    expect(headers.get(TM8_CLIENT_HEADER)).toBe(VAULT_PAGE_CLIENT_LABEL);
+    expect([...headers.keys()].sort()).toEqual(['content-type', TM8_CLIENT_HEADER, ...(spaceId === null ? [] : [VAULT_SPACE_HEADER])].sort());
     const url = String(input);
     const operation = (Object.keys(VAULT_OPERATIONS) as Operation[]).find((name) => {
       const row = CONTRACT_OPERATIONS.find((entry) => entry.name === name)!;

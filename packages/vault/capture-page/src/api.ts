@@ -1,4 +1,4 @@
-import { VAULT_OPERATIONS, VAULT_SPACE_HEADER } from './contract.js';
+import { TM8_CLIENT_HEADER, VAULT_OPERATIONS, VAULT_PAGE_CLIENT_LABEL, VAULT_SPACE_HEADER } from './contract.js';
 import type { Operation } from './contract.js';
 import { PageError, remoteError } from './errors.js';
 
@@ -27,7 +27,9 @@ export class VaultApi {
         if (!value || !/^[0-9a-f-]{36}$/i.test(value)) throw new PageError('invalid_link');
         return encodeURIComponent(value);
       });
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      // X-TM8-Client on every call, as the SPA does: without it the server's CSRF
+      // gate refuses each command that carries the tm8 cookie.
+      const headers: Record<string, string> = { 'Content-Type': 'application/json', [TM8_CLIENT_HEADER]: VAULT_PAGE_CLIENT_LABEL };
       if (this.spaceId) headers[VAULT_SPACE_HEADER] = this.spaceId;
       const response = await this.fetch(path, {
         method: row.method, credentials: 'same-origin', cache: 'no-store',

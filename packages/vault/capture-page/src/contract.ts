@@ -5,6 +5,13 @@
  */
 export const VAULT_IMPORT_PAGE_PATH = '/vault/capture/import';
 export const VAULT_SPACE_HEADER = 'x-tm8-vault-space';
+/**
+ * The tm8 server's CSRF gate (S6) refuses a state-changing request that carries
+ * the tm8 cookie but not this header (contract/src/envelope.ts). Any non-empty
+ * value satisfies it; the value is a client label that nothing reads.
+ */
+export const TM8_CLIENT_HEADER = 'x-tm8-client';
+export const VAULT_PAGE_CLIENT_LABEL = 'tm8-vault-page';
 export const VAULT_MAX_CAPTURE_CIPHERTEXT = 64 * 1024;
 export const VAULT_MAX_IMPORT_CIPHERTEXT = 8 * 1024 * 1024;
 export const VAULT_OPERATIONS = {

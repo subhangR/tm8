@@ -7,9 +7,11 @@ import {
   VAULT_MAX_CAPTURE_CIPHERTEXT as CONTRACT_MAX_CAPTURE, VAULT_MAX_IMPORT_CIPHERTEXT as CONTRACT_MAX_IMPORT,
   VAULT_OPERATIONS as CONTRACT_OPERATIONS, VAULT_ITEM_TYPES, VAULT_SPACE_HEADER as CONTRACT_SPACE_HEADER,
 } from '../../../contract/src/vault.js';
+// The package entry, not envelope.ts: its source pulls in the whole catalog.
+import { TM8_CLIENT_HEADER as CONTRACT_CLIENT_HEADER } from '@tm8/contract';
 import { CAPTURE_RESPONSE_HEADERS } from '../src/headers.js';
 import { CAPTURE_FIELDS } from '../src/payload.js';
-import { IMPORT_FORMATS, VAULT_IMPORT_PAGE_PATH, VAULT_MAX_CAPTURE_CIPHERTEXT, VAULT_MAX_IMPORT_CIPHERTEXT, VAULT_OPERATIONS, VAULT_SPACE_HEADER } from '../src/contract.js';
+import { IMPORT_FORMATS, TM8_CLIENT_HEADER, VAULT_IMPORT_PAGE_PATH, VAULT_MAX_CAPTURE_CIPHERTEXT, VAULT_MAX_IMPORT_CIPHERTEXT, VAULT_OPERATIONS, VAULT_SPACE_HEADER } from '../src/contract.js';
 import { harness, response } from './page-harness.js';
 import type { Harness } from './page-harness.js';
 import { PageError, errorCopy, remoteError } from '../src/errors.js';
@@ -57,6 +59,7 @@ describe('standalone assets and contract parity', () => {
     }
     expect(VAULT_IMPORT_PAGE_PATH).toBe(CONTRACT_IMPORT_PATH);
     expect(VAULT_SPACE_HEADER).toBe(CONTRACT_SPACE_HEADER);
+    expect(TM8_CLIENT_HEADER).toBe(CONTRACT_CLIENT_HEADER);
     expect(IMPORT_FORMATS).toEqual(VAULT_IMPORT_FORMATS);
     expect(Object.keys(CAPTURE_FIELDS)).toEqual([...VAULT_ITEM_TYPES]);
     expect(VAULT_MAX_CAPTURE_CIPHERTEXT).toBe(CONTRACT_MAX_CAPTURE);
