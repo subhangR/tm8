@@ -34,6 +34,7 @@ import type {
   AttentionCounts,
   AttentionFilter,
   AttentionQueueRow,
+  AttentionScope,
   EntityName,
 } from './attention-selectors';
 import { badgeOf, createAttentionCommands } from './attention-commands';
@@ -48,12 +49,15 @@ export interface AttentionEntityRef {
 
 export interface AttentionApi extends AttentionCommands {
   status: 'loading' | 'ready' | 'error';
+  /** Last complete rows remain visible after a failed refresh, explicitly marked stale. */
+  refreshError?: string | null;
   /** The chip for an entity: its own and rolled-up requests. Null when nothing is pending. */
   chipFor(entity: AttentionEntityRef): AttentionChip | null;
   /** The F1 "waiting on you" marker for a session or chat: requests it raised, wherever pinned. */
   raisedChipFor(sessionOrChatId: EntityId | string): AttentionChip | null;
-  counts(): AttentionCounts;
-  queue(filter: AttentionFilter): readonly AttentionQueueRow[];
+  /** Actionable roots by default; FYI and the complete inventory are explicit. */
+  counts(scope?: AttentionScope): AttentionCounts;
+  queue(filter: AttentionFilter, scope?: AttentionScope): readonly AttentionQueueRow[];
   /** Pending requests on `root` (own and rolled up), newest first. */
   requestsFor(root: EntityId | string): readonly AttentionRequest[];
   /** The live Undo offer after a Resolve, or null. */
@@ -266,6 +270,7 @@ export function AttentionProvider(props: AttentionProviderProps) {
   const api = useMemo<AttentionApi>(() => ({
     ...commands,
     status: pending.state.phase,
+    refreshError: pending.state.phase === 'ready' ? pending.state.refreshError : null,
     chipFor(entity) {
       const id = String(entity.id);
       if (hiddenRoots.has(id)) return null;
@@ -279,13 +284,13 @@ export function AttentionProvider(props: AttentionProviderProps) {
     raisedChipFor(sessionOrChatId) {
       return chipFromRows(requestsRaisedBy(rows, sessionOrChatId as EntityId));
     },
-    counts() {
+    counts(scope) {
       const visible = new Map([...byRoot].filter(([root]) => !hiddenRoots.has(root)));
-      return countsOf(visible, viewerId);
+      return countsOf(visible, viewerId, scope);
     },
-    queue(filter) {
+    queue(filter, scope) {
       const visible = new Map([...byRoot].filter(([root]) => !hiddenRoots.has(root)));
-      return buildQueue(visible, { filter, viewerId, names });
+      return buildQueue(visible, { filter, viewerId, names, scope });
     },
     requestsFor(root) {
       if (hiddenRoots.has(String(root))) return [];
@@ -294,7 +299,7 @@ export function AttentionProvider(props: AttentionProviderProps) {
     undo,
     error,
     refresh,
-  }), [commands, pending.state.phase, rows, byRoot, badges, hiddenRoots, names, viewerId, undo, error, refresh]);
+  }), [commands, pending.state, rows, byRoot, badges, hiddenRoots, names, viewerId, undo, error, refresh]);
 
   const counts = api.counts();
   useEffect(() => {

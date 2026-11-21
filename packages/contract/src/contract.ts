@@ -7792,6 +7792,29 @@ export interface SessionJournalPage {
  * recomposed prompt describes the build doing the reading, not the launch
  * being inspected, and the two diverge silently.
  */
+/** Resolved work-session connector bindings; account metadata is current and viewer-filtered. */
+export interface SessionConnectorAccounts {
+  available: boolean;
+  unavailableReason: 'not_recorded' | 'read_failed' | null;
+  entries: Array<{
+    serverId: EntityId;
+    serverName: string;
+    credentialRequired: boolean;
+    /** Null when no account was required, or its metadata is no longer readable. */
+    account: {
+      id: string;
+      label: string;
+      accountLabel: string | null;
+      grantedScopes: string[];
+      usable: boolean;
+      status: string | null;
+      reason: string;
+    } | null;
+  }>;
+  /** Hidden connectors are counted without disclosing ids or names. */
+  hiddenCount: number;
+}
+
 export interface SessionLaunchRecord {
   sessionId: EntityId;
   /**
@@ -7844,6 +7867,12 @@ export interface SessionLaunchRecord {
    * manifest. Unlike `manifest`, this is filtered for the viewer.
    */
   launchContext: SessionLaunchContext | null;
+  /**
+   * Recorded resolved connector/account pins, projected through existing viewer
+   * metadata gates. A resume can update the binding. Never inferred from current
+   * defaults; absent on older servers. Account status/scopes are current metadata.
+   */
+  connectorAccounts?: SessionConnectorAccounts;
   /**
    * The spawn receipt's posture rows — the resolved access mode and where it
    * came from, the credential each provider ran on, the parent — rebuilt from

@@ -164,6 +164,7 @@ export function ConnectionsTab({
   onOpenEntity,
   graph,
   launchContext,
+  taskAccess,
   header,
   crossSpaceRefs,
   onOpenDiscussion,
@@ -184,6 +185,8 @@ export function ConnectionsTab({
    * session it is long, and above them it pushed every link below the fold.
    */
   launchContext?: ReactNode;
+  /** The task's access reading, also offered beside its Git section. */
+  taskAccess?: ReactNode;
   /**
    * The entity's SELECTION HEADER section (I9a) — what a launch reads when
    * deciding whether to pick this entity. Host-composed; absent for kinds that
@@ -264,6 +267,7 @@ export function ConnectionsTab({
       data-view={shownView}
     >
       {toolbar}
+      {taskAccess}
       {launchContext}
       {empty ? (
         <EmptyBody

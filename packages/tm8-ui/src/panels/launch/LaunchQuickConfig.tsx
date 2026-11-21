@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ExecutionSpawnInput } from '@tm8/contract';
+import { launchTitleFor } from '../../domain/launch';
 import {
   accessModeLabel,
   agentTool,
@@ -407,7 +408,7 @@ export function LaunchQuickConfig({
                     // id through `derive_task_for_entity` (064), so a non-task
                     // subject arrives here unchanged and is resolved there.
                     taskIds: [subject.id],
-                    title: subject.title,
+                    title: launchTitleFor(subject),
                   }),
                 ),
               )

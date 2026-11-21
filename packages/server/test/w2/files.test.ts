@@ -20,6 +20,7 @@ import { registerW2FileHandlers } from '../../src/facade/handlers/w2/files.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
 import { createW2BlobStore } from '../../src/files/w2-blob-store.js';
 import { createW2FileUploadRoute } from '../../src/http/w2-file-upload.js';
+import { translateDbError } from '../../src/db/errors.js';
 import type { OperationHandler, RequestContext } from '../../src/http/types.js';
 
 const OWNER = {
@@ -518,7 +519,7 @@ describe('W2.G07 raw upload route seam', () => {
     return { server, base: `http://127.0.0.1:${address.port}` };
   }
 
-  it('authenticates the intended token and identity, streams without JSON buffering, and stages verifiable bytes', async () => {
+  it.each([true, false])('preserves bytes when settlement receipt is lost (committed=%s) and resumes safely', async (committed) => {
     const dataDir = await tempDataDir();
     const store = createW2BlobStore({ dataDir, maxSizeBytes: 64 });
     const token = await store.grantToken(IDS.upload);
@@ -526,13 +527,66 @@ describe('W2.G07 raw upload route seam', () => {
     const storagePath = store.storagePath(IDS.space, IDS.blob);
     const db = new FakeDb();
     let staged = false;
+    let writes = 0;
+    db.queryImpl = async () => { throw new Error('database read also unavailable'); };
+    db.rpcImpl = async <T>(claims, fn, args) => {
+      if (fn === 'w2_authorize_file_upload') {
+        if (claims.identityId !== OWNER.identityId || args[1] !== tokenHash) throw new CollabError('forbidden', 'wrong identity or token');
+        return { outcome: staged ? 'staged' : 'authorized', uploadId: IDS.upload, spaceId: IDS.space,
+          storagePath, sizeBytes: BODY.length, checksumSha256: CHECKSUM } as T;
+      }
+      if (fn === 'w2_settle_file_upload_write') {
+        if (args[3] === false) return { outcome: 'staged' } as T;
+        writes += 1;
+        if (writes === 1) {
+          staged = committed;
+          throw new CollabError('upstream_unavailable', 'settlement receipt lost', { retryable: true });
+        }
+        staged = true;
+        return { outcome: 'staged', uploadId: IDS.upload, spaceId: IDS.space, storagePath } as T;
+      }
+      throw new Error(`unexpected rpc ${fn}`);
+    };
+    const route = createW2FileUploadRoute({ deps: { db,
+      config: { host: '127.0.0.1', port: 0, uiDir: undefined, maxBodyBytes: 1, databaseUrl: 'postgres://unused' }, owner: async () => OWNER,
+    }, blobStore: store });
+    const { server, base } = await listen(route);
+    const put = () => fetch(`${base}/v2/files/uploads/${IDS.upload}/content`, {
+      method: 'PUT', headers: { authorization: `Bearer ${token}` }, body: BODY,
+    });
+    try {
+      expect((await put()).status).toBe(503);
+      expect(await store.read(storagePath, IDS.space)).toEqual(BODY);
+      expect((await put()).status).toBe(204);
+      expect(await store.read(storagePath, IDS.space)).toEqual(BODY);
+      expect(staged).toBe(true);
+      expect(writes).toBe(committed ? 1 : 2);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it.each(['staged', 'completed'])('authenticates the grant and preserves bytes when settlement reports %s', async (settleOutcome) => {
+    const dataDir = await tempDataDir();
+    const store = createW2BlobStore({ dataDir, maxSizeBytes: 64 });
+    const token = await store.grantToken(IDS.upload);
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const storagePath = store.storagePath(IDS.space, IDS.blob);
+    const db = new FakeDb();
+    let staged = false;
+    let completed = false;
+    let writerBusy = true;
     db.rpcImpl = async <T>(claims, fn, args) => {
       if (fn === 'w2_authorize_file_upload') {
         if (claims.identityId !== OWNER.identityId || args[1] !== tokenHash) {
           throw new CollabError('forbidden', 'wrong upload identity or token');
         }
+        if (writerBusy) {
+          writerBusy = false;
+          throw translateDbError({ code: '23514', message: 'file upload already has an active writer' });
+        }
         return {
-          outcome: staged ? 'staged' : 'authorized',
+          outcome: completed ? 'completed' : staged ? 'staged' : 'authorized',
           uploadId: IDS.upload,
           spaceId: IDS.space,
           storagePath,
@@ -543,7 +597,7 @@ describe('W2.G07 raw upload route seam', () => {
       if (fn === 'w2_settle_file_upload_write') {
         expect(args.slice(3)).toEqual([true, BODY.length, CHECKSUM]);
         staged = true;
-        return { outcome: 'staged', uploadId: IDS.upload, storagePath } as T;
+        return { outcome: settleOutcome, uploadId: IDS.upload, storagePath } as T;
       }
       throw new Error(`unexpected rpc ${fn}`);
     };
@@ -557,6 +611,13 @@ describe('W2.G07 raw upload route seam', () => {
     });
     const { server, base } = await listen(route);
     try {
+      const busy = await fetch(`${base}/v2/files/uploads/${IDS.upload}/content`, {
+        method: 'PUT', headers: { authorization: `Bearer ${token}` }, body: BODY,
+      });
+      expect(busy.status).toBe(409);
+      expect(await busy.json()).toMatchObject({ error: {
+        code: 'conflict', retryable: true, details: { reason: 'upload_writer_active', retryAfterSeconds: 1 },
+      } });
       const response = await fetch(`${base}/v2/files/uploads/${IDS.upload}/content`, {
         method: 'PUT',
         headers: { authorization: `Bearer ${token}` },
@@ -571,6 +632,17 @@ describe('W2.G07 raw upload route seam', () => {
         body: BODY,
       });
       expect(retry.status).toBe(204);
+      expect(await store.read(storagePath, IDS.space)).toEqual(BODY);
+
+      // A CLI resume repeats the PUT even when the prior completion response
+      // was lost. It acknowledges the original slot and never changes bytes.
+      completed = true;
+      const replayCompleted = await fetch(`${base}/v2/files/uploads/${IDS.upload}/content`, {
+        method: 'PUT',
+        headers: { authorization: `Bearer ${token}` },
+        body: Buffer.from('different retry bytes'),
+      });
+      expect(replayCompleted.status).toBe(204);
       expect(await store.read(storagePath, IDS.space)).toEqual(BODY);
 
       const wrongIdentity = await fetch(`${base}/v2/files/uploads/${IDS.upload}/content`, {

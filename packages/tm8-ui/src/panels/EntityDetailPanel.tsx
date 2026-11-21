@@ -432,6 +432,8 @@ export interface EntityDetailPanelProps {
   changesSurface?: ReactNode;
   /** The task detail's git section (tracked PRs/commits + gate verdict). */
   taskGitSection?: ReactNode;
+  /** Viewer-scoped task resources, recorded run access and current capabilities. */
+  taskAccessSection?: ReactNode;
   /** The GRAPH surface (what the session is connected to). Same contract as Debug. */
   graphSurface?: ReactNode;
   /**
@@ -2193,6 +2195,7 @@ function PanelBody(
           graph={props.graphSurface}
           /* Only a session has a launch: the terminal archetype, by registry data. */
           launchContext={config.panel.archetype === 'terminal' ? props.launchContextSurface : undefined}
+          taskAccess={props.taskAccessSection}
           crossSpaceRefs={detail.deletedAt ? undefined : props.crossSpaceRefsSurface}
           /* The authored selection header, for the kinds that can carry one —
              asked of the domain, never spelled here (§15.2). A tombstone has
@@ -2366,6 +2369,7 @@ function PanelBody(
             : undefined
         }
         gitSection={config.panel.gitSection ? props.taskGitSection : undefined}
+        accessSection={props.taskAccessSection}
         skillOptions={props.skillOptions}
         /* Same binding as the Discussion composer and the doc editor: the
            anchor is this entity, so a file inserted into the description is

@@ -34,6 +34,15 @@ describe('the spawn payload', () => {
     await waitFor(() => expect(view.onDismiss).toHaveBeenCalledTimes(1));
   });
 
+  it('names the session from a long task intent without changing its source', async () => {
+    const subject = { id: 'task-9', title: 'Please fix the login bug in the new Safari version. Keep every reproduction step.', kind: 'task' };
+    const view = renderPopup({ subject });
+    const input = await view.spawn();
+    expect(input.title).toBe('fix the login bug');
+    expect(input.taskIds).toEqual(['task-9']);
+    expect(subject.title).toBe('Please fix the login bug in the new Safari version. Keep every reproduction step.');
+  });
+
   it('a changed access posture is sent', async () => {
     const view = renderPopup();
     fireEvent.click(view.getByTestId('nsx-perm'));

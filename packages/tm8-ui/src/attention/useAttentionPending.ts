@@ -17,8 +17,9 @@
  *
  * `activity_touched` also fires for every message that lands, so the trigger
  * is THROTTLED: at most one read in flight, and a burst of events while it is
- * in flight collapses into one trailing read. An `entity.upsert` does carry the
- * badge, so it triggers only when the count it reports differs from ours.
+ * in flight collapses into one trailing read. An `entity.upsert` with pending
+ * attention also refreshes: urgency, reason or assignee can change while the
+ * badge's pending count stays equal.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
@@ -30,7 +31,7 @@ import type {
 } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 
-/** Per status. A strip is a count and a short list, not the archive. */
+/** Page size per status; follow every cursor so FYI cannot hide later actions. */
 export const PENDING_PAGE_LIMIT = 100;
 /**
  * Quiet period before an event-triggered read. Under a steady stream of
@@ -50,8 +51,10 @@ export type AttentionPendingState =
   | {
       phase: 'ready';
       rows: readonly AttentionRequest[];
-      /** A page came back full: the count is a floor, not a total. */
+      /** Retained for consumers; complete cursor reads always return false. */
       truncated: boolean;
+      /** Failed refresh: rows remain the last complete snapshot until a later read succeeds. */
+      refreshError: string | null;
       /**
        * Which read this is (1, 2, …, in the order reads STARTED). A caller that
        * notes `readsStarted()` when its write settles knows that any answer
@@ -96,13 +99,47 @@ export function useAttentionPending(
     const mine = generation.current;
     started.current += 1;
     const readNo = started.current;
-    void Promise.all(
-      PENDING_STATUSES.map((status) =>
-        seam.attentionRequests({ spaceId, status, limit: PENDING_PAGE_LIMIT })),
-    ).then(
+    let failed = false;
+    const failRead = (error: unknown) => {
+      if (failed) return;
+      failed = true;
+      if (mine !== generation.current) return;
+      const message = String((error as { message?: string })?.message ?? error);
+      // Keep the last complete snapshot, explicitly marked stale, while both
+      // status readers retain ownership of this attempt's in-flight requests.
+      setState((current) => current.phase === 'ready'
+        ? { ...current, refreshError: message }
+        : { phase: 'error', message });
+    };
+    const readStatus = async (status: AttentionRequestStatus): Promise<AttentionRequest[]> => {
+      const rows: AttentionRequest[] = [];
+      const cursors = new Set<string>();
+      let cursor: string | undefined;
+      try {
+        do {
+          const page = await seam.attentionRequests({ spaceId, status, limit: PENDING_PAGE_LIMIT, ...(cursor ? { cursor } : {}) });
+          // An abandoned attempt must not follow more cursors, even while a
+          // sibling status request still needs to settle before the next read.
+          if (failed || mine !== generation.current) return [];
+          rows.push(...page.items);
+          cursor = page.nextCursor ?? undefined;
+          if (cursor) {
+            if (cursors.has(cursor)) throw new Error('Attention pagination did not advance');
+            cursors.add(cursor);
+          }
+        } while (cursor);
+      } catch (error) {
+        failRead(error);
+        throw error;
+      }
+      return rows;
+    };
+    // Wait for BOTH status readers after a failure. Promise.all would release
+    // inFlight while a sibling page was still pending, letting refresh overlap it.
+    void Promise.allSettled(PENDING_STATUSES.map(readStatus)).then(
       (pages) => {
-        if (mine !== generation.current) return;
-        const rows = pages.flatMap((page) => page.items);
+        if (failed || mine !== generation.current) return;
+        const rows = pages.flatMap((page) => page.status === 'fulfilled' ? page.value : []);
         // Per id, the way the badge counts (migration 255): a request counts on
         // its own entity AND on its roll-up root. Keyed by entity alone, every
         // upsert of a root with a rolled-up request looked like a change.
@@ -115,17 +152,10 @@ export function useAttentionPending(
         setState({
           phase: 'ready',
           rows,
-          truncated: pages.some((page) => page.nextCursor != null),
+          truncated: false,
+          refreshError: null,
           readNo,
         });
-      },
-      (error: unknown) => {
-        if (mine !== generation.current) return;
-        // A failed REFRESH keeps the last good answer on screen: a count that
-        // is a few seconds old is more useful than one replaced by an error.
-        setState((current) => current.phase === 'ready'
-          ? current
-          : { phase: 'error', message: String((error as { message?: string })?.message ?? error) });
       },
     ).finally(() => {
       if (mine !== generation.current) return;
@@ -161,7 +191,8 @@ export function useAttentionPending(
         const reported = event.type === 'entity.deleted'
           ? 0
           : event.entity.badges.attention?.pendingCount ?? 0;
-        if (reported !== (counts.current.get(event.entity.id as EntityId) ?? 0)) schedule();
+        if (reported !== (counts.current.get(event.entity.id as EntityId) ?? 0)
+          || (event.type === 'entity.upsert' && reported > 0)) schedule();
       }
     });
     const offResync = seam.onResync((resynced) => {
@@ -169,6 +200,7 @@ export function useAttentionPending(
     });
 
     return () => {
+      generation.current += 1;
       offEvent();
       offResync();
       if (timer.current) {

@@ -23,7 +23,7 @@ interface RawAuthorizeResult {
 }
 
 interface RawSettleResult {
-  outcome: 'staged' | 'aborted' | 'expired';
+  outcome: 'staged' | 'completed' | 'pending' | 'aborted' | 'expired';
   uploadId: string;
   spaceId: string;
   storagePath: string;
@@ -118,9 +118,20 @@ export function createW2FileUploadRoute(options: W2FileUploadRouteOptions): W2Fi
         claims,
         'w2_authorize_file_upload',
         [uploadId, tokenHash, leaseId],
-      );
+      ).catch((error: unknown) => {
+        // In this RPC, 23514 is the active-writer lease refusal (migration
+        // 022). Classify by the function + SQLSTATE, never by message text.
+        if (error instanceof CollabError && error.details?.sqlstate === '23514') {
+          throw new CollabError('conflict', 'This upload already has an active writer.', {
+            retryable: true, details: { reason: 'upload_writer_active', retryAfterSeconds: 1 },
+          });
+        }
+        throw error;
+      });
 
-      if (authorize.outcome === 'staged') {
+      // Replaying an upload after a lost completion receipt is also a no-op.
+      // The creator and grant token have already been checked by the RPC.
+      if (authorize.outcome === 'staged' || authorize.outcome === 'completed') {
         req.resume();
         res.writeHead(204, {
           'x-content-type-options': 'nosniff',
@@ -149,21 +160,38 @@ export function createW2FileUploadRoute(options: W2FileUploadRouteOptions): W2Fi
           expectedChecksumSha256: authorize.checksumSha256,
         });
       } catch (error) {
-        await options.deps.db.rpc<RawSettleResult>(
-          claims,
-          'w2_settle_file_upload_write',
-          [uploadId, tokenHash, leaseId, false, null, null],
-        ).catch(() => undefined);
-        throw error;
+        try {
+          // A previous writer may have published the exact blob before losing
+          // its settlement response. Verify it under this slot's immutable
+          // size/checksum contract; never overwrite it or accept other bytes.
+          if (!(error instanceof CollabError) || error.code !== 'conflict') throw error;
+          verified = await options.blobStore.verify(
+            authorize.storagePath, authorize.spaceId, Number(authorize.sizeBytes), authorize.checksumSha256,
+          );
+        } catch (failure) {
+          await options.deps.db.rpc<RawSettleResult>(
+            claims, 'w2_settle_file_upload_write',
+            [uploadId, tokenHash, leaseId, false, null, null],
+          ).catch(() => undefined);
+          throw failure;
+        }
       }
 
       const settled = await options.deps.db.rpc<RawSettleResult>(
         claims,
         'w2_settle_file_upload_write',
         [uploadId, tokenHash, leaseId, true, verified.sizeBytes, verified.checksumSha256],
-      );
-      if (settled.outcome !== 'staged') {
-        await options.blobStore.remove(authorize.storagePath, authorize.spaceId);
+      ).catch(async (error: unknown) => {
+        // Release an unsettled writer if the database is reachable. A slot
+        // already staged by the first call remains staged; its bytes survive.
+        await options.deps.db.rpc<RawSettleResult>(claims!, 'w2_settle_file_upload_write',
+          [uploadId, tokenHash, leaseId, false, null, null]).catch(() => undefined);
+        throw error;
+      });
+      if (settled.outcome !== 'staged' && settled.outcome !== 'completed') {
+        if (settled.outcome === 'aborted' || settled.outcome === 'expired') {
+          await options.blobStore.remove(authorize.storagePath, authorize.spaceId);
+        }
         throw new CollabError('invalid_input', `upload slot is ${settled.outcome}`);
       }
 
@@ -174,18 +202,8 @@ export function createW2FileUploadRoute(options: W2FileUploadRouteOptions): W2Fi
       res.end();
       return true;
     } catch (error) {
-      // If database settlement failed after the file became visible, it is not
-      // a staged upload and complete must never observe it.
-      if (authorize?.outcome === 'authorized' && authorize.storagePath && authorize.spaceId) {
-        const staged = await options.deps.db.query<{ staged_at: Date | string | null }>(
-          claims ?? {},
-          `select staged_at from public.file_upload_slots where id=$1`,
-          [uploadId],
-        ).catch(() => []);
-        if (staged[0]?.staged_at == null) {
-          await options.blobStore.remove(authorize.storagePath, authorize.spaceId).catch(() => undefined);
-        }
-      }
+      // A lost DB response is an UNKNOWN outcome, not proof of an unstaged
+      // blob. Keep it for verified retry or the existing slot expiry sweep.
       sendWireError(res, error, context.requestId);
       return true;
     }

@@ -8,9 +8,10 @@
  * - The filter defaults to Personal when anything is yours, else Team.
  * - Open goes where the request came from (`openTargetOf`): the raising
  *   session or chat, or the form / thing a tm8 signal is about.
- * - Order comes from the store: unseen first, then level, points, age. Rows
+ * - Actionable is the default; an explicit FYI view keeps informational requests available.
+ * - Order comes from the store: level first, then unseen, points, age. Rows
  *   the viewer has seen are dimmed.
- * - Each row: chip, title, type tag, latest reason, then
+ * - Each row: chip, title, type tag, highest priority reason, then
  *   `via session #… · persona · age · assigned to you`.
  * - Row actions: Open, Seen, Resolve. Resolve opens a one-line optional note
  *   inline, then settles; the row leaves in place and the shell's toast offers
@@ -19,15 +20,15 @@
 import { useEffect, useRef, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { useAttention } from './attention-store';
-import type { AttentionFilter, AttentionQueueRow } from './attention-selectors';
-import { formatAge, openTargetOf } from './attention-selectors';
+import type { AttentionFilter, AttentionQueueRow, AttentionScope } from './attention-selectors';
+import { formatAge, isActionable, openTargetOf } from './attention-selectors';
 import { AttentionChipView } from './AttentionChipView';
 import './attention-v2.css';
 
 export interface AttentionListProps {
   /** Start on this filter instead of the default (Mine when mine > 0). */
   filter?: AttentionFilter;
-  /** `targetId` is `openTargetOf(row.latest)`, which may differ from the root. */
+  /** `targetId` is `openTargetOf(row.primary)`, which may differ from the root. */
   onOpen(targetId: EntityId, row: AttentionQueueRow): void;
   /** Names the host already holds, consulted before the store's hydration. */
   nameOf?(id: EntityId): { title: string } | undefined;
@@ -43,10 +44,13 @@ export function shortHandle(id: string): string {
 
 export function AttentionList({ filter: initial, onOpen, nameOf, title = 'Needs you', className }: AttentionListProps) {
   const api = useAttention();
-  const counts = api.counts();
+  const actionableCounts = api.counts();
+  const fyiCounts = api.counts('fyi');
+  const [scope, setScope] = useState<Exclude<AttentionScope, 'all'>>('actionable');
+  const counts = scope === 'actionable' ? actionableCounts : fyiCounts;
   const [chosen, setChosen] = useState<AttentionFilter | null>(initial ?? null);
-  const filter: AttentionFilter = chosen ?? (counts.mine > 0 ? 'mine' : 'all');
-  const rows = api.queue(filter);
+  const filter: AttentionFilter = chosen ?? (actionableCounts.mine > 0 ? 'mine' : 'all');
+  const rows = api.queue(filter, scope);
   const now = Date.now();
 
   return (
@@ -68,6 +72,34 @@ export function AttentionList({ filter: initial, onOpen, nameOf, title = 'Needs 
           ))}
         </div>
       </header>
+      <div className="att-list__triage">
+        <div className="att-list__scope" role="group" aria-label="Request type">
+          {(['actionable', 'fyi'] as const).map((key) => (
+            <button
+              key={key}
+              type="button"
+              className={scope === key ? 'att-list__f att-list__f--on' : 'att-list__f'}
+              aria-pressed={scope === key}
+              data-testid={`attention-scope-${key}`}
+              onClick={() => setScope(key)}
+            >
+              {key === 'actionable' ? `Action needed · ${actionableCounts[filter]}` : `FYI · ${fyiCounts[filter]}`}
+            </button>
+          ))}
+        </div>
+        <p className="att-list__order" data-testid="attention-priority-explanation">
+          {scope === 'actionable'
+            ? 'Urgent, high, then normal. Within each priority: unseen, points, then oldest.'
+            : 'FYI is informational and does not count as action needed.'}
+          {' Counts are work items.'}
+        </p>
+      </div>
+      {api.refreshError ? (
+        <p className="att-list__empty" role="status" data-testid="attention-list-stale">
+          Attention could not be refreshed. Showing the last loaded work items.{' '}
+          <button type="button" className="att-list__act" onClick={api.refresh}>Retry</button>
+        </p>
+      ) : null}
       {api.status === 'error' ? (
         <p className="att-list__empty" data-testid="attention-list-error">
           Attention could not be loaded. It will retry on the next change.
@@ -76,7 +108,9 @@ export function AttentionList({ filter: initial, onOpen, nameOf, title = 'Needs 
         <p className="att-list__empty">Loading…</p>
       ) : rows.length === 0 ? (
         <p className="att-list__empty" data-testid="attention-list-empty">
-          {filter === 'mine' && counts.all > 0 ? 'Nothing assigned to you. Try Team.' : 'Nothing needs anyone.'}
+          {filter === 'mine' && (counts.all > 0 || fyiCounts.all > 0) ? 'Nothing assigned to you in this view. Try Team.'
+            : scope === 'fyi' ? 'No FYI requests in this view.'
+              : fyiCounts[filter] > 0 ? 'No action needed. Informational requests are available in FYI.' : 'Nothing needs anyone.'}
         </p>
       ) : (
         <ul className="att-list__rows">
@@ -88,7 +122,7 @@ export function AttentionList({ filter: initial, onOpen, nameOf, title = 'Needs 
               title={nameOf?.(row.rootId)?.title ?? row.title}
               onOpen={() => {
                 void api.markSeen(row.rootId);
-                onOpen(openTargetOf(row.latest), row);
+                onOpen(openTargetOf(row.primary), row);
               }}
               onSeen={() => void api.markSeen(row.rootId)}
               onResolve={(note) => void api.resolve(row.rootId, note)}
@@ -116,15 +150,17 @@ function AttentionListRow(props: {
     if (noting) input.current?.focus();
   }, [noting]);
 
-  const latest = row.latest;
-  const source = latest.sourceWorkSessionId
-    ? `via session ${shortHandle(latest.sourceWorkSessionId)}`
-    : latest.entityId !== row.rootId ? `via ${shortHandle(latest.entityId)}` : null;
+  const primary = row.primary;
+  const source = primary.origin !== 'system' && primary.sourceWorkSessionId
+    ? `via session ${shortHandle(primary.sourceWorkSessionId)}`
+    : primary.entityId !== row.rootId ? `via ${shortHandle(primary.entityId)}` : null;
+  const actionable = row.requests.filter(isActionable).length;
+  const fyi = row.requests.length - actionable;
   const facts = [
     source,
-    latest.requestedBy.displayName,
-    formatAge(latest.createdAt, now),
-    row.mine ? 'assigned to you' : null,
+    primary.requestedBy.displayName,
+    formatAge(primary.createdAt, now),
+    row.mine ? 'includes an assignment to you' : null,
   ].filter(Boolean).join(' · ');
 
   return (
@@ -148,10 +184,19 @@ function AttentionListRow(props: {
           >
             {title ?? row.rootId}
           </button>
-          <span className="att-list__type">{latest.actionType ?? 'decide'}</span>
+          <span className="att-list__type">{primary.actionType ?? 'decide'}</span>
         </div>
-        <div className="att-list__reason" title={latest.reason}>{latest.reason}</div>
+        <div className="att-list__priority" data-testid="attention-row-priority">
+          {row.chip.level === 'fyi' ? 'FYI' : `${row.chip.level[0]!.toUpperCase()}${row.chip.level.slice(1)} priority`}
+          {` · ${actionable} actionable · ${fyi} FYI`}
+        </div>
+        <div className="att-list__reason" title={primary.reason}>{primary.reason}</div>
         <div className="att-list__facts">{facts}</div>
+        {noting ? (
+          <p className="att-list__order" data-testid="attention-resolve-scope">
+            Resolves all {row.requests.length} pending {row.requests.length === 1 ? 'request' : 'requests'} on this work item, including FYI and other assignees.
+          </p>
+        ) : null}
         {noting ? (
           <form
             className="att-list__note"

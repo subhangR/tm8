@@ -6,7 +6,7 @@ import {
 } from './composer/ChatConnectors';
 import { EntityAttentionChip } from '../attention';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react';
-import { CollabError } from '@tm8/contract';
+import { CollabError, shortIntentTitle } from '@tm8/contract';
 import type { ChatCredentialSelection, ChatMode, EntityId, LaunchModelEffort, SessionTranscriptContext, SpaceId } from '@tm8/contract';
 import { useMobileSurface } from '../mobile';
 import { CHATS_ROOT, KindIcon, homeQuickBirthKinds, type HomeRoot } from '../domain';
@@ -2374,10 +2374,9 @@ export function ChatHomeScreen({
         // somebody else's row.
         ...(aboutId ? { aboutId } : {}),
         body,
-        /* The chat's title defaults to the opening body; with a crew brief
-           appended that would name the chat after the brief. Name it after
-           the human's own words instead. */
-        ...(brief || opening !== draftBody ? { title: draftBody.slice(0, 240) } : {}),
+        /* Name the intent before context/crew instructions are appended.
+           The complete opening body still travels as the message. */
+        title: shortIntentTitle(draftBody, 'New chat'),
         teammateId,
         model: selectedModel.model,
         reasoningEffort: effort,

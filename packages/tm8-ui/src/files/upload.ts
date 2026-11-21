@@ -18,7 +18,7 @@
  * lane's settled idiom for the same question (`model.ts`) and which is what the
  * caller wanted anyway — a row, not a discriminant.
  */
-import type { CommandResult, EntityId, FileUploadGrant, SpaceId } from '@tm8/contract';
+import { isRetryableFileTransferError, isRetryableUploadError, retryUpload, type UploadRetryOptions, type CommandResult, type EntityId, type FileUploadGrant, type SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { rowFromEntity } from './model';
 import { sha256HexOfBytes } from './sha256';
@@ -69,12 +69,26 @@ export interface FileUploadTaskOptions {
   anchorId?: EntityId;
   newMutationId?: () => string;
   checksum?: (file: Blob) => Promise<string>;
+  retry?: Pick<UploadRetryOptions, 'sleep' | 'random' | 'onRetry'>;
 }
 
+interface UploadResume {
+  initId: string;
+  completeId: string;
+  abortId: string;
+  checksum?: string;
+  grant?: FileUploadGrant;
+  phase: 'init' | 'bytes' | 'complete';
+  task?: FileUploadTask;
+}
+
+// File objects are weak keys: a removed attachment cannot be retained by recovery.
+// Space + anchor + seam prevent a manual retry from changing its destination.
+const RESUMABLE_UPLOADS = new WeakMap<Seam['files'], WeakMap<File, Map<string, UploadResume>>>();
+
 /**
- * Starts one canonical file operation. The task owns its grant and is the only
- * place allowed to abort it, which makes cancellation and failed PUT cleanup
- * idempotent even when they race.
+ * One replay-safe lifecycle. A transient failure keeps the grant and phase for
+ * the composer's existing manual retry; cancellation/permanent refusal aborts.
  */
 export function createFileUploadTask({
   files,
@@ -83,15 +97,29 @@ export function createFileUploadTask({
   anchorId,
   newMutationId = defaultMutationId,
   checksum = sha256Hex,
+  retry,
 }: FileUploadTaskOptions): FileUploadTask {
+  let byFile = RESUMABLE_UPLOADS.get(files);
+  if (!byFile) RESUMABLE_UPLOADS.set(files, byFile = new WeakMap());
+  let byAnchor = byFile.get(file);
+  if (!byAnchor) byFile.set(file, byAnchor = new Map());
+  const key = JSON.stringify([spaceId, anchorId ?? null]);
+  let saved = byAnchor.get(key);
+  if (saved?.task) return saved.task;
+  if (saved?.grant && saved.phase !== 'complete' && Date.parse(saved.grant.expiresAt) <= Date.now()) saved = undefined;
+  const state: UploadResume = saved ?? {
+    initId: newMutationId(), completeId: newMutationId(), abortId: newMutationId(), phase: 'init',
+  };
+  byAnchor.set(key, state);
+  const forget = () => { if (byAnchor.get(key) === state) byAnchor.delete(key); };
+  const controller = new AbortController();
   let cancelled = false;
   let completed = false;
-  let grant: FileUploadGrant | null = null;
   let aborting: Promise<void> | null = null;
 
   const abortGrant = (): Promise<void> => {
-    if (grant === null || completed) return Promise.resolve();
-    aborting ??= files.abort(grant.uploadId, { clientMutationId: newMutationId() })
+    if (!state.grant || completed) return Promise.resolve();
+    aborting ??= files.abort(state.grant.uploadId, { clientMutationId: state.abortId })
       .then(() => undefined)
       .catch(() => undefined);
     return aborting;
@@ -106,28 +134,38 @@ export function createFileUploadTask({
   const result = (async (): Promise<UploadedFile> => {
     try {
       if (file.size <= 0) throw uploadError('invalid_input', 'Empty files cannot be uploaded.');
-      const checksumSha256 = await checksum(file);
+      state.checksum ??= await checksum(file);
       await assertActive();
-      grant = await files.uploadInit({
-        clientMutationId: newMutationId(),
+      state.grant ??= await retryUpload(() => files.uploadInit({
+        clientMutationId: state.initId,
         spaceId,
         ...(anchorId !== undefined ? { entityId: anchorId } : {}),
         name: file.name,
         mime: file.type || 'application/octet-stream',
         sizeBytes: file.size,
-        checksumSha256,
-      });
+        checksumSha256: state.checksum!,
+      }), { ...retry, signal: controller.signal });
+      const grant = state.grant;
       await assertActive();
       if (file.size > grant.maxSizeBytes) {
         throw uploadError('payload_too_large', 'This file exceeds the upload limit.');
       }
-      await files.putBytes(grant, file);
+      if (state.phase !== 'complete') {
+        state.phase = 'bytes';
+        await retryUpload(() => files.putBytes(grant, file), { ...retry, signal: controller.signal, isRetryable: isRetryableFileTransferError });
+        state.phase = 'complete';
+      }
       await assertActive();
-      const response = await files.complete(grant.uploadId, { clientMutationId: newMutationId() });
+      const response = await retryUpload(
+        () => files.complete(grant.uploadId, { clientMutationId: state.completeId }),
+        { ...retry, signal: controller.signal },
+      );
+      // From here even a malformed response must never destroy completed work.
+      completed = true;
+      forget();
       const entity = response.entity;
       const row = entity ? rowFromEntity(entity) : null;
       if (!row) throw uploadError('invariant_violation', 'Upload completed without a file entity.');
-      completed = true;
       return {
         fileEntityId: row.fileEntityId,
         name: row.name,
@@ -137,21 +175,36 @@ export function createFileUploadTask({
         result: response,
       };
     } catch (error) {
+      if (!cancelled && !completed && (isRetryableUploadError(error)
+        || (state.phase === 'bytes' && isRetryableFileTransferError(error)))) {
+        const shape = error as { code?: string };
+        throw Object.assign(new Error('Upload paused. Try again to resume.'), {
+          code: shape.code, retryable: true, resumable: true,
+        });
+      }
+      forget();
       await abortGrant();
       if (cancelled && !(error instanceof UploadCancelledError)) {
         throw new UploadCancelledError();
       }
       throw error;
+    } finally {
+      delete state.task;
     }
   })();
 
-  return {
+  const task: FileUploadTask = {
     result,
     cancel() {
+      if (completed || (state.task && state.task !== task)) return;
       cancelled = true;
+      controller.abort();
+      forget();
       void abortGrant();
     },
   };
+  state.task = task;
+  return task;
 }
 
 /**
@@ -250,10 +303,11 @@ const SAFE_UPLOAD_ERRORS: Readonly<Record<string, string>> = {
 export function safeUploadReason(error: unknown): string {
   if (error instanceof UploadCancelledError) return 'Upload cancelled.';
   const shape = typeof error === 'object' && error !== null
-    ? (error as { code?: unknown; retryable?: unknown })
+    ? (error as { code?: unknown; retryable?: unknown; resumable?: unknown })
     : {};
   const code = typeof shape.code === 'string' ? shape.code : null;
   const known = code ? SAFE_UPLOAD_ERRORS[code] : undefined;
+  if (shape.resumable === true) return known ? `${known} Try again to resume.` : 'Upload paused. Try again to resume.';
   if (known) {
     return shape.retryable === true ? `${known} Try again.` : known;
   }

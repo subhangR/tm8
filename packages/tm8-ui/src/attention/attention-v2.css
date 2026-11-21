@@ -88,6 +88,7 @@
 
 .att-list__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--pn-space-2);
   padding: var(--pn-space-2) var(--pn-space-3);
@@ -119,6 +120,28 @@
   border-color: var(--pn-ink);
   background: var(--pn-ink);
   color: var(--pn-paper);
+}
+
+.att-list__triage {
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.att-list__scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.att-list__order {
+  margin: var(--pn-space-1) 0 0;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+}
+
+.att-list__priority {
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-micro);
 }
 
 .att-list__rows {

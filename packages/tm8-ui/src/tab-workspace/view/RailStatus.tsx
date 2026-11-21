@@ -139,12 +139,13 @@ export function RailAttention({ expanded }: { expanded: boolean }) {
   const counts = api.counts();
   const failed = api.status === 'error';
   const loading = api.status === 'loading';
+  const stale = Boolean(api.refreshError);
   /* A failed read is not an all-clear: it says so, and never shows a 0. */
   const tip = failed
     ? 'Needs you · attention could not be loaded'
     : loading
       ? 'Needs you · loading'
-      : `Needs you · ${counts.mine} personal · ${counts.all} team`;
+      : `${stale ? 'Needs you · refresh failed · last loaded' : 'Needs you'} · ${counts.mine} personal · ${counts.all} team`;
   return (
     <RailPopoverButton
       label="Needs you"
@@ -156,9 +157,9 @@ export function RailAttention({ expanded }: { expanded: boolean }) {
         </span>
       }
       mark={
-        !failed && !loading && counts.mine > 0 ? (
+        !failed && !loading && (counts.mine > 0 || stale) ? (
           <span className="tws-rail-badge" data-testid="tws-rail-attention-count">
-            {counts.mine > 99 ? '99+' : counts.mine}
+            {stale ? '?' : counts.mine > 99 ? '99+' : counts.mine}
           </span>
         ) : null
       }

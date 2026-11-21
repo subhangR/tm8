@@ -4653,6 +4653,25 @@ export const SessionLaunchRecordSchema: z.ZodType<SessionLaunchRecord> = z.objec
   unavailableReason: z.enum(['no_manifest_row']).nullable(),
   manifest: z.record(z.unknown()).nullable(),
   envVarNames: z.array(z.string()),
+  connectorAccounts: z.object({
+    available: z.boolean(),
+    unavailableReason: z.enum(['not_recorded', 'read_failed']).nullable(),
+    entries: z.array(z.object({
+      serverId: EntityIdSchema,
+      serverName: z.string(),
+      credentialRequired: z.boolean(),
+      account: z.object({
+        id: z.string(),
+        label: z.string(),
+        accountLabel: z.string().nullable(),
+        grantedScopes: z.array(z.string()),
+        usable: z.boolean(),
+        status: z.string().nullable(),
+        reason: z.string(),
+      }).strict().nullable(),
+    }).strict()),
+    hiddenCount: z.number().int().nonnegative(),
+  }).strict().optional(),
   prompts: z.object({
     system: z.string().nullable(),
     task: z.string().nullable(),

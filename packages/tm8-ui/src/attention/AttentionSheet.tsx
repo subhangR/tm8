@@ -9,6 +9,7 @@
  * with the SAME list component the popover uses; the list's own Mine/All
  * filter is the "filter for all".
  *
+ * FYI-only inventory keeps a muted affordance so its explicit list view stays reachable.
  * Renders nothing outside an `AttentionProvider`, and nothing when no request
  * is open anywhere — the phone header is 53px shared by five things.
  */
@@ -22,19 +23,16 @@ import './attention-surfaces.css';
  * `MobileSurfaceProvider` — the header sits outside it, and `MobileSheet`
  * portals through that context, so a sheet mounted here would have no host.
  */
-const LEVEL_RANK = { fyi: 0, normal: 1, high: 2, urgent: 3 } as const;
-
 export function AttentionHeaderButton(props: { expanded: boolean; onOpen(): void }) {
   const api = useAttentionOptional();
   if (!api) return null;
   const { mine, all } = api.counts();
-  if (all === 0) return null;
+  const total = api.counts('all').all;
+  const stale = Boolean(api.refreshError);
+  if (total === 0 && !stale) return null;
+  const fyiOnly = all === 0;
   const showMine = mine > 0;
-  // The LOUDEST row colours the button, not the first: the queue puts unseen
-  // rows first, so an unseen FYI would otherwise grey out an urgent request.
-  const lead = [...api.queue(showMine ? 'mine' : 'all')].sort(
-    (a, b) => LEVEL_RANK[b.chip.level] - LEVEL_RANK[a.chip.level],
-  )[0];
+  const lead = api.queue(showMine ? 'mine' : 'all', fyiOnly ? 'fyi' : 'actionable')[0];
   const tone = showMine ? (lead?.chip.tone ?? 'wait') : 'muted';
   return (
     <button
@@ -43,11 +41,11 @@ export function AttentionHeaderButton(props: { expanded: boolean; onOpen(): void
       data-testid="attention-phone-button"
       aria-haspopup="dialog"
       aria-expanded={props.expanded}
-      aria-label={`Needs you: ${mine} mine, ${all} all`}
+      aria-label={stale ? `Attention refresh failed: last loaded ${mine} personal, ${all} team` : fyiOnly ? `FYI: ${total} informational work ${total === 1 ? 'item' : 'items'}` : `Needs you: ${mine} mine, ${all} all`}
       onClick={props.onOpen}
     >
-      <span aria-hidden="true">{lead?.chip.icon ?? '!'}</span>
-      <span>{showMine ? mine : all}</span>
+      <span aria-hidden="true">{lead?.chip.icon ?? (fyiOnly ? 'i' : '!')}</span>
+      <span>{stale ? '?' : fyiOnly ? total : showMine ? mine : all}</span>
     </button>
   );
 }
@@ -58,13 +56,13 @@ export function AttentionSheet(props: { onDismiss(): void; onOpenEntity(id: Enti
   const { mine, all } = api.counts();
   return (
     <MobileSheet
-      title={`Needs you · ${mine > 0 ? mine : all}`}
+      title={all > 0 ? `Needs you · ${mine > 0 ? mine : all}` : 'Attention'}
       onDismiss={props.onDismiss}
       testId="attention-phone-sheet"
     >
       <div className="att-phone-sheet">
         <AttentionList
-          title={`${all} waiting`}
+          title={`${all} need action`}
           onOpen={(id, row) => props.onOpenEntity(id, id === row.rootId ? row.kind : null)}
         />
       </div>

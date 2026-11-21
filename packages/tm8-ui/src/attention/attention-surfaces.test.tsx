@@ -75,26 +75,28 @@ describe('the top bar (chapter 4, mock tab 2)', () => {
   it('shows Personal and Team over roll-up roots; each section opens its own filter', async () => {
     const fake = fakeSeam(rows());
     mount(fake);
-    await waitFor(() => expect(topCounts()).toBe('1/2'));
+    await waitFor(() => expect(topCounts()).toBe('1/1'));
     fireEvent.click(screen.getByTestId('attention-top-mine'));
     const pop = screen.getByTestId('attention-top-popover');
     expect(within(pop).getByTestId('attention-filter-mine').getAttribute('aria-pressed')).toBe('true');
     expect(within(pop).getAllByTestId('attention-list-row').map((r) => r.dataset.root)).toEqual(['task-1']);
     fireEvent.click(within(pop).getByTestId('attention-filter-all'));
-    expect(within(pop).getAllByTestId('attention-list-row').map((r) => r.dataset.root)).toEqual(['task-1', 'doc-1']);
+    expect(within(pop).getAllByTestId('attention-list-row').map((r) => r.dataset.root)).toEqual(['task-1']);
+    fireEvent.click(within(pop).getByTestId('attention-scope-fyi'));
+    expect(within(pop).getAllByTestId('attention-list-row').map((r) => r.dataset.root)).toEqual(['doc-1']);
     expect(screen.getByTestId('attention-top-mine').className).toContain('att-top__btn--glow');
     expect(screen.getByTestId('attention-top-mine').className).toContain('att-top__btn--wait');
     fireEvent.click(screen.getByTestId('attention-top-all'));
     const team = screen.getByTestId('attention-top-popover');
     expect(within(team).getByTestId('attention-filter-all').getAttribute('aria-pressed')).toBe('true');
     expect(within(team).getByTestId('attention-filter-mine').textContent).toBe('Personal · 1');
-    expect(within(team).getByTestId('attention-filter-all').textContent).toBe('Team · 2');
+    expect(within(team).getByTestId('attention-filter-all').textContent).toBe('Team · 1');
   });
 
   it('Resolve from the popover settles live everywhere: row, chip, count; Undo brings it back', async () => {
     const fake = fakeSeam(rows());
     mount(fake);
-    await waitFor(() => expect(topCounts()).toBe('1/2'));
+    await waitFor(() => expect(topCounts()).toBe('1/1'));
     expect(within(screen.getByTestId('tile-task-1')).queryByTestId('attention-chip')).not.toBeNull();
     // The session that raised the rolled-up request carries the F1 marker.
     expect(within(screen.getByTestId('tile-sess-1')).queryByTestId('attention-chip')).not.toBeNull();
@@ -105,32 +107,32 @@ describe('the top bar (chapter 4, mock tab 2)', () => {
     fireEvent.change(within(pop).getByTestId('attention-resolve-note'), { target: { value: 'exponential' } });
     await act(async () => { fireEvent.click(within(pop).getByTestId('attention-resolve-confirm')); });
 
-    expect(topCounts()).toBe('0/1');
+    expect(topCounts()).toBe('0/0');
     expect(within(screen.getByTestId('tile-task-1')).queryByTestId('attention-chip')).toBeNull();
     expect(within(screen.getByTestId('tile-sess-1')).queryByTestId('attention-chip')).toBeNull();
     expect(fake.resolveAttention).toHaveBeenLastCalledWith('task-1', expect.objectContaining({ resolutionNote: 'exponential' }));
 
     await act(async () => { fireEvent.click(screen.getByTestId('attention-toast-undo')); });
-    await waitFor(() => expect(topCounts()).toBe('1/2'));
+    await waitFor(() => expect(topCounts()).toBe('1/1'));
   });
 
   it('Seen dims the row and never changes the count', async () => {
     const fake = fakeSeam(rows());
     mount(fake);
-    await waitFor(() => expect(topCounts()).toBe('1/2'));
+    await waitFor(() => expect(topCounts()).toBe('1/1'));
     fireEvent.click(screen.getByTestId('attention-top-mine'));
     const pop = screen.getByTestId('attention-top-popover');
     await act(async () => { fireEvent.click(within(pop).getByTestId('attention-seen')); });
     const row = within(pop).getByTestId('attention-list-row');
     expect(row.className).toContain('att-list__row--seen');
-    expect(topCounts()).toBe('1/2');
+    expect(topCounts()).toBe('1/1');
   });
 
   it('Open goes to the session that raised the request, and closes the popover', async () => {
     const fake = fakeSeam(rows());
     const onOpen = vi.fn();
     mount(fake, onOpen);
-    await waitFor(() => expect(topCounts()).toBe('1/2'));
+    await waitFor(() => expect(topCounts()).toBe('1/1'));
     fireEvent.click(screen.getByTestId('attention-top-mine'));
     fireEvent.click(within(screen.getByTestId('attention-top-popover')).getByTestId('attention-open'));
     // r1 was raised by no session: it opens where it is pinned.

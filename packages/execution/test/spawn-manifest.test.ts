@@ -18,6 +18,7 @@ import {
   resolveCoordinatorKind,
   resolveCoordinatorSessionId,
   resolveLaunchConfig,
+  resolveSessionTitle,
   resolveWorkdir,
   spawnLaunchFacts,
   supportsPositionalPrompt,
@@ -1299,6 +1300,19 @@ describe('composeManifest', () => {
     };
     expect(composeManifest({ ...args, context: withTask }).session.title).toBe('wire the prompt seam');
     expect(composeManifest({ ...args, context: context() }).session.title).toBe('Draco session');
+
+    const original = 'Please fix the login bug in the new Safari version. Keep the reproduction steps.';
+    withTask.tasks[0]!.title = original;
+    const derived = resolveSessionTitle(base, withTask);
+    expect(derived).toBe('fix the login bug');
+    expect(composeManifest({ ...args, context: withTask }).session.title).toBe(derived);
+    expect(withTask.tasks[0]!.title).toBe(original);
+
+    const explicit = 'My deliberately chosen session name with more than six words';
+    const namedRequest = { ...base, title: explicit };
+    expect(resolveSessionTitle(namedRequest, withTask)).toBe(explicit);
+    expect(composeManifest({ ...args, request: namedRequest, context: withTask }).session.title).toBe(explicit);
+    expect(resolveSessionTitle({ ...base, title: '   ' }, withTask)).toBe(derived);
   });
 });
 

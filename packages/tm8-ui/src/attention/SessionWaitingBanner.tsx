@@ -49,7 +49,7 @@ export function SessionWaitingBanner({ sessionId, tone = 'light' }: SessionWaiti
   modeNow.current = mode;
   if (!api) return null;
 
-  const raised = raisedBy(api.queue('all'), String(sessionId));
+  const raised = raisedBy(api.queue('all', 'all'), String(sessionId));
   const chip = api.raisedChipFor(sessionId as EntityId);
   if (raised.length === 0 || !chip) return null;
 

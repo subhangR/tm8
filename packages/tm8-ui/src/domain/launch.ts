@@ -30,7 +30,7 @@ import type {
   SpawnSelectionDefaultReason,
   SpawnSelectionGroup,
 } from '@tm8/contract';
-import { LAUNCH_MODEL_CATALOG, SPAWN_SELECTION_GROUP_LIMIT } from '@tm8/contract';
+import { LAUNCH_MODEL_CATALOG, SPAWN_SELECTION_GROUP_LIMIT, shortIntentTitle } from '@tm8/contract';
 import { BYTE_BUDGETS, contextBudgetOverrun } from '@tm8/prompt';
 import { catalogModelsFor } from './model-catalog';
 import { MEMORY_IDS_MAX } from './memory';
@@ -1129,7 +1129,7 @@ export function continuesSubject(subject: { kind?: string } | null | undefined):
 
 /** The title a launch on `subject` gives the new session by default. */
 export function launchTitleFor(subject: { kind?: string; title: string }): string {
-  return continuesSubject(subject) ? `Continue: ${subject.title}` : subject.title;
+  return shortIntentTitle(continuesSubject(subject) ? `Continue: ${subject.title}` : subject.title);
 }
 
 let launchMutationSequence = 0;

@@ -106,8 +106,8 @@ export interface NewSessionComposerProps {
   notice?: string | null;
   /**
    * The name the task gets if the title field stays empty — derived live from
-   * the prompt's first sentence. Shown as the title input's placeholder, so
-   * the user watches their sentence become the task's name and can overrule it
+   * the prompt's intent. Shown as the title input's placeholder, so
+   * the user sees the short name and can overrule it
    * in place instead of discovering it afterwards.
    */
   derivedTitle: string;
@@ -836,7 +836,7 @@ export function NewSessionComposer({
             autoCorrect="off"
             spellCheck={false}
             name="tm8-hdr-input"
-            aria-label="Task title — leave empty to use the first sentence of the prompt"
+            aria-label="Task title — leave empty to use a short name from the prompt"
             /* The DERIVED name is the placeholder: the field always shows what
                the task will be called, and typing here is how you overrule it. */
             placeholder={derivedTitle || 'Task title…'}

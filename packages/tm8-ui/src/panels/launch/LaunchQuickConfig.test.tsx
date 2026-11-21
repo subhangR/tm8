@@ -400,9 +400,10 @@ describe('what Launch actually commits', () => {
 
   it('sends the configured teammate, model and task through buildSpawnInput', () => {
     const onSpawn = vi.fn<(input: ExecutionSpawnInput) => void>();
+    const longSubject = { ...subject, title: 'Please fix the login bug in the new Safari version. Keep every reproduction step.' };
     const { getByTestId } = render(
       <LaunchQuickConfig
-        subject={subject}
+        subject={longSubject}
         spaceId={FIXTURE_SPACE_ID}
         teammates={TEAMMATES}
         onSpawn={onSpawn}
@@ -415,6 +416,7 @@ describe('what Launch actually commits', () => {
     const input = onSpawn.mock.calls[0][0];
     expect(input.spaceId).toBe(FIXTURE_SPACE_ID);
     expect(input.clientMutationId).toBe('m:1');
+    expect(input.title).toBe('fix the login bug');
     expect(JSON.stringify(input)).toContain('tm-forge');
     expect(JSON.stringify(input)).toContain(subject.id);
   });
