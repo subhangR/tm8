@@ -1,17 +1,35 @@
 -- Vault data is isolated from the graph and the application role.
 -- Timestamps have no SQL clock defaults: every value comes from the broker clock.
+-- Roles are cluster-global, and `if not exists` alone is check-then-act. Test
+-- suites apply this file to many fresh databases on one new cluster at once,
+-- and every concurrent apply but one then failed with 23505 on
+-- pg_authid_rolname_index (the race .github/actions/tm8-setup records for
+-- 001/015). The loser of a concurrent create or grant now catches its
+-- duplicate and goes on, so any number of copies apply cleanly.
 do $roles$
 begin
   if not exists (select 1 from pg_roles where rolname = 'tm8_vault_owner') then
-    create role tm8_vault_owner nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+    begin
+      create role tm8_vault_owner nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+    exception when duplicate_object or unique_violation then null;
+    end;
   end if;
   if not exists (select 1 from pg_roles where rolname = 'tm8_vault_broker') then
-    create role tm8_vault_broker nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+    begin
+      create role tm8_vault_broker nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+    exception when duplicate_object or unique_violation then null;
+    end;
   end if;
   if not exists (select 1 from pg_roles where rolname = 'tm8_vault_audit_writer') then
-    create role tm8_vault_audit_writer nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+    begin
+      create role tm8_vault_audit_writer nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+    exception when duplicate_object or unique_violation then null;
+    end;
   end if;
-  execute format('grant tm8_vault_owner, tm8_vault_audit_writer to %I', current_user);
+  begin
+    execute format('grant tm8_vault_owner, tm8_vault_audit_writer to %I', current_user);
+  exception when unique_violation then null;
+  end;
 end
 $roles$;
 create schema vault authorization tm8_vault_owner;
