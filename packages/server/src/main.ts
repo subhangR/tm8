@@ -106,6 +106,9 @@ import type { RemoteSpaceLinkRoute } from './facade/handlers/w2/space-link-remot
 import { directoryTargetResolver } from './remote/directory-resolver.js';
 import { createW2FileUploadRoute } from './http/w2-file-upload.js';
 import { createClipboardUploadRoute } from './http/clipboard-upload.js';
+import { createVaultCapturePage } from './vault/capture-page.js';
+import { vaultRelayConfigFromEnv } from './vault/config.js';
+import { createVaultRelay } from './vault/relay.js';
 import { createVoiceWebhookRoute } from './http/voice-webhook.js';
 import { ConnectionAuthRelay, lazyRuntimeLink } from './bridges/connection-auth.js';
 import { InMemoryVoiceRosterStore } from './voice/roster.js';
@@ -1017,6 +1020,20 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     : undefined;
 
   /**
+   * Secure Vault (task 01a1fa87-dd1a, WS-A). TM8_VAULT_MODE defaults to off,
+   * and off reads no other knob: every /v2/vault call answers 503
+   * vault_disabled and /vault/capture/* answers 404, never the SPA. Any other
+   * mode refuses to boot on a missing or unsafe key file, socket or URL
+   * (vault/config.ts) rather than start a vault that cannot keep its promises.
+   */
+  const vaultRelayConfig = vaultRelayConfigFromEnv(process.env);
+  const vaultRelay = db && owner
+    ? createVaultRelay({ config: vaultRelayConfig, deps: { db, config, owner } })
+    : undefined;
+  const vaultCapturePage = createVaultCapturePage({ enabled: vaultRelayConfig !== null && vaultRelay !== undefined });
+  if (vaultRelayConfig) console.info(`[tm8] vault relay on (mode=${vaultRelayConfig.mode}, broker=${vaultRelayConfig.broker.kind})`);
+
+  /**
    * The LiveKit webhook, and the FIRST PRODUCTION CALLER `publishPresence` has
    * ever had.
    *
@@ -1098,6 +1115,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(mcpEndpointRoute ? { mcpEndpointRoute } : {}),
     ...(remoteSpaceLinkRoute ? { remoteSpaceLinkRoute } : {}),
     ...(remoteServerProxy ? { remoteServerProxy } : {}),
+    ...(vaultRelay ? { vaultRelay } : {}),
+    vaultCapturePage,
     ...(db ? { sessionIssuedHere: (token: string) => sessionIssuedHere(db, token) } : {}),
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
   });
