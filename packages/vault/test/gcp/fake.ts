@@ -75,6 +75,36 @@ export function loopbackSuite() {
   };
 }
 
+/**
+ * Wraps the guarded fetch (call it inside a test, after the suite's beforeEach) and records what the
+ * client holds: each request body object and each response chunk object it reads. With `split`, every
+ * chunk arrives as two views, so the client takes its multi-chunk path. Review F05 tests read these
+ * after the call to prove the client wiped them.
+ */
+export function recordFetch(options: { split?: boolean } = {}) {
+  const guarded = globalThis.fetch;
+  const record = { bodies: [] as unknown[], chunks: [] as Uint8Array[] };
+  vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
+    record.bodies.push(init?.body);
+    const response = await guarded(input, init);
+    if (!response.body) return response;
+    const reader = response.body.getReader();
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        const { done, value } = await reader.read();
+        if (done) { controller.close(); return; }
+        const half = value.byteLength >> 1;
+        const parts = options.split && half > 0 ? [value.subarray(0, half), value.subarray(half)] : [value];
+        for (const part of parts) { record.chunks.push(part); controller.enqueue(part); }
+      },
+    });
+    return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+  });
+  return record;
+}
+
+export const allZero = (bytes: Uint8Array): boolean => bytes.every((byte) => byte === 0);
+
 export function json(response: ServerResponse, body: unknown, status = 200): void {
   response.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(body));
 }

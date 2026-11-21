@@ -13,9 +13,13 @@ import { inspect } from 'node:util';
  *   (Playwright's `fill`, an HTTP header value). V8 strings cannot be zeroized,
  *   so call it as late as possible and never keep the result.
  *
- * The Node runtime cannot `mlock` the V8 heap, so this is hygiene, not a memory
- * guarantee. The broker unit adds LimitCORE=0 and MemorySwapMax=0, so a crash
- * dump or swap file cannot carry what this misses.
+ * The Node runtime cannot `mlock` the V8 heap or wipe a string, so this is
+ * hygiene, not a memory guarantee. Copies outside this buffer stay until their
+ * memory is reused (deploy/vault/README.md, "Plaintext in broker memory", lists
+ * them). Against disk: the broker keeps its memory out of core dumps, and
+ * production refuses a host that could still write a core or swap it out
+ * (broker/host-memory.ts, review F05). Hibernation, kdump and VM snapshots are
+ * host checks.
  */
 export class SecretMaterial {
   #bytes: Buffer | null;

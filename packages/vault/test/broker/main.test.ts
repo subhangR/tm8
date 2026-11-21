@@ -11,6 +11,7 @@ import { VAULT_OPERATIONS } from '@tm8/contract';
 import { BROKER_ENV_KNOBS, BrokerConfigError } from '../../src/broker/config.js';
 import { AUDIT_GENESIS_HASH, checkpointSigningInput } from '../../src/audit/chain.js';
 import { VaultAuditGate } from '../../src/audit/gate.js';
+import { HostMemoryError } from '../../src/broker/host-memory.js';
 import { BROKER_RUNTIME_ENV_KNOBS, auditMaintenance, composeBroker, createVaultHandlers, failureMessage, type ComposedBroker } from '../../src/broker/main.js';
 import { SYSTEM_ACTOR, VaultError, actorOf, systemClock, type AuditVerification, type VaultAlert, type VaultTx } from '../../src/core-types.js';
 import { MemoryVaultStore } from '../../src/store/memory.js';
@@ -20,6 +21,7 @@ import { exportAttestationKeyPair, generateAttestationKeyPair, signAttestation }
 import { OWNER_ID, SPACE_A, fakeSecret, newLogin, otherCaller, scopeOf, testCaller } from '../support/kit.js';
 import { json, keyName, keyVersionName, loopbackSuite, tokens } from '../gcp/fake.js';
 import { PG_ENABLED, PG_REASON, pgHarness, type PgHarness } from '../store/pg-harness.js';
+import { exposedHost, hardenedHost } from '../support/host-memory.js';
 
 const dirs: string[] = [];
 const brokers: ComposedBroker[] = [];
@@ -160,8 +162,25 @@ describe('broker composition root: static refusals', () => {
       TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION: keyVersionName, TM8_VAULT_LOCAL_KEK_FILE: undefined }, 'TM8_VAULT_BROKER_MTLS_LISTEN'],
   ] as const)('production %j is refused as %s before any KMS, database or network call', async (patch, knob) => {
     const dir = await temporary();
-    const error = await refusal(composeBroker(preReviewEnv(dir, { TM8_VAULT_MODE: 'production', ...patch })));
+    const error = await refusal(composeBroker(preReviewEnv(dir, { TM8_VAULT_MODE: 'production', ...patch }), { hostProc: hardenedHost() }));
     expect(error.knob).toBe(knob);
+    expect(await readdir(dir)).toEqual([]);
+  });
+
+  it('review F05: production refuses a host that would write broker memory to disk, before it reads a key or calls KMS, a database or the network', async () => {
+    const dir = await temporary();
+    const host = exposedHost();
+    const records: Record<string, unknown>[] = [];
+    // Every prerequisite is met; on a hardened host this env is refused for its missing mTLS listener (above).
+    const error = await composeBroker(preReviewEnv(dir, { TM8_VAULT_MODE: 'production', TM8_VAULT_REVIEW_GATE: 'passed',
+      TM8_VAULT_KMS_KIND: 'gcp-kms', TM8_VAULT_AUDIT_SINK: 'gcs', TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION: keyVersionName,
+      TM8_VAULT_LOCAL_KEK_FILE: undefined }), { hostProc: host.proc, log: (record) => records.push(record) })
+      .then(() => null, (reason: unknown) => reason);
+    expect(error).toBeInstanceOf(HostMemoryError);
+    expect(failureMessage(error)).toBe('vault broker: refused (host memory: core_limit, core_pattern, swap_limit)');
+    expect(records).toEqual([{ event: 'vault_broker_host_memory', ok: false, failures: ['core_limit', 'core_pattern', 'swap_limit'],
+      coreFilter: 0, coreLimit: { soft: '0', hard: 'unlimited' }, corePattern: 'pipe', swapAreas: 1, swapMax: 'max' }]);
+    expect(host.writes).toEqual([['/proc/self/coredump_filter', '0']]);
     expect(await readdir(dir)).toEqual([]);
   });
 
@@ -307,11 +326,17 @@ else describe('broker composition root over Postgres', () => {
     await writeFile(join(dir, 'checkpoint.key'), generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
     await mkdir(join(dir, 'checkpoints'), { mode: 0o700 });
     const records: Record<string, unknown>[] = [];
+    const host = exposedHost();
     const broker = (await composeBroker(preReviewEnv(dir, {
       TM8_VAULT_DATABASE_URL: h.url, TM8_VAULT_AUDIT_SINK: 'file', TM8_VAULT_CHECKPOINT_DIR: join(dir, 'checkpoints'),
       TM8_VAULT_CHECKPOINT_KEY_FILE: join(dir, 'checkpoint.key'),
-    }), { log: (record) => records.push(record) }))!;
+    }), { log: (record) => records.push(record), hostProc: host.proc }))!;
     brokers.push(broker);
+
+    // Review F05: pre_review runs on a host that would write its memory out, after setting the filter, and says so.
+    expect(host.writes).toEqual([['/proc/self/coredump_filter', '0']]);
+    expect(records).toContainEqual(expect.objectContaining({ event: 'vault_broker_host_memory', ok: false,
+      failures: ['core_limit', 'core_pattern', 'swap_limit'], coreFilter: 0 }));
 
     expect(broker.databaseRole.dedicated).toBe(false);
     expect(records).toContainEqual({ event: 'vault_broker_database_role_not_dedicated', mode: 'pre_review' });
@@ -531,15 +556,15 @@ else describe('broker composition root over Postgres', () => {
       const gcp = { tokens, kmsBaseUrl: google.baseUrl, gcsBaseUrl: google.baseUrl };
 
       // The trust-auth superuser ignores RLS (review finding HIGH): production never runs on it.
-      const superuser = await refusal(composeBroker(env(h.url), { gcp, log: () => undefined }));
+      const superuser = await refusal(composeBroker(env(h.url), { gcp, log: () => undefined, hostProc: hardenedHost() }));
       expect(superuser.knob).toBe('TM8_VAULT_DATABASE_URL');
-      const wider = await refusal(composeBroker(env(await loginRole(h, 'tm8_vault_broker', 'tm8_app')), { gcp, log: () => undefined }));
+      const wider = await refusal(composeBroker(env(await loginRole(h, 'tm8_vault_broker', 'tm8_app')), { gcp, log: () => undefined, hostProc: hardenedHost() }));
       expect(wider.knob).toBe('TM8_VAULT_DATABASE_URL');
-      const outsider = await refusal(composeBroker(env(await loginRole(h)), { gcp, log: () => undefined }));
+      const outsider = await refusal(composeBroker(env(await loginRole(h)), { gcp, log: () => undefined, hostProc: hardenedHost() }));
       expect(outsider.knob).toBe('TM8_VAULT_DATABASE_URL');
       await expect(lstat(join(dir, 'broker.sock'))).rejects.toMatchObject({ code: 'ENOENT' });
 
-      const broker = (await composeBroker(env(await loginRole(h, 'tm8_vault_broker')), { gcp, log: () => undefined }))!;
+      const broker = (await composeBroker(env(await loginRole(h, 'tm8_vault_broker')), { gcp, log: () => undefined, hostProc: hardenedHost() }))!;
       brokers.push(broker);
       expect(broker.databaseRole.dedicated).toBe(true);
       expect(broker.config).toMatchObject({ mode: 'production', reviewGate: 'passed', auditSink: 'gcs' });
@@ -573,7 +598,7 @@ else describe('broker composition root over Postgres', () => {
       for (const [retention, logged] of [[null, { ok: true, retention: 'none' }], [{ isLocked: 'yes' }, { ok: false, retention: 'unknown' }]] as const) {
         const google = await googleFake({ retention });
         const records: Record<string, unknown>[] = [];
-        const error = await composeBroker(productionEnv(dir, role, port), { gcp: { tokens, kmsBaseUrl: google.baseUrl, gcsBaseUrl: google.baseUrl },
+        const error = await composeBroker(productionEnv(dir, role, port), { gcp: { tokens, kmsBaseUrl: google.baseUrl, gcsBaseUrl: google.baseUrl }, hostProc: hardenedHost(),
           log: (record) => records.push(record) }).then(() => null, (reason: unknown) => reason);
         expect(failureMessage(error)).toBe('vault broker: refused (audit_unavailable)');
         expect(records).toContainEqual({ event: 'vault_checkpoint_sink', sink: 'gcs', ...logged });
@@ -600,7 +625,7 @@ else describe('broker composition root over Postgres', () => {
         objects.clear();
         for (const [name, bytes] of plant(privateKey)) objects.set(name, bytes);
         const records: Record<string, unknown>[] = [];
-        const error = await composeBroker(productionEnv(dir, role, port), { gcp: { tokens, kmsBaseUrl: google.baseUrl, gcsBaseUrl: google.baseUrl },
+        const error = await composeBroker(productionEnv(dir, role, port), { gcp: { tokens, kmsBaseUrl: google.baseUrl, gcsBaseUrl: google.baseUrl }, hostProc: hardenedHost(),
           log: (record) => records.push(record) }).then(() => null, (reason: unknown) => reason);
         expect(failureMessage(error)).toBe('vault broker: refused (audit_unavailable)');
         expect(records).toContainEqual({ event: 'vault_audit_anchor_failed', reason });

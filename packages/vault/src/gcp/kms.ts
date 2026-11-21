@@ -1,6 +1,6 @@
 import { KmsRefusedError, KmsUnavailableError, type KmsProvider, type WrappedDek } from '../crypto/kms.js';
 import { crc32c, matchesCrc32c } from './crc32c.js';
-import { baseUrl, decodeBase64, jsonObject, request, timeoutMs } from './http.js';
+import { baseUrl, decodeBase64, encodeBase64Bytes, jsonObject, request, timeoutMs } from './http.js';
 import type { TokenSource } from './token.js';
 
 export interface KmsConnectionOptions {
@@ -29,22 +29,28 @@ export class KmsClient {
     } catch { throw new KmsUnavailableError('KMS unavailable'); }
   }
 
-  async call(path: string, method: 'GET' | 'POST', body?: Record<string, unknown>): Promise<Record<string, unknown>> {
+  /** A Buffer body is sent as it is: the caller built it as JSON and wipes it. */
+  async call(path: string, method: 'GET' | 'POST', body?: Record<string, unknown> | Buffer<ArrayBuffer>): Promise<Record<string, unknown>> {
     let status: number;
     let bytes: Buffer;
     try {
       const response = await request({
         url: `${this.#base}/v1/${path}`, method, timeoutMs: this.#timeout, tokens: this.#tokens,
         headers: body ? { 'Content-Type': 'application/json' } : undefined,
-        body: body ? JSON.stringify(body) : undefined,
+        body: body === undefined ? undefined : Buffer.isBuffer(body) ? body : JSON.stringify(body),
       });
       status = response.status;
       bytes = response.bytes;
     } catch { throw new KmsUnavailableError('KMS unavailable'); }
-    if ([400, 403, 404].includes(status)) throw new KmsRefusedError('KMS request refused');
-    if (status < 200 || status >= 300) throw new KmsUnavailableError('KMS unavailable');
-    try { return jsonObject(bytes); }
-    catch { throw new KmsUnavailableError('KMS unavailable'); }
+    try {
+      if ([400, 403, 404].includes(status)) throw new KmsRefusedError('KMS request refused');
+      if (status < 200 || status >= 300) throw new KmsUnavailableError('KMS unavailable');
+      try { return jsonObject(bytes); }
+      catch { throw new KmsUnavailableError('KMS unavailable'); }
+    } finally {
+      // A decrypt response holds the DEK in base64. Parsing has made the copies it needs (review F05).
+      bytes.fill(0);
+    }
   }
 }
 
@@ -81,10 +87,20 @@ export class GcpKmsProvider implements KmsProvider {
   }
 
   async wrap(dek: Buffer, aad: Buffer): Promise<WrappedDek> {
-    const result = await this.#client.call(`${this.activeKekId}:encrypt`, 'POST', {
-      plaintext: dek.toString('base64'), additionalAuthenticatedData: aad.toString('base64'),
-      plaintextCrc32c: String(crc32c(dek)), additionalAuthenticatedDataCrc32c: String(crc32c(aad)),
-    });
+    // The DEK leaves as JSON built in bytes we wipe, never as a base64 or JSON string (review F05).
+    const encoded = encodeBase64Bytes(dek);
+    let body: Buffer<ArrayBuffer> | undefined;
+    let result: Record<string, unknown>;
+    try {
+      body = Buffer.concat([Buffer.from('{"plaintext":"', 'latin1'), encoded, Buffer.from(`",${JSON.stringify({
+        additionalAuthenticatedData: aad.toString('base64'),
+        plaintextCrc32c: String(crc32c(dek)), additionalAuthenticatedDataCrc32c: String(crc32c(aad)),
+      }).slice(1)}`, 'utf8')]);
+      result = await this.#client.call(`${this.activeKekId}:encrypt`, 'POST', body);
+    } finally {
+      encoded.fill(0);
+      body?.fill(0);
+    }
     try {
       const ciphertext = decodeBase64(result.ciphertext);
       if (!ciphertext.length || result.verifiedPlaintextCrc32c !== true || result.verifiedAdditionalAuthenticatedDataCrc32c !== true ||
@@ -107,6 +123,9 @@ export class GcpKmsProvider implements KmsProvider {
     } catch {
       plaintext?.fill(0);
       throw new KmsUnavailableError('KMS unavailable');
+    } finally {
+      // The parsed string cannot be wiped; drop the reference now (review F05).
+      delete result.plaintext;
     }
   }
 

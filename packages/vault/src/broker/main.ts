@@ -32,6 +32,7 @@ import type { VaultMode } from '../types.js';
 import { RelayAlertQueue } from './alerts.js';
 import { BrokerConfigError, loadBrokerConfig } from './config.js';
 import { createBrokerCoreHandlers } from './handlers/index.js';
+import { HostMemoryError, protectHostMemory, type HostProc } from './host-memory.js';
 import type { BrokerServer } from './server.js';
 import { startBroker } from './start.js';
 
@@ -305,12 +306,19 @@ function logLine(record: Record<string, unknown>): void {
 }
 
 /** Starts the broker, or returns null in mode `off` without touching anything. */
-export async function composeBroker(env: Env, options: { gcp?: GcpEndpoints; log?: (record: Record<string, unknown>) => void } = {}): Promise<ComposedBroker | null> {
+export async function composeBroker(env: Env, options: {
+  gcp?: GcpEndpoints; log?: (record: Record<string, unknown>) => void; hostProc?: HostProc;
+} = {}): Promise<ComposedBroker | null> {
   const mode = env.TM8_VAULT_MODE ?? 'off';
   if (mode === 'off') return null;
   if (!['dev', 'pre_review', 'production'].includes(mode)) throw new BrokerConfigError('TM8_VAULT_MODE');
   if (mode === 'production') productionPrerequisites(env);
   const log = options.log ?? logLine;
+  // Review F05: before any key, canary or secret is read, keep this process's memory out of core
+  // dumps and read what the host would do with it. Production refuses a host that would write it out.
+  const host = protectHostMemory(options.hostProc);
+  log({ event: 'vault_broker_host_memory', ok: host.failures.length === 0, failures: host.failures, ...host.facts });
+  if (mode === 'production' && host.failures.length > 0) throw new HostMemoryError(host.failures);
   const connectionString = databaseUrl(env);
   const socketPath = path(env, 'TM8_VAULT_BROKER_SOCKET', DEFAULT_BROKER_SOCKET, 100);
   const relayPublicKeyFile = path(env, 'TM8_VAULT_RELAY_PUBLIC_KEY_FILE');
@@ -446,6 +454,7 @@ export function auditMaintenance(options: {
 
 export function failureMessage(error: unknown): string {
   if (error instanceof BrokerConfigError) return error.message;
+  if (error instanceof HostMemoryError) return error.message;
   if (error instanceof VaultError) return `vault broker: refused (${error.reason ?? error.code})`;
   return 'vault broker: start failed';
 }

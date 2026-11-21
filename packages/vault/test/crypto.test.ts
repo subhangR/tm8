@@ -1,15 +1,20 @@
+import { createDecipheriv, randomBytes } from 'node:crypto';
 import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inspect } from 'node:util';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import {
+  CaptureKeyPair,
+  CaptureSealError,
   decryptSecretVersion,
   encryptSecretVersion,
   KmsRefusedError,
   KmsUnavailableError,
   LocalDevKms,
   openWithKey,
+  sealCapture,
+  sealWithKey,
   SecretMaterial,
   UnavailableKms,
   VaultCryptoError,
@@ -106,6 +111,82 @@ describe('envelope encryption (MSG 4, R3)', () => {
     const kms = new UnavailableKms();
     await expect(encryptSecretVersion(kms, SecretMaterial.fromUtf8(CANARY), parts)).rejects.toBeInstanceOf(KmsUnavailableError);
     expect((await kms.health()).ok).toBe(false);
+  });
+});
+
+/**
+ * Records each Decipheriv#update() output object, with a copy of what it held when returned. GCM's
+ * update() releases plaintext before final() checks the tag (review F05).
+ */
+function recordUpdates() {
+  const proto = Object.getPrototypeOf(createDecipheriv('aes-256-gcm', Buffer.alloc(32), Buffer.alloc(12))) as {
+    update(...args: unknown[]): Buffer;
+  };
+  const original = proto.update;
+  const outputs: { buffer: Buffer; held: Buffer }[] = [];
+  const spy = vi.spyOn(proto, 'update').mockImplementation(function (this: unknown, ...args: unknown[]) {
+    const buffer = original.apply(this, args);
+    outputs.push({ buffer, held: Buffer.from(buffer) });
+    return buffer;
+  });
+  return { outputs, restore: () => spy.mockRestore() };
+}
+
+const zero = (bytes: Buffer) => bytes.every((byte) => byte === 0);
+
+describe('GCM decryption leaves one plaintext copy (review F05)', () => {
+  const value = Buffer.from(`${CANARY}-gcm`);
+
+  it('a value under the wrong AAD: the released plaintext is wiped; success returns update()\'s own buffer', () => {
+    const key = randomBytes(32);
+    const { nonce, ciphertext } = sealWithKey(key, value, Buffer.from('aad-a'));
+    const updates = recordUpdates();
+    try {
+      expect(() => openWithKey(key, nonce, ciphertext, Buffer.from('aad-b'))).toThrow(VaultCryptoError);
+      expect(updates.outputs).toHaveLength(1);
+      expect(updates.outputs[0]!.held).toEqual(value);
+      expect(zero(updates.outputs[0]!.buffer)).toBe(true);
+      const opened = openWithKey(key, nonce, ciphertext, Buffer.from('aad-a'));
+      expect(opened).toEqual(value);
+      expect(opened).toBe(updates.outputs[1]!.buffer);
+    } finally {
+      updates.restore();
+    }
+  });
+
+  it('a local-dev wrapped DEK under the wrong AAD: the released DEK is wiped', async () => {
+    const kms = LocalDevKms.ephemeral();
+    const dek = randomBytes(32);
+    const wrapped = await kms.wrap(dek, Buffer.from('aad-a'));
+    const updates = recordUpdates();
+    try {
+      await expect(kms.unwrap(wrapped, Buffer.from('aad-b'))).rejects.toBeInstanceOf(KmsRefusedError);
+      expect(updates.outputs[0]!.held).toEqual(dek);
+      expect(zero(updates.outputs[0]!.buffer)).toBe(true);
+      const unwrapped = await kms.unwrap(wrapped, Buffer.from('aad-a'));
+      expect(unwrapped).toEqual(dek);
+      expect(unwrapped).toBe(updates.outputs[1]!.buffer);
+    } finally {
+      updates.restore();
+    }
+  });
+
+  it('a capture envelope with a forged tag: the released value is wiped', () => {
+    const broker = CaptureKeyPair.generate();
+    const sealed = sealCapture(value, broker.publicKey(), 'cap_0123456789');
+    const forged = Buffer.from(sealed.ct, 'base64url');
+    forged[forged.length - 1]! ^= 1;
+    const updates = recordUpdates();
+    try {
+      expect(() => broker.open({ ...sealed, ct: forged.toString('base64url') }, 'cap_0123456789')).toThrow(CaptureSealError);
+      expect(updates.outputs[0]!.held).toEqual(value);
+      expect(zero(updates.outputs[0]!.buffer)).toBe(true);
+      const opened = broker.open(sealed, 'cap_0123456789');
+      expect(opened).toEqual(value);
+      expect(opened).toBe(updates.outputs[1]!.buffer);
+    } finally {
+      updates.restore();
+    }
   });
 });
 

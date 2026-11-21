@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { KmsRefusedError, KmsUnavailableError, LocalDevKms } from '../../src/crypto/kms.js';
 import { crc32c } from '../../src/gcp/crc32c.js';
 import { GcpKmsProvider } from '../../src/gcp/kms.js';
-import { expectSanitized, fakeToken, json, keyName, loopbackSuite, rejected, tokens } from './fake.js';
+import { allZero, expectSanitized, fakeToken, json, keyName, loopbackSuite, recordFetch, rejected, tokens } from './fake.js';
 
 describe('GcpKmsProvider', () => {
   const fake = loopbackSuite();
@@ -232,5 +232,122 @@ describe('GcpKmsProvider', () => {
   it.each([{}, { purpose: 'ENCRYPT_DECRYPT' }, { purpose: 'ENCRYPT_DECRYPT', primary: [] }])('refuses malformed key metadata %#', async (body) => {
     const server = await fake((_, res) => json(res, body));
     expect(await rejected(GcpKmsProvider.connect({ keyName, kmsBaseUrl: server.baseUrl, tokens }))).toBeInstanceOf(KmsUnavailableError);
+  });
+
+  describe('plaintext copies of a DEK (review F05)', () => {
+    /** Unwraps with every client-side copy observable: response chunks, Buffer.concat results, parsed objects. */
+    async function observedUnwrap(options: { split: boolean; corruptCrc?: boolean }) {
+      const { server, state, connect } = await kmsFake();
+      const provider = await connect();
+      const wrapped = await provider.wrap(dek(), aad());
+      if (options.corruptCrc) state.decryptPatch.plaintextCrc32c = String((crc32c(dek()) + 1) >>> 0);
+      const record = recordFetch({ split: options.split });
+      const concat = vi.spyOn(Buffer, 'concat');
+      const parse = vi.spyOn(JSON, 'parse');
+      let outcome: Buffer | Error;
+      let joined: Buffer[];
+      let parsed: unknown[];
+      try {
+        outcome = await provider.unwrap(wrapped, aad()).catch((error: Error) => error);
+        // Only the client's own join of the response chunks: its parts are views of the recorded chunks.
+        joined = concat.mock.calls.flatMap(([list], index) => list.length > 1 && list.every((part, at) =>
+          part.buffer === record.chunks[at]?.buffer && part.byteOffset === record.chunks[at]?.byteOffset)
+          ? [concat.mock.results[index]!.value as Buffer] : []);
+        parsed = parse.mock.results.map((result) => result.value as unknown);
+      } finally {
+        concat.mockRestore();
+        parse.mockRestore();
+      }
+      const response = parsed.filter((value): value is Record<string, unknown> =>
+        typeof value === 'object' && value !== null && 'plaintextCrc32c' in value);
+      return { server, record, outcome, joined, response };
+    }
+
+    it('wipes the decrypt response it read in one chunk, and drops the parsed plaintext field', async () => {
+      const { server, record, outcome, joined, response } = await observedUnwrap({ split: false });
+      expect(outcome).toEqual(dek());
+      expect(record.chunks).toHaveLength(1);
+      expect(record.chunks.every(allZero)).toBe(true);
+      expect(joined).toEqual([]);
+      expect(response).toHaveLength(1);
+      expect(response[0]).not.toHaveProperty('plaintext');
+      // No compressed transfer, so no zlib buffers hold the response.
+      expect(server.requests.at(-1)!.headers['accept-encoding']).toBe('identity');
+      (outcome as Buffer).fill(0);
+    });
+
+    it('wipes every chunk and the joined copy when the response arrives in pieces', async () => {
+      const { record, outcome, joined, response } = await observedUnwrap({ split: true });
+      expect(outcome).toEqual(dek());
+      expect(record.chunks.length).toBeGreaterThan(1);
+      expect(record.chunks.every(allZero)).toBe(true);
+      expect(joined).toHaveLength(1);
+      expect(allZero(joined[0]!)).toBe(true);
+      expect(response[0]).not.toHaveProperty('plaintext');
+      (outcome as Buffer).fill(0);
+    });
+
+    it('wipes the same copies when the plaintext checksum is wrong', async () => {
+      const { record, outcome, joined, response } = await observedUnwrap({ split: true, corruptCrc: true });
+      expect(outcome).toBeInstanceOf(KmsUnavailableError);
+      expectSanitized(outcome as Error);
+      expect(record.chunks.every(allZero)).toBe(true);
+      expect(joined.every(allZero)).toBe(true);
+      expect(response).toHaveLength(1);
+      expect(response[0]).not.toHaveProperty('plaintext');
+    });
+
+    it('decodes the base64 DEK without re-encoding it to a string', async () => {
+      const { connect } = await kmsFake();
+      const provider = await connect();
+      const wrapped = await provider.wrap(dek(), aad());
+      const original = Buffer.prototype.toString;
+      const secret = dek();
+      let reencoded = 0;
+      const spy = vi.spyOn(Buffer.prototype, 'toString').mockImplementation(function (this: Buffer, ...args: unknown[]) {
+        if (args[0] === 'base64' && this.length === secret.length && this.equals(secret)) reencoded += 1;
+        return original.apply(this, args as Parameters<Buffer['toString']>);
+      });
+      let plaintext: Buffer;
+      try { plaintext = await provider.unwrap(wrapped, aad()); }
+      finally { spy.mockRestore(); }
+      expect(plaintext).toEqual(secret);
+      // The loopback fake (same process) encodes the DEK once to build its response; the client adds none.
+      expect(reencoded).toBe(1);
+      plaintext.fill(0);
+    });
+
+    it('sends the DEK to encrypt from bytes it wipes, never as a base64 or JSON string', async () => {
+      const { server, connect } = await kmsFake();
+      const provider = await connect();
+      const secret = dek();
+      const encoded = secret.toString('base64');
+      const record = recordFetch();
+      const original = Buffer.prototype.toString;
+      let reencoded = 0;
+      const toString = vi.spyOn(Buffer.prototype, 'toString').mockImplementation(function (this: Buffer, ...args: unknown[]) {
+        if (args[0] === 'base64' && this.length === secret.length && this.equals(secret)) reencoded += 1;
+        return original.apply(this, args as Parameters<Buffer['toString']>);
+      });
+      const stringify = vi.spyOn(JSON, 'stringify');
+      let carried: number;
+      try {
+        await provider.wrap(secret, aad());
+        carried = stringify.mock.results.filter((result) => typeof result.value === 'string' && result.value.includes(encoded)).length;
+      } finally {
+        toString.mockRestore();
+        stringify.mockRestore();
+      }
+      expect(reencoded).toBe(0);
+      expect(carried).toBe(0);
+      const sent = record.bodies.at(-1);
+      expect(Buffer.isBuffer(sent)).toBe(true);
+      expect(allZero(sent as Buffer)).toBe(true);
+      // The runtime's own copy of the body reached the server intact.
+      expect(server.requests.at(-1)!.json()).toEqual({
+        plaintext: encoded, plaintextCrc32c: String(crc32c(secret)),
+        additionalAuthenticatedData: aad().toString('base64'), additionalAuthenticatedDataCrc32c: String(crc32c(aad())),
+      });
+    });
   });
 });

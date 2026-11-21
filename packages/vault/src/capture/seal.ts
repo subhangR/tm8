@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createECDH, createHash, hkdfSync, randomBytes, type ECDH } from 'node:crypto';
+import { openGcm } from '../crypto/gcm.js';
 import { zeroize } from '../secret-material.js';
 
 /**
@@ -135,7 +136,7 @@ export class CaptureKeyPair {
       const decipher = createDecipheriv('aes-256-gcm', key, nonce, { authTagLength: 16 });
       decipher.setAAD(aadFor(this.kid, captureId));
       decipher.setAuthTag(ct.subarray(ct.length - 16));
-      return Buffer.concat([decipher.update(ct.subarray(0, ct.length - 16)), decipher.final()]);
+      return openGcm(decipher, ct.subarray(0, ct.length - 16));
     } catch {
       throw new CaptureSealError('decrypt_failed');
     } finally {

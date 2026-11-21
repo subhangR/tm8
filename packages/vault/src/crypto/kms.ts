@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
 import { closeSync, constants, fstatSync, openSync, readSync, writeSync } from 'node:fs';
 import { zeroize } from '../secret-material.js';
+import { openGcm } from './gcm.js';
 
 /**
  * Key-encryption-key providers (brief MSG 4: "a KMS KEK that never leaves the KMS").
@@ -117,7 +118,7 @@ export class LocalDevKms implements KmsProvider {
       const decipher = createDecipheriv('aes-256-gcm', this.#kek, raw.subarray(0, LOCAL_NONCE), { authTagLength: LOCAL_TAG });
       decipher.setAAD(aad);
       decipher.setAuthTag(raw.subarray(raw.length - LOCAL_TAG));
-      return Buffer.concat([decipher.update(raw.subarray(LOCAL_NONCE, raw.length - LOCAL_TAG)), decipher.final()]);
+      return openGcm(decipher, raw.subarray(LOCAL_NONCE, raw.length - LOCAL_TAG));
     } catch {
       throw new KmsRefusedError('wrapped DEK failed authentication');
     }

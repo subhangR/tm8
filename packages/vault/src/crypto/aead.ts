@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { SecretMaterial, zeroize } from '../secret-material.js';
+import { openGcm } from './gcm.js';
 import type { KmsProvider, WrappedDek } from './kms.js';
 
 /**
@@ -108,7 +109,7 @@ export function openWithKey(key: Buffer, nonce: Buffer, ciphertext: Buffer, aad:
     const decipher = createDecipheriv('aes-256-gcm', key, nonce, { authTagLength: TAG_BYTES });
     decipher.setAAD(aad);
     decipher.setAuthTag(tag);
-    return Buffer.concat([decipher.update(body), decipher.final()]);
+    return openGcm(decipher, body);
   } catch {
     // One message for every failure: tampering, wrong AAD and wrong key look the same.
     throw new VaultCryptoError('decrypt_failed', 'sealed value failed authentication');

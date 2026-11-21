@@ -40,7 +40,9 @@ export class MetadataTokenSource implements TokenSource {
         method: 'GET', headers: { 'Metadata-Flavor': 'Google' }, timeoutMs: this.#timeout,
       });
       if (response.status !== 200 || response.headers.get('Metadata-Flavor') !== 'Google') throw new MetadataTokenError();
-      const body = jsonObject(response.bytes);
+      let body: Record<string, unknown>;
+      // The response carries the access token; wipe the bytes once parsed (review F05).
+      try { body = jsonObject(response.bytes); } finally { response.bytes.fill(0); }
       if (typeof body.access_token !== 'string' || !body.access_token || /\s/.test(body.access_token) ||
           body.token_type !== 'Bearer' || typeof body.expires_in !== 'number' || !Number.isFinite(body.expires_in) || body.expires_in <= 0) {
         throw new MetadataTokenError();

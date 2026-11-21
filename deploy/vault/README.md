@@ -285,7 +285,10 @@ same uid can connect.
 - Run under a dedicated non-login uid. Share the `tm8-vault` group only with the fill
   worker; agents and the tm8 server uid must not join it.
 - Set:
-  - `LimitCORE=0` and `MemorySwapMax=0`, so a crash or swap cannot carry plaintext to disk;
+  - `LimitCORE=0` and `MemorySwapMax=0`. In production the broker checks both at start and
+    refuses to run without them (see *Plaintext in broker memory* below);
+  - not `ProcSubset=pid`: it hides `/proc/sys/kernel/core_pattern` and `/proc/swaps`, so the
+    production check fails closed;
   - `UMask=0077` (the broker also sets umask 077 itself);
   - `NoNewPrivileges=yes`;
   - `ProtectSystem=strict`, with `ReadWritePaths` limited to the socket directory, the
@@ -299,6 +302,87 @@ same uid can connect.
   argument other than `enroll`, including `serve`, stops it with
   `vault broker: invalid arguments`. Mode `off` exits 0 before it opens a database, a KMS,
   a file or a socket.
+
+### Plaintext in broker memory (review F05)
+
+The broker wipes the plaintext buffers it owns. It cannot wipe everything: Node has no `mlock`
+for the V8 heap and cannot wipe a string. So this section lists what is wiped, what is not, and
+what the host must do. Nothing here claims locked-memory erasure.
+
+**Wiped by the broker** (each has a regression test in `test/gcp` or `test/crypto.test.ts`):
+- **KMS and token responses** (`gcp/http.ts`, `gcp/kms.ts`, `gcp/token.ts`):
+  - requested uncompressed (`Accept-Encoding: identity`), so no decompression buffer holds them;
+  - read as chunks that are used in place, not copied;
+  - every chunk, and the joined copy, zeroed in a `finally` once parsed, on success and failure.
+- **The decrypted DEK:**
+  - decoded from base64 straight into a Buffer. A canonical-form check replaces the old
+    re-encode to a string;
+  - the parsed `plaintext` field is deleted as soon as it is decoded.
+- **A DEK sent to KMS `encrypt`:** the request body is a Buffer the broker builds and zeroes. It
+  is never a base64 or JSON string.
+- **AES-GCM decryption** (`crypto/gcm.ts`; secret versions, the local-dev KEK, capture
+  envelopes):
+  - returns the one buffer `update()` wrote, not a concatenated copy;
+  - `update()` yields real plaintext before `final()` checks the tag. So when the tag fails
+    (a wrong AAD or a forged tag under the right key), that buffer is zeroed before the error
+    propagates.
+
+**Copies the broker cannot wipe.** These stay in memory until it is reused:
+- the JSON text of a KMS response, as a V8 string, while `JSON.parse` reads it;
+- the parsed `plaintext` value (the base64 DEK), as a V8 string. It is deleted from the object
+  at once, but the string is not wiped. V8's young-generation collector may also have copied
+  it;
+- undici and OpenSSL internals:
+  - TLS record buffers;
+  - the HTTP parser;
+  - the copy `fetch` makes of a Buffer request body;
+- the OAuth access token, which is a string;
+- every `SecretMaterial.utf8()` result: the string an HTTP header or Playwright's `fill`
+  needs;
+- CPU registers. SSE/AVX state can still hold AES round keys or plaintext bytes after an
+  operation.
+
+**Keeping memory off disk** (`src/broker/host-memory.ts`):
+- **In every mode, at start, before it reads a key:** the broker writes 0 to its own
+  `/proc/self/coredump_filter` and reads it back.
+  - The kernel applies that filter to every core it writes, to a file or a pipe. So a core
+    carries no heap, no stack and no mapped memory.
+  - A core still holds the ELF headers, the vDSO, each thread's registers, the start of the
+    command line and the list of mapped files.
+- **Production refuses to start** (`vault broker: refused (host memory: …)`) unless all of these
+  hold:
+  - that filter reads back 0;
+  - `RLIMIT_CORE` is 0, both soft and hard;
+  - `kernel.core_pattern` is a file, not a pipe. The kernel ignores `RLIMIT_CORE` for a piped
+    core (core(5)). Ubuntu's apport and systemd-coredump both pipe, and so does this build
+    host;
+  - the effective cgroup v2 `memory.swap.max` (the lowest on the broker's cgroup path) is 0.
+    Swap that is off today could be turned on later, so `0` is required even with no swap
+    active.
+- **The other modes** log `vault_broker_host_memory` with the same facts, and run.
+- **The core pattern is a host-wide setting.** Set a file pattern on the dedicated broker host
+  (F03), for example `kernel.core_pattern=core`. With that pattern and the 0 limit, no broker
+  core is written at all.
+
+**Host checks before real secrets.** These need the real broker host, so none has been done:
+- the unit: `systemctl show tm8-vault-broker -p LimitCORE -p MemorySwapMax`;
+- the running process:
+  - `grep 'core file' /proc/<pid>/limits` shows 0 and 0;
+  - `cat /proc/<pid>/coredump_filter` shows `00000000`;
+  - `grep VmSwap /proc/<pid>/status` shows `0 kB`;
+- `memory.swap.max` in the broker's cgroup (`/proc/<pid>/cgroup` names it) reads `0`.
+  `swapon --show` may still list swap;
+- `sysctl kernel.core_pattern` does not start with `|`;
+- **hibernation:** a hibernation image holds all memory.
+  - Check `/sys/power/state` and the kernel command line for `resume=`.
+  - Mask `hibernate.target`, `hybrid-sleep.target` and `suspend-then-hibernate.target`;
+- **kdump:** a vmcore holds all physical memory. `/sys/kernel/kexec_crash_loaded` reads 0, or
+  the dump target is access-controlled like the keys;
+- **the VM:** memory snapshots, suspend-to-disk and live-migration images hold all memory. That
+  is a cloud-provider setting the guest cannot check;
+- **a crash test in staging:** start a pre_review broker holding a synthetic canary in a test
+  item and `kill -SEGV` it. Then confirm that no core file or crash report holds the canary,
+  raw or in base64 or hex.
 
 ### Owner enrollment
 
@@ -346,7 +430,10 @@ on `01a1fa87` holds the full set with severities. The headline items:
   other modes only log it.
 - Agent sessions run under the tm8 server's uid, so `chmod 600` does not keep the relay's
   signing key or TLS key from them.
-- The KMS REST path leaves the unwrapped DEK un-zeroed.
+- The KMS REST path (review F05). The broker now wipes the response bytes it owns and the GCM
+  output on a failed tag. It cannot wipe V8 strings or undici/OpenSSL buffers. Production
+  refuses a host that could write cores or swap. The host checks are not done on a real broker
+  host (*Plaintext in broker memory*).
 
 **Browser surface**
 - The capture page shares the SPA's origin.

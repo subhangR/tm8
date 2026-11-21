@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MetadataTokenError, MetadataTokenSource } from '../../src/gcp/token.js';
-import { expectSanitized, fakeToken, json, loopbackSuite, rejected } from './fake.js';
+import { allZero, expectSanitized, fakeToken, json, loopbackSuite, recordFetch, rejected } from './fake.js';
 
 describe('MetadataTokenSource', () => {
   const fake = loopbackSuite();
@@ -91,6 +91,19 @@ describe('MetadataTokenSource', () => {
     const error = await rejected(new MetadataTokenSource({ metadataBaseUrl: server.baseUrl, timeoutMs: 80 }).getAccessToken());
     expect(error).toBeInstanceOf(MetadataTokenError);
     expectSanitized(error);
+  });
+
+  it('asks for an uncompressed response and wipes its bytes once the token is parsed (review F05)', async () => {
+    const server = await fake((_, res) => {
+      res.setHeader('Metadata-Flavor', 'Google');
+      json(res, tokenBody());
+    });
+    const record = recordFetch();
+    const source = new MetadataTokenSource({ metadataBaseUrl: server.baseUrl });
+    expect(await source.getAccessToken()).toBe(fakeToken);
+    expect(record.chunks.length).toBeGreaterThan(0);
+    expect(record.chunks.every(allZero)).toBe(true);
+    expect(server.requests[0]!.headers['accept-encoding']).toBe('identity');
   });
 
   it('never caches a token whose lifetime is under the safety margin', async () => {
