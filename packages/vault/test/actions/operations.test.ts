@@ -81,13 +81,15 @@ describe('idempotent action lifecycle', () => {
       ? invoke(broker, 'vault.fill', { itemId: item.id }, fillInput({ operationId }))
       : invoke(broker, 'vault.callApi', { itemId: item.id }, apiInput({ operationId }));
     const first = await request();
-    expect(first.data).toMatchObject({ state: 'refused', code: action === 'fill' ? 'browser_unavailable' : 'upstream_unreachable' });
+    expect(first.data).toMatchObject({ state: 'refused', code: 'kms_unavailable' });
     expect((await request()).data).toEqual(first.data);
     expect(unwrap).toHaveBeenCalledTimes(1);
     expect(fill).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
     expect((await events(broker)).map((event) => event.action)).toEqual(action === 'fill'
       ? ['fill.started', 'fill.refused'] : ['api.started', 'api.refused']);
+    expect((await events(broker)).at(-1)!.params.code).toBe('kms_unavailable');
+    if (action === 'fill') expect((await events(broker)).at(-1)!.params.attempted).toBe(false);
   });
 
   it('exactly one concurrent fill consumes an approved one-use origin', async () => {

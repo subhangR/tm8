@@ -1,6 +1,7 @@
 import type { VaultCallApiResult } from '@tm8/contract';
 import { VaultError, type ItemRecord, type SecretVersionRecord, type VaultHandler } from '../core-types.js';
-import { decryptSecretVersion } from '../crypto/aead.js';
+import { decryptSecretVersion, VaultCryptoError } from '../crypto/aead.js';
+import { KmsRefusedError, KmsUnavailableError } from '../crypto/kms.js';
 import { SecretMaterial } from '../secret-material.js';
 import { EgressRefusal, type ApiRequestSpec, type ApiResponseOutcome, type BrokerPolicy } from '../types.js';
 import {
@@ -86,18 +87,21 @@ export const callApi: VaultHandler<'vault.callApi'> = async (ctx, { params, inpu
   let material: SecretMaterial | undefined;
   let response: ApiResponseOutcome | undefined;
   let refusal: EgressRefusal | undefined;
+  let kmsUnavailable = false;
   try {
     material = await decryptSecretVersion(ctx.components.kms, secret, { itemId: item.id, ownerId: item.ownerMemberId, version: secret.version });
     response = await ctx.components.egress.execute({ operationId: input.operationId, policy, key: material,
       request, canaries: ctx.components.canaries, signal: ctx.signal });
   } catch (error) {
-    refusal = error instanceof EgressRefusal ? error : new EgressRefusal(ctx.signal.aborted ? 'timeout' : 'upstream_unreachable');
+    kmsUnavailable = material === undefined || error instanceof KmsUnavailableError
+      || error instanceof KmsRefusedError || error instanceof VaultCryptoError;
+    if (!kmsUnavailable) refusal = error instanceof EgressRefusal ? error : new EgressRefusal(ctx.signal.aborted ? 'timeout' : 'upstream_unreachable');
   } finally {
     material?.dispose();
   }
   const result: VaultCallApiResult = response !== undefined
     ? { state: 'done', operationId: input.operationId, itemId: item.id, response }
-    : { state: 'refused', operationId: input.operationId, itemId: item.id, code: refusal!.code };
+    : { state: 'refused', operationId: input.operationId, itemId: item.id, code: kmsUnavailable ? 'kms_unavailable' : refusal!.code };
   const canary = refusal?.code === 'canary_in_request'
     || (response?.body.kind === 'withheld' && response.body.reason === 'canary');
   await transaction(ctx, async (tx) => {

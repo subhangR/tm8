@@ -1,6 +1,7 @@
 import type { VaultFillResult } from '@tm8/contract';
 import { VaultError, type ApprovalRecord, type ItemRecord, type SecretVersionRecord, type VaultHandler, type VaultTx } from '../core-types.js';
-import { decryptSecretVersion } from '../crypto/aead.js';
+import { decryptSecretVersion, VaultCryptoError } from '../crypto/aead.js';
+import { KmsRefusedError, KmsUnavailableError } from '../crypto/kms.js';
 import { normalizeOrigin } from '../origin/normalize.js';
 import { SecretMaterial } from '../secret-material.js';
 import type { FillOutcome, MaskedScreenshot } from '../types.js';
@@ -20,13 +21,23 @@ function observedOrigin(input: string | null, item: ItemRecord): string | null {
   try { return normalizeOrigin(input, { devMode: item.devMode, allowPath: true }).origin; } catch { return null; }
 }
 
-/** The streak lives in the audit trail and is updated in the completing transaction. */
+/**
+ * Temporary requester-visible history: grantees cannot see other requesters,
+ * and 200 intervening events can hide the previous attempt. OPEN: WS-A owns
+ * replacing ONLY this body with tx.audit.fillFailureStreak(itemId, origin), a
+ * count-only aggregate across ALL callers, plus grantee/event-burst tests.
+ * Call AFTER the completion append: its head lock serializes concurrent
+ * completions, and the returned count includes the event just appended.
+ */
 async function failureStreak(tx: VaultTx, itemId: string, origin: string): Promise<number> {
   const recent = await tx.audit.listForItem(itemId, '1970-01-01T00:00:00.000Z', 200);
-  const last = recent.find((event) => (event.action === 'fill.done' || event.action === 'fill.refused')
-    && event.params.origin === origin && event.params.attempted === true);
-  return last?.action === 'fill.refused' && typeof last.params.consecutiveFailures === 'number'
-    ? last.params.consecutiveFailures : 0;
+  let failures = 0;
+  for (const event of recent) {
+    if (event.params.origin !== origin || event.params.attempted !== true) continue;
+    if (event.action === 'fill.done') break;
+    if (event.action === 'fill.refused') failures++;
+  }
+  return failures;
 }
 
 export const fill: VaultHandler<'vault.fill'> = async (ctx, { params, input }) => {
@@ -89,6 +100,8 @@ export const fill: VaultHandler<'vault.fill'> = async (ctx, { params, input }) =
   let material: SecretMaterial | undefined;
   let password: SecretMaterial | undefined;
   let outcome: FillOutcome;
+  let kmsUnavailable = false;
+  let attempted = false;
   try {
     material = await decryptSecretVersion(ctx.components.kms, secret, { itemId: item.id, ownerId: item.ownerMemberId, version: secret.version });
     password = material.use((bytes) => {
@@ -98,10 +111,13 @@ export const fill: VaultHandler<'vault.fill'> = async (ctx, { params, input }) =
       }
       return SecretMaterial.fromUtf8(parsed.password);
     });
+    attempted = true;
     outcome = await ctx.components.fillDriver.fill({ intent: { operationId: input.operationId, itemId: item.id,
       origin, ...(input.startUrl === undefined ? {} : { startUrl: input.startUrl }), submit: input.submit, devMode: item.devMode },
       material: { username: item.username, password, totp: null }, signal: ctx.signal });
-  } catch {
+  } catch (error) {
+    kmsUnavailable = material === undefined || error instanceof KmsUnavailableError
+      || error instanceof KmsRefusedError || error instanceof VaultCryptoError;
     outcome = { ok: false, code: ctx.signal.aborted ? 'timeout' : 'browser_unavailable', observedOrigin: null, screenshot: null };
   } finally {
     password?.dispose();
@@ -112,16 +128,17 @@ export const fill: VaultHandler<'vault.fill'> = async (ctx, { params, input }) =
     ? { state: 'done', operationId: input.operationId, itemId: item.id, finalOrigin: origin,
       submitted: outcome.submitted, screenshot: screenshot(outcome.screenshot) }
     : { state: 'refused', operationId: input.operationId, itemId: item.id,
-      code: outcome.ok ? 'origin_mismatch' : outcome.code, observedOrigin: finalOrigin, screenshot: screenshot(outcome.screenshot) };
+      code: kmsUnavailable ? 'kms_unavailable' : outcome.ok ? 'origin_mismatch' : outcome.code,
+      observedOrigin: finalOrigin, screenshot: screenshot(outcome.screenshot) };
   const repeated = await transaction(ctx, async (tx) => {
-    const streak = result.state === 'refused' ? await failureStreak(tx, item.id, origin) + 1 : 0;
     // Screenshot bytes are returned once. The operation ledger holds metadata only.
     await tx.operations.complete(input.operationId, { state: result.state, result: { ...result, screenshot: null } });
     await audit(tx, ctx, result.state === 'done' ? 'fill.done' : 'fill.refused', item,
-      { operationId: input.operationId, origin, attempted: true, consecutiveFailures: streak,
+      { operationId: input.operationId, origin, attempted,
         ...(result.state === 'refused' ? { code: result.code } : {}) });
-    if (streak === 3) await audit(tx, ctx, 'fill.repeated_failures', item, { origin, count: 3 });
-    return streak === 3;
+    const streak = await failureStreak(tx, item.id, origin);
+    if (attempted && streak === 3) await audit(tx, ctx, 'fill.repeated_failures', item, { origin, count: 3 });
+    return attempted && streak === 3;
   });
   if (repeated) alert(ctx, 'fill_repeated_failures', item, { origin, count: 3 });
   return { data: result };

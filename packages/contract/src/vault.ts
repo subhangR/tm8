@@ -645,7 +645,7 @@ export const VaultFillInputSchema = z.object({
 
 export const VAULT_FILL_REFUSAL_CODES = [
   'origin_mismatch', 'cross_origin_redirect', 'cross_origin_form_action', 'insecure_context', 'not_top_frame',
-  'fields_not_found', 'navigation_failed', 'timeout', 'browser_unavailable', 'grant_constraint',
+  'fields_not_found', 'navigation_failed', 'timeout', 'browser_unavailable', 'grant_constraint', 'kms_unavailable',
 ] as const;
 export const VaultFillRefusalCodeSchema = z.enum(VAULT_FILL_REFUSAL_CODES);
 
@@ -690,7 +690,7 @@ export const VaultCallApiInputSchema = z.object({
 export const VAULT_EGRESS_REFUSAL_CODES = [
   'url_refused', 'scheme_refused', 'credentials_in_url', 'host_not_allowed', 'method_not_allowed', 'path_not_allowed',
   'token_management_denied', 'header_refused', 'body_too_large', 'private_address', 'dns_failed', 'redirect_refused',
-  'canary_in_request', 'upstream_unreachable', 'timeout', 'policy_missing', 'grant_constraint',
+  'canary_in_request', 'upstream_unreachable', 'timeout', 'policy_missing', 'grant_constraint', 'kms_unavailable',
 ] as const;
 export const VaultEgressRefusalCodeSchema = z.enum(VAULT_EGRESS_REFUSAL_CODES);
 
