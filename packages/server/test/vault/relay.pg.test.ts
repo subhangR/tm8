@@ -89,6 +89,29 @@ function reasonOf(answer: Answer): string | undefined {
   return (JSON.parse(answer.text) as { error?: { details?: { reason?: string } } }).error?.details?.reason;
 }
 
+/**
+ * Review addendum 2, C3: what every vault answer carries, the relay's own refusals included. Written out rather
+ * than imported, so a weakened relay constant fails this suite.
+ */
+const VAULT_ANSWER_HEADERS = {
+  'cache-control': 'no-store',
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'no-referrer',
+  'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+  'x-frame-options': 'DENY',
+  'cross-origin-resource-policy': 'same-origin',
+  'content-type': 'application/json; charset=utf-8',
+};
+
+function corsHeaders(answer: Answer): string[] {
+  return Object.keys(answer.headers).filter((name) => name.startsWith('access-control-'));
+}
+
+function expectVaultHeaders(answer: Answer): void {
+  expect(answer.headers).toMatchObject(VAULT_ANSWER_HEADERS);
+  expect(corsHeaders(answer)).toEqual([]);
+}
+
 function json(res: ServerResponse, status: number, body: unknown, headers: OutgoingHttpHeaders = {}): void {
   const text = JSON.stringify(body);
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(text), ...headers });
@@ -307,10 +330,7 @@ describe('vault relay on a real node', () => {
     const answer = await call('GET', '/v2/vault/status?probe=1', { ...bearer(token), 'user-agent': 'vault-relay-test', 'x-extra': 'never-forwarded' });
     expect(answer.status).toBe(200);
     expect(JSON.parse(answer.text)).toEqual({ data: { ok: true } });
-    expect(answer.headers['cache-control']).toBe('no-store');
-    expect(answer.headers['x-content-type-options']).toBe('nosniff');
-    expect(answer.headers['referrer-policy']).toBe('no-referrer');
-    expect(answer.headers['content-type']).toBe('application/json; charset=utf-8');
+    expectVaultHeaders(answer);
     expect(answer.headers['x-tm8-request-id']).toMatch(/\S/);
 
     expect(seen).toHaveLength(1);
@@ -325,6 +345,31 @@ describe('vault relay on a real node', () => {
     expect(Object.keys(entry.headers).sort()).toEqual(['connection', 'content-length', 'host', VAULT_ATTESTATION_HEADER].sort());
     expect(entry.headers['content-length']).toBe('0');
     expect(JSON.stringify(entry.headers).includes(token)).toBe(false);
+  });
+
+  it('grants no cross-origin use: a preflight and a foreign Origin are refused at the node before the broker, and nothing grants CORS (C3)', async () => {
+    const token = await mintBrowser(f.identityH2, f.accountH2);
+    const foreignOrigin = 'https://attacker.example.test';
+    // S4 refuses every preflight, the node's own origin included.
+    const preflights = await Promise.all([foreignOrigin, new URL(node.url).origin].map((origin) => call('OPTIONS', '/v2/vault/status', {
+      origin, 'access-control-request-method': 'POST', 'access-control-request-headers': 'authorization, content-type',
+    })));
+    const foreign = await call('GET', '/v2/vault/status', { ...bearer(token), origin: foreignOrigin });
+    const anonymous = await call('GET', '/v2/vault/status', { origin: foreignOrigin });
+    expect([...preflights, foreign].map((answer) => answer.status)).toEqual([403, 403, 403]);
+    expect(anonymous.status).toBe(403);
+    // These are the node's own refusals, written by its error writer before any vault decision.
+    for (const answer of [...preflights, foreign, anonymous]) {
+      expect(corsHeaders(answer)).toEqual([]);
+      expect(answer.headers['x-content-type-options']).toBe('nosniff');
+      expect(answer.headers['content-type']).toBe('application/json; charset=utf-8');
+    }
+    // An OPTIONS that is not a preflight reaches the relay, which routes no OPTIONS: 404 under the vault headers, and no Allow.
+    const plain = await call('OPTIONS', '/v2/vault/status', bearer(token));
+    expect([plain.status, reasonOf(plain)]).toEqual([404, 'not_found']);
+    expectVaultHeaders(plain);
+    expect(plain.headers.allow).toBeUndefined();
+    expect(seen).toHaveLength(0);
   });
 
   it('a member of two spaces names one: none is space_required, a space they are not in is space_forbidden, a malformed one invalid_space', async () => {
@@ -398,7 +443,7 @@ describe('vault relay on a real node', () => {
     expect(seen).toHaveLength(6);
   });
 
-  it('forwards only the two vault cookies and passes back only Set-Cookie in the broker exact shape', async () => {
+  it('forwards only the two vault cookies and passes back only Set-Cookie in the broker exact shape, and no broker header that grants CORS or relaxes one (C3)', async () => {
     const token = await mintBrowser(f.identityH2, f.accountH2);
     const vaultSession = randomUUID().replaceAll('-', '');
     reply = (_entry, res) => json(res, 200, { data: { ok: true } }, {
@@ -410,6 +455,12 @@ describe('vault relay on a real node', () => {
         'tm8_vault_refresh=lax; Max-Age=900; Path=/v2/vault/session; HttpOnly; Secure; SameSite=Lax',
       ],
       'access-control-allow-origin': '*',
+      'access-control-allow-credentials': 'true',
+      'cache-control': 'public, max-age=3600',
+      'content-security-policy': 'default-src *',
+      'x-frame-options': 'SAMEORIGIN',
+      'cross-origin-resource-policy': 'cross-origin',
+      'referrer-policy': 'unsafe-url',
       'x-powered-by': 'broker',
     });
     const answer = await call('GET', '/v2/vault/sessions', {
@@ -420,7 +471,7 @@ describe('vault relay on a real node', () => {
       'tm8_vault_session=abc_DEF-123; Max-Age=900; Path=/v2/vault; HttpOnly; Secure; SameSite=Strict',
       'tm8_vault_refresh=; Max-Age=0; Path=/v2/vault/session; HttpOnly; Secure; SameSite=Strict',
     ]);
-    expect(answer.headers['access-control-allow-origin']).toBeUndefined();
+    expectVaultHeaders(answer);
     expect(answer.headers['x-powered-by']).toBeUndefined();
     expect(seen).toHaveLength(1);
     expect(seen[0]!.headers.cookie).toBe(`tm8_vault_session=${vaultSession}; tm8_vault_refresh=refB`);
@@ -520,6 +571,7 @@ describe('vault relay on a real node', () => {
     expect(results.map((answer) => [answer.status, reasonOf(answer)])).toEqual([
       [404, 'not_found'], [404, 'not_found'], [404, 'not_found'], [414, 'uri_too_long'],
     ]);
+    for (const answer of results) expectVaultHeaders(answer);
     expect(seen).toHaveLength(0);
   });
 
@@ -532,6 +584,7 @@ describe('vault relay on a real node', () => {
     expect([text.status, reasonOf(text)]).toEqual([400, 'invalid_request']);
     const getBody = await call('GET', '/v2/vault/status', { ...auth, 'content-type': 'application/json' }, '{}');
     expect([getBody.status, reasonOf(getBody)]).toEqual([400, 'invalid_request']);
+    for (const answer of [big, text, getBody]) expectVaultHeaders(answer);
     expect(seen).toHaveLength(0);
 
     const body = '{"label":"Vendor login","ttlSeconds":600}';
@@ -555,6 +608,8 @@ describe('vault relay on a real node', () => {
     reply = (_entry, res) => json(res, 429, { error: { code: 'rate_limited' } }, { 'retry-after': 'Wed, 21 Oct 2026 07:28:00 GMT' });
     const dated = await call('GET', '/v2/vault/status', bearer(token));
     expect([dated.status, dated.headers['retry-after']]).toEqual([429, undefined]);
+    expectVaultHeaders(limited);
+    expectVaultHeaders(dated);
   });
 
   it('maps a dropped connection, a non-JSON answer and a stalled broker to 503 vault_unavailable', async () => {
@@ -572,6 +627,7 @@ describe('vault relay on a real node', () => {
     const stalled = await call('GET', '/v2/vault/status', bearer(token));
     expect([stalled.status, reasonOf(stalled)]).toEqual([503, 'vault_unavailable']);
     expect(Date.now() - started).toBeGreaterThanOrEqual(9_500);
+    for (const answer of [dropped, html, stalled]) expectVaultHeaders(answer);
     await waitFor(async () => (seen[2]?.aborted ? true : undefined));
   });
 

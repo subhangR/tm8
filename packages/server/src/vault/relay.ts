@@ -26,7 +26,8 @@
  *
  * WHAT IT PASSES BACK. The status and the JSON body, the broker's own cookies
  * in the broker's exact shape (anything else is dropped), a numeric
- * Retry-After, and fixed no-store, nosniff and no-referrer headers. It strips
+ * Retry-After, and the fixed RESPONSE_HEADERS below. No other broker header,
+ * so the broker can never grant CORS or relax them. It strips
  * x-tm8-vault-alerts and writes each alert to the owner's tm8 inbox
  * (internal.vault_notify, migration 451).
  *
@@ -74,10 +75,22 @@ const VAULT_SET_COOKIE = new RegExp(
   + '; HttpOnly; Secure; SameSite=Strict$',
 );
 
+/**
+ * On every vault answer, the relay's refusals included. No Access-Control-* header is ever sent: tm8 refuses
+ * cross-origin callers (http/security.ts S3 and S4).
+ *
+ * A vault answer is JSON that only a same-origin fetch reads, so it may load nothing, may not be framed, and
+ * may not be embedded by another origin (review addendum 2, C3). Cross-Origin-Resource-Policy is same-origin,
+ * not same-site, because artifacts.tm8.sh, which serves agent-authored documents, is the same site as tm8.sh
+ * (deploy/utho/nginx/sites-available/artifacts-tm8-sh).
+ */
 const RESPONSE_HEADERS: Readonly<Record<string, string>> = Object.freeze({
   'cache-control': 'no-store',
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'no-referrer',
+  'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+  'x-frame-options': 'DENY',
+  'cross-origin-resource-policy': 'same-origin',
 });
 
 /** Memberships the caller's own claims can see; a space-pinned session sees only its pin. */

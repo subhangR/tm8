@@ -42,6 +42,23 @@ describe('broker config and closed runtime settings', () => {
     }
     expect(() => loadBrokerConfig({ TM8_VAULT_WEBAUTHN_RP_ID: 'other.example.com' })).toThrow('TM8_VAULT_WEBAUTHN_ORIGINS');
   });
+  it('puts capture links and WebAuthn on https only, with loopback http outside production alone (review addendum 2, C3)', () => {
+    const kms = { kind: 'gcp-kms' as const, productionGrade: true };
+    const production = { TM8_VAULT_MODE: 'production', TM8_VAULT_REVIEW_GATE: 'passed' };
+    for (const mode of ['off', 'dev', 'pre_review']) {
+      expect(() => loadBrokerConfig({ TM8_VAULT_MODE: mode, TM8_VAULT_PUBLIC_ORIGIN: 'http://vault.example.com' })).toThrow('TM8_VAULT_PUBLIC_ORIGIN');
+      expect(() => loadBrokerConfig({ TM8_VAULT_MODE: mode, TM8_VAULT_PUBLIC_ORIGIN: 'https://vault.example.com',
+        TM8_VAULT_WEBAUTHN_ORIGINS: 'https://vault.example.com,http://vault.example.com' })).toThrow('TM8_VAULT_WEBAUTHN_ORIGINS');
+    }
+    for (const origin of ['http://localhost:5173', 'http://127.0.0.1:5173']) {
+      expect(loadBrokerConfig({ TM8_VAULT_MODE: 'pre_review', TM8_VAULT_PUBLIC_ORIGIN: origin }).publicOrigin).toBe(origin);
+      expect(() => loadBrokerConfig({ ...production, TM8_VAULT_PUBLIC_ORIGIN: origin }, kms)).toThrow('TM8_VAULT_PUBLIC_ORIGIN');
+    }
+    expect(() => loadBrokerConfig({ ...production, TM8_VAULT_PUBLIC_ORIGIN: 'https://localhost',
+      TM8_VAULT_WEBAUTHN_ORIGINS: 'https://localhost,http://localhost:5173' }, kms)).toThrow('TM8_VAULT_WEBAUTHN_ORIGINS');
+    const served = loadBrokerConfig({ ...production, TM8_VAULT_PUBLIC_ORIGIN: 'https://vault.example.com' }, kms);
+    expect([served.publicOrigin, served.webauthn.origins]).toEqual(['https://vault.example.com', ['https://vault.example.com']]);
+  });
   it('parses exact allowlists and every feature knob', () => {
     const config = loadBrokerConfig({ TM8_VAULT_PUBLIC_ORIGIN: 'https://vault.example.com', TM8_VAULT_WEBAUTHN_RP_ID: 'example.com',
       TM8_VAULT_WEBAUTHN_ORIGINS: 'https://vault.example.com,https://app.example.com', TM8_VAULT_WEBAUTHN_RP_NAME: 'test-only',

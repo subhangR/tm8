@@ -24,7 +24,7 @@ describe('standalone assets and contract parity', () => {
     expect(CAPTURE_RESPONSE_HEADERS).toEqual({
       'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
       'Referrer-Policy': 'no-referrer', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
-      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Opener-Policy': 'same-origin', 'X-Frame-Options': 'DENY', 'Cross-Origin-Resource-Policy': 'same-origin',
     });
     const values = Object.values(CAPTURE_RESPONSE_HEADERS).join(';');
     expect(values).not.toContain('unsafe-'); expect(values).not.toContain('*');

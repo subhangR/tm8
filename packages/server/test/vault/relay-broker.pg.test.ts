@@ -61,6 +61,29 @@ interface Fixture {
   persona: string; workSession: string;
 }
 
+/**
+ * Review addendum 2, C3: the headers every vault answer carries, measured on the real broker's answers as the node
+ * sends them. Written out rather than imported, so a weakened relay constant fails this suite.
+ */
+const VAULT_ANSWER_HEADERS = {
+  'cache-control': 'no-store',
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'no-referrer',
+  'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+  'x-frame-options': 'DENY',
+  'cross-origin-resource-policy': 'same-origin',
+  'content-type': 'application/json; charset=utf-8',
+};
+
+function corsHeaders(reply: Reply): string[] {
+  return Object.keys(reply.headers).filter((name) => name.startsWith('access-control-'));
+}
+
+function expectVaultHeaders(reply: Reply): void {
+  expect(reply.headers).toMatchObject(VAULT_ANSWER_HEADERS);
+  expect(corsHeaders(reply)).toEqual([]);
+}
+
 async function waitFor<T>(probe: () => Promise<T | undefined>, ms: number): Promise<T> {
   const deadline = Date.now() + ms;
   for (;;) {
@@ -346,6 +369,7 @@ describe('vault owner flow through the real relay and the real broker process (F
       expect(refused.json?.error).toMatchObject({ code: 'forbidden' });
       expect(refused.json.error.details).toBeUndefined();
     }
+    for (const reply of [control, bare, cli, agent]) expectVaultHeaders(reply);
     expect(brokerRequests().slice(before)).toEqual([
       { op: 'vault.session.end', status: 200 },
       { op: 'vault.session.end', status: 403 },
@@ -357,6 +381,7 @@ describe('vault owner flow through the real relay and the real broker process (F
     for (const origin of ['https://attacker.example.test', 'null', 'http://localhost:5174']) {
       const refused = await browser('POST', path, command(), origin);
       expect(refused.status, origin).toBe(403);
+      expect(corsHeaders(refused), origin).toEqual([]);
     }
     // The CSRF header is not relaxed either: a cookie-carrying command without it never reaches the broker.
     const csrf = await http('POST', path, {
@@ -384,13 +409,27 @@ describe('vault owner flow through the real relay and the real broker process (F
       assertion: device.assert(signIn.publicKey.challenge, CEREMONY), deviceLabel: 'Relay test device' });
     expect(session.status, session.text).toBe(200);
     expect([...jar.keys()].sort()).toEqual([VAULT_COOKIE_NAMES.refresh, VAULT_COOKIE_NAMES.session].sort());
+    // C3: each vault cookie is HttpOnly, Secure, SameSite=Strict, host-only (no Domain), expiring, and scoped to the vault paths.
+    const setCookies = session.headers['set-cookie'] ?? [];
+    expect(setCookies).toHaveLength(2);
+    for (const line of setCookies) {
+      const attributes = line.split('; ').slice(1);
+      expect(attributes.slice(-3), line.split('=')[0]).toEqual(['HttpOnly', 'Secure', 'SameSite=Strict']);
+      expect(attributes.filter((part) => /^domain=/i.test(part))).toEqual([]);
+      expect(attributes.find((part) => part.startsWith('Max-Age='))).toMatch(/^Max-Age=[1-9]\d*$/);
+    }
+    expect(Object.fromEntries(setCookies.map((line) => [line.split('=')[0], line.split('; ').find((part) => part.startsWith('Path='))])))
+      .toEqual({ [VAULT_COOKIE_NAMES.session]: 'Path=/v2/vault', [VAULT_COOKIE_NAMES.refresh]: 'Path=/v2/vault/session' });
+    expectVaultHeaders(session);
     const sessions = await browser('GET', '/v2/vault/sessions');
     expect(sessions.status, sessions.text).toBe(200);
     expect(sessions.json.data.sessions).toHaveLength(1);
+    expectVaultHeaders(sessions);
 
     // 3. An agent issues a capture link. The owner opens it and submits a sealed login under a bound step-up.
     const link = await bearer(agentToken, 'POST', '/v2/vault/capture-links', { ...command(), itemType: 'login', purpose: 'create', name: 'Relay test login' });
     expect(link.status, link.text).toBe(200);
+    expectVaultHeaders(link);
     const captureId = link.json.data.captureId as string;
     const linkToken = new URLSearchParams(new URL(link.json.data.url as string).hash.slice(1)).get('t')!;
     const opened = await browser('POST', `/v2/vault/captures/${captureId}/open`, { ...command(), linkToken });
@@ -404,6 +443,7 @@ describe('vault owner flow through the real relay and the real broker process (F
     const submitted = await browser('POST', `/v2/vault/captures/${captureId}/submit`,
       { ...submit, stepUp: await stepUp(device, 'vault.captures.submit', { captureId }, submit) });
     expect(submitted.status, submitted.text).toBe(200);
+    expectVaultHeaders(submitted);
     const itemId = submitted.json.data.id as string;
     expect(submitted.json.data).toMatchObject({ type: 'login', name: 'Relay test login', origins: ['https://app.example.com'] });
 

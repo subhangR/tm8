@@ -41,6 +41,10 @@ export const CAPTURE_RESPONSE_HEADERS = Object.freeze({
   'Cache-Control': 'no-store',
   'X-Content-Type-Options': 'nosniff',
   'Cross-Origin-Opener-Policy': 'same-origin',
+  // The legacy form of frame-ancestors 'none', and no other origin may embed the page or its modules
+  // (review addendum 2, C3). artifacts.tm8.sh is the same site as tm8.sh, so not same-site.
+  'X-Frame-Options': 'DENY',
+  'Cross-Origin-Resource-Policy': 'same-origin',
 });
 
 interface PageFile { readonly body: Buffer; readonly type: string }

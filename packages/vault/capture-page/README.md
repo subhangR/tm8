@@ -37,6 +37,8 @@ Referrer-Policy: no-referrer
 Cache-Control: no-store
 X-Content-Type-Options: nosniff
 Cross-Origin-Opener-Policy: same-origin
+X-Frame-Options: DENY
+Cross-Origin-Resource-Policy: same-origin
 ```
 
 The capture link is `/vault/capture/<captureId>#t=<linkToken>&s=<spaceId>`. The
