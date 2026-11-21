@@ -73,6 +73,9 @@ declare -A MODULE_OF=(
   [packages/mcp]=small
   [packages/prompt]=small
   [packages/pty-protocol]=small
+  # Secure Vault (task 01a1fa87): its suites, the capture page's included, belong to
+  # test-small. The closure still reaches packages/server, which depends on @tm8/vault.
+  [packages/vault]=small
   # The Electron shell (bun run desktop): no suite of its own and no @tm8/* edges — it
   # forks packages/server/dist, which the server module already tests.
   [apps/desktop]=

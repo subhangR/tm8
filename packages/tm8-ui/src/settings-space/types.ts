@@ -32,6 +32,7 @@ export type SettingsSectionId =
   | 'connectors'
   | 'credentials'
   | 'mcp-tokens'
+  | 'vault'
   | 'space-credentials'
   | 'node-credentials'
   | 'filesystem-access'
@@ -114,6 +115,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
      what tm8 signs in to for you, this is what signs in to tm8 as you. Built
      in `settings-mcp-tokens/` and injected through `sections`. */
   { id: 'mcp-tokens', label: 'MCP tokens', heading: 'MCP tokens', externallyOwned: true },
+  /* Secure Vault (task 01a1fa87): the viewer's own vault items in this space,
+     which agents use through the broker without ever seeing a value. After
+     the MCP tokens because it is the last thing that signs in as you. Built
+     in `vault-settings/` over `vault/`, injected through `sections`, and
+     mounted only for the node the page was loaded from. */
+  { id: 'vault', label: 'Secure vault', heading: 'Secure vault', externallyOwned: true },
   /* SC-5 — the credentials the SPACE owns (D1–D11), then the node's own keys
      and their fallback policy (D9). Directly after the viewer's own logins
      because a launch reads the three in that order (D4: yours, space, node).

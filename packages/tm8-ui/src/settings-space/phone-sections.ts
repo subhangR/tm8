@@ -29,7 +29,7 @@ export const PHONE_SETTINGS_GROUPS: readonly PhoneSettingsGroup[] = [
   { title: 'Chat & models', ids: ['models', 'chat-defaults'] },
   {
     title: 'Credentials & access',
-    ids: ['connectors', 'credentials', 'mcp-tokens', 'space-credentials', 'node-credentials', 'filesystem-access', 'space-links', 'bridges', 'projects'],
+    ids: ['connectors', 'credentials', 'mcp-tokens', 'vault', 'space-credentials', 'node-credentials', 'filesystem-access', 'space-links', 'bridges', 'projects'],
   },
   { title: 'Structure', ids: ['axes', 'workflows', 'menu', 'kinds'] },
   { title: 'Reference', ids: ['configs', 'danger'] },
@@ -38,6 +38,8 @@ export const PHONE_SETTINGS_GROUPS: readonly PhoneSettingsGroup[] = [
 /** Sections that list on a phone but refuse to open there. */
 export const DESKTOP_ONLY_SECTIONS: ReadonlySet<SettingsSectionId> = new Set<SettingsSectionId>([
   'node-credentials',
+  // The vault screens have no phone layout yet.
+  'vault',
   'filesystem-access',
   'projects',
   'workflows',
@@ -81,6 +83,7 @@ export const PHONE_SECTION_ICONS: Record<SettingsSectionId, { glyph: string; ton
   connectors: { glyph: '⌁', tone: 'brand' },
   credentials: { glyph: '🔐', tone: 'brand' },
   'mcp-tokens': { glyph: '🎟', tone: 'brand' },
+  vault: { glyph: '🗝', tone: 'brand' },
   'space-credentials': { glyph: '🏛', tone: 'brand' },
   'node-credentials': { glyph: '🖥', tone: 'idle' },
   'filesystem-access': { glyph: '📁', tone: 'idle' },
@@ -151,6 +154,7 @@ export const PHONE_SECTION_HINTS: Partial<Record<SettingsSectionId, string>> = {
   connectors: 'MCP servers',
   credentials: 'Your agent logins',
   'mcp-tokens': 'Claude Desktop · Cursor',
+  vault: 'Desktop only for now',
   'space-credentials': 'Status only on phone',
   'node-credentials': 'Admins only',
   'filesystem-access': 'Admins only',

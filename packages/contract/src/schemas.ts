@@ -1732,6 +1732,7 @@ export const StartChatInputSchema: z.ZodType<StartChatInput> = z.object({
 export const StartChatResultSchema: z.ZodType<StartChatResult> = z.lazy(() => z.object({
   chat: EntitySummarySchema,
   messageId: EntityIdSchema,
+  warnings: z.array(ResultWarningSchema).min(1).optional(),
 }).strict()) as z.ZodType<StartChatResult>;
 
 /**

@@ -65,7 +65,7 @@ describe('the one settings nav', () => {
 
   it('names rows plainly, and marks Models as this browser inside Account', () => {
     const account = settingsNavGroups(MEMBER).find((g) => g.id === 'account')!;
-    expect(account.items.map((i) => i.label)).toEqual(['Profile', 'Sign-ins & devices', 'Linked identities', 'Agent logins', 'MCP tokens', 'Linked spaces', 'Models']);
+    expect(account.items.map((i) => i.label)).toEqual(['Profile', 'Sign-ins & devices', 'Linked identities', 'Agent logins', 'MCP tokens', 'Secure vault', 'Linked spaces', 'Models']);
     expect(account.items.find((i) => i.key === 'space:models')?.detail).toBe('this browser');
     const server = settingsNavGroups(NODE_ADMIN).find((g) => g.id === 'node')!;
     expect(server.items.map((i) => i.label)).toEqual(['Credentials & fallback', 'Filesystem access', 'Accounts', 'Configuration']);
@@ -118,7 +118,8 @@ describe('search — the one matcher the frame nav and the Overview share', () =
     );
 
   it('"api key" finds the credentials sections at every scope', () => {
-    expect(find('api key')).toEqual(['space:credentials', 'space:space-credentials', 'node:credentials']);
+    // The Secure vault holds API keys that agents use without seeing them.
+    expect(find('api key')).toEqual(['space:credentials', 'space:vault', 'space:space-credentials', 'node:credentials']);
   });
 
   it('matches labels and subheadings, case-insensitively', () => {

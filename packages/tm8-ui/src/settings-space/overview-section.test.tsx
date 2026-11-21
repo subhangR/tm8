@@ -117,8 +117,8 @@ describe('Overview — what a bare /settings opens', () => {
     const search = screen.getByRole('searchbox', { name: 'Find a setting' });
     fireEvent.change(search, { target: { value: 'api key' } });
     const rows = Array.from(document.querySelectorAll('.set-ov__row')).map((r) => r.getAttribute('data-section'));
-    expect(rows).toEqual(['space:credentials', 'space:space-credentials', 'node:credentials']);
-    expect(screen.getByText('3 settings match')).toBeTruthy();
+    expect(rows).toEqual(['space:credentials', 'space:vault', 'space:space-credentials', 'node:credentials']);
+    expect(screen.getByText('4 settings match')).toBeTruthy();
     fireEvent.change(search, { target: { value: 'zzzz' } });
     expect(document.querySelectorAll('.set-ov__row')).toHaveLength(0);
     expect(screen.getByText('Nothing matches “zzzz”.')).toBeTruthy();

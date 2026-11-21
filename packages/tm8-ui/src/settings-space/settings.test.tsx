@@ -311,6 +311,14 @@ const LIVE_VERBS = [
   // not-mounted state; the section's own live controls (each named for the
   // operation that makes it live) are held in bridges/bridges-section.test.tsx.
   /^Bridges$/,
+  // Secure vault (task 01a1fa87): the NAV ROW only. Every `vault.*` operation
+  // has a broker handler (packages/vault test/broker/main.test.ts), and the
+  // relay passes each call on or refuses it with a reason the section shows,
+  // the vault being switched off included. The body is owned by
+  // `vault-settings/` over `vault/` and injected by GateApp for the local
+  // server only, so this shell shows its not-mounted state; the section's
+  // own controls are held in vault-settings/ and vault/ tests.
+  /^Secure vault$/,
 ];
 
 function sweepEnabledControls(root: HTMLElement) {

@@ -28,6 +28,9 @@
     },
     {
       "path": "../integrations"
+    },
+    {
+      "path": "../vault"
     }
   ]
 }

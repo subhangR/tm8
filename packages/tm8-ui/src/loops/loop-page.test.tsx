@@ -501,7 +501,8 @@ describe('the registry row mounts the page through GenericBody', () => {
       </div>,
     );
     expect(await screen.findByTestId('loop-header')).toBeTruthy();
-    expect(screen.getByTestId('loop-what').textContent).toContain('Dreamer');
+    // The runner's title comes from a second read (loopForm.entity), which can land in a later commit.
+    await waitFor(() => expect(screen.getByTestId('loop-what').textContent).toContain('Dreamer'));
     expect(screen.getByTestId('loop-schedule').textContent).toContain('Every day at 09:00 UTC');
     expect(screen.getByTestId('loop-settings').textContent).toContain('opus');
     expect(screen.getByTestId('loop-settings').textContent).toContain('2 retries, 5m 0s apart');
@@ -591,6 +592,21 @@ describe('one read for the page: newer wins', () => {
 });
 
 describe('the runs table follows the loop', () => {
+  /**
+   * Renders the runs table. `effects()` re-renders it with the same props, which makes React run the
+   * last render's pending effects first.
+   *
+   * The poll is armed, and disarmed, by an effect of the render that shows or settles a running row. A
+   * wait that finds the row can return before that effect runs: on a loaded machine React yields
+   * between a commit and its effects. Advancing the clock then moves past a poll that does not exist
+   * yet, or one that should already be gone. Call `effects()` before every advance.
+   */
+  function renderRuns(p: LoopPagePort): { effects: () => void } {
+    const ui = () => <LoopRuns loopId={LOOP_ID} port={p} canControl epoch={0} />;
+    const { rerender } = render(ui());
+    return { effects: () => rerender(ui()) };
+  }
+
   it('another loop starts empty, and a slow answer for the previous loop is dropped', async () => {
     const slowA = deferred<{ items: LoopRun[]; nextCursor: string | null }>();
     const runsList = vi.fn((loopId: string) => (loopId === LOOP_ID ? slowA.promise : Promise.resolve({ items: [run({ id: 'run-b', loopId: 'loop-b' })], nextCursor: null })));
@@ -609,9 +625,10 @@ describe('the runs table follows the loop', () => {
       .mockResolvedValueOnce({ items: [run({ id: 'live', status: 'running', endedAt: null, durationMs: null })], nextCursor: 'c1' })
       .mockResolvedValueOnce({ items: [run({ id: 'old-1' }), run({ id: 'old-2' })], nextCursor: 'c2' })
       .mockResolvedValue({ items: [run({ id: 'new', status: 'running', endedAt: null, durationMs: null }), run({ id: 'live', status: 'completed' })], nextCursor: 'c1-later' });
-    render(<LoopRuns loopId={LOOP_ID} port={port({ runsList })} canControl epoch={0} />);
+    const { effects } = renderRuns(port({ runsList }));
     fireEvent.click(await screen.findByRole('button', { name: 'Older runs' }));
     await waitFor(() => expect(screen.getAllByTestId('loop-run-row')).toHaveLength(3));
+    effects();
     await act(async () => { vi.advanceTimersByTime(RUNNING_POLL_MS); });
     await waitFor(() => expect(screen.getAllByTestId('loop-run-row')).toHaveLength(4));
     expect(screen.getAllByTestId('loop-run-row').map((row) => row.getAttribute('data-run-id'))).toEqual(['new', 'live', 'old-1', 'old-2']);
@@ -640,14 +657,16 @@ describe('the runs table follows the loop', () => {
       .mockResolvedValueOnce({ items: [run({ id: 'long', status: 'running', endedAt: null, durationMs: null })], nextCursor: null })
       .mockResolvedValue({ items: [run({ id: 'skip-2', status: 'skipped' }), run({ id: 'skip-1', status: 'skipped' })], nextCursor: 'c1' });
     const runsGet = vi.fn(async () => run({ id: 'long', status: 'completed' }));
-    render(<LoopRuns loopId={LOOP_ID} port={port({ runsList, runsGet })} canControl epoch={0} />);
+    const { effects } = renderRuns(port({ runsList, runsGet }));
     fireEvent.click(await screen.findByRole('button', { name: 'Older runs' }));
     await waitFor(() => expect(screen.getAllByTestId('loop-run-row')).toHaveLength(2));
+    effects();
     await act(async () => { vi.advanceTimersByTime(RUNNING_POLL_MS); });
     await waitFor(() => expect(runsGet).toHaveBeenCalledWith('long'));
     await waitFor(() => expect(screen.getAllByTestId('loop-run-row')
       .find((row) => row.getAttribute('data-run-id') === 'long')!.getAttribute('data-status')).toBe('completed'));
     const calls = runsList.mock.calls.length;
+    effects();
     await act(async () => { vi.advanceTimersByTime(RUNNING_POLL_MS * 2); });
     expect(runsList).toHaveBeenCalledTimes(calls);
   });
@@ -659,8 +678,9 @@ describe('the runs table follows the loop', () => {
       .mockResolvedValueOnce({ items: [run({ id: 'live', status: 'running', endedAt: null, durationMs: null })], nextCursor: null })
       .mockRejectedValueOnce(new CollabError('upstream_unavailable', 'the tm8 node did not answer'))
       .mockResolvedValue({ items: [run({ id: 'live', status: 'completed' })], nextCursor: null });
-    render(<LoopRuns loopId={LOOP_ID} port={port({ runsList })} canControl epoch={0} />);
+    const { effects } = renderRuns(port({ runsList }));
     await screen.findByTestId('loop-run-row');
+    effects();
     await act(async () => { vi.advanceTimersByTime(RUNNING_POLL_MS); });
     const banner = await screen.findByTestId('loop-runs-refresh-error');
     expect(screen.getAllByTestId('loop-run-row')).toHaveLength(1);
@@ -676,11 +696,13 @@ describe('the runs table follows the loop', () => {
     const runsList = vi.fn()
       .mockResolvedValueOnce({ items: [run({ status: 'running', endedAt: null, durationMs: null })], nextCursor: null })
       .mockResolvedValue({ items: [run({ status: 'completed' })], nextCursor: null });
-    render(<LoopRuns loopId={LOOP_ID} port={port({ runsList })} canControl epoch={0} />);
+    const { effects } = renderRuns(port({ runsList }));
     await waitFor(() => expect(screen.getByTestId('loop-run-row').getAttribute('data-status')).toBe('running'));
+    effects();
     await act(async () => { vi.advanceTimersByTime(RUNNING_POLL_MS); });
     await waitFor(() => expect(screen.getByTestId('loop-run-row').getAttribute('data-status')).toBe('completed'));
     const calls = runsList.mock.calls.length;
+    effects();
     await act(async () => { vi.advanceTimersByTime(RUNNING_POLL_MS * 2); });
     expect(runsList).toHaveBeenCalledTimes(calls);
   });

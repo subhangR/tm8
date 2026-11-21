@@ -99,6 +99,7 @@ const TRANSCRIBE = 'packages/server/src/bridges/runtime/transcribe.ts';
 const SLACK_RUNTIME = 'packages/server/src/bridges/runtime/slack-runtime.ts';
 const NODE_KEYS = 'packages/server/src/facade/services/w2/space-credential-catalog.ts';
 const DOCTOR = 'packages/cli/src/commands/doctor.ts';
+const VAULT = 'packages/server/src/vault/config.ts';
 
 export const NODE_ENV: readonly EnvKnob[] = [
   // ── Network & access ──────────────────────────────────────────────────
@@ -216,6 +217,17 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_SLACK_PROXY_URL', group: 'Bridges', summary: 'HTTP(S) proxy the supervised Slack runtime uses for all Slack traffic (Web API, Socket Mode, files); user:password@ in the URL is sent as Proxy-Authorization. Unset, the runtime uses HTTPS_PROXY / NO_PROXY; the link to tm8 never goes through a proxy.', default: null, definedIn: SLACK_RUNTIME, secret: true },
   { name: 'TM8_SLACK_RUNTIME_ID', group: 'Bridges', summary: 'Id the supervised Slack runtime reports in hello.', default: 'slack-<hostname>', definedIn: SLACK_RUNTIME },
   { name: 'TM8_TRANSCRIBE_BIN', group: 'Bridges', summary: 'Program that turns a bridged voice note into text on this host (442), run as `<program> -` with the audio on stdin; unset, tm8-transcribe on PATH or in ~/.local/bin; set but empty, voice notes keep their file only.', default: 'tm8-transcribe', definedIn: TRANSCRIBE },
+
+  // ── Secure Vault (task 01a1fa87-dd1a): off by default, read once at boot ──
+  { name: 'TM8_VAULT_MODE', group: 'Secure Vault', summary: 'off, dev, pre_review or production. Off reads no other vault knob: /v2/vault answers 503 vault_disabled and /vault/capture answers 404. Any other mode refuses to boot on a missing or unsafe key file, socket or URL.', default: 'off', definedIn: VAULT },
+  { name: 'TM8_VAULT_BROKER_SOCKET', group: 'Secure Vault', summary: 'Absolute path of the vault broker\'s owner-only Unix socket. dev and pre_review only; refused in production. Set this or TM8_VAULT_BROKER_URL, not both.', default: null, definedIn: VAULT },
+  { name: 'TM8_VAULT_BROKER_URL', group: 'Secure Vault', summary: 'https origin of the vault broker\'s mutual-TLS listener, required in production. No credentials, path, query or fragment.', default: null, definedIn: VAULT },
+  { name: 'TM8_VAULT_RELAY_TLS_KEY_FILE', group: 'Secure Vault', summary: 'Absolute path of the relay\'s TLS client key for TM8_VAULT_BROKER_URL. Must be chmod 600 and owned by the server\'s user, or boot fails.', default: null, definedIn: VAULT },
+  { name: 'TM8_VAULT_RELAY_TLS_CERT_FILE', group: 'Secure Vault', summary: 'Absolute path of the relay\'s TLS client certificate for TM8_VAULT_BROKER_URL.', default: null, definedIn: VAULT },
+  { name: 'TM8_VAULT_RELAY_TLS_CA_FILE', group: 'Secure Vault', summary: 'Absolute path of the CA bundle the broker\'s TLS certificate must chain to. Nothing else is trusted.', default: null, definedIn: VAULT },
+  { name: 'TM8_VAULT_RELAY_PRIVATE_KEY_FILE', group: 'Secure Vault', summary: 'Absolute path of the PKCS#8 Ed25519 key the relay signs every vault request with; the broker holds only the public half. Must be chmod 600 and owned by the server\'s user, or boot fails.', default: null, definedIn: VAULT },
+  { name: 'TM8_VAULT_RELAY_TIMEOUT_MS', group: 'Secure Vault', summary: 'How long the relay waits for the broker to answer, 10000 to 600000 ms. The default outlasts the broker\'s longest fill.', default: '190000', definedIn: VAULT },
+  { name: 'TM8_VAULT_PASTE_GUARD', group: 'Secure Vault', summary: 'off or on. On, secret-shaped text a person sends in a message, a chat start or a bridged chat is replaced with [redacted:<kind>] before it is stored, and the sender is warned to rotate it. Independent of TM8_VAULT_MODE. Any other value refuses to boot.', default: 'off', definedIn: VAULT },
 
   // ── Keys ─────────────────────────────────────────────────────────────
   { name: 'TYPESAFE_API_KEY', group: 'Keys', summary: 'Node key for Jev (TypeSafe), used when a member has none.', default: null, definedIn: MAIN, secret: true },

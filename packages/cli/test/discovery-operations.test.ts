@@ -780,6 +780,12 @@ const GUARD_DTOS_AWAITING_CATALOG: Readonly<Record<string, string>> = {
   ToolConfigUnsetInputSchema: 'tools.config.unset',
   ToolSecretBindInputSchema: 'tools.secrets.bind',
   ToolSecretUnbindInputSchema: 'tools.secrets.unbind',
+  // Secure Vault (task 01a1fa87): the contract freezes the vault schemas while
+  // every vault row is still `reserved`; the vault catalog pass registers them.
+  VaultItemUpdateInputSchema: 'vault.items.update',
+  VaultItemSetPropertiesInputSchema: 'vault.items.setProperties',
+  VaultItemDeleteInputSchema: 'vault.items.delete',
+  VaultPolicySetInputSchema: 'vault.policies.set',
 };
 
 /**
