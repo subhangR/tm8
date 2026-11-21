@@ -32,6 +32,23 @@ begin
   end;
 end
 $roles$;
+-- A vault role that already existed was not created above, so it carries
+-- whatever its creator chose. The broker works as tm8_vault_broker (`set local
+-- role`), and row security is skipped for a SUPERUSER or BYPASSRLS current
+-- role, so a pre-made role of that name would void every tenant policy below.
+-- Refuse any vault role without exactly the attributes created above, or one
+-- that was made a member of another role: this file grants it none.
+do $guard$
+begin
+  if exists (select 1 from pg_roles
+      where rolname in ('tm8_vault_owner', 'tm8_vault_broker', 'tm8_vault_audit_writer')
+        and (rolcanlogin or rolsuper or rolbypassrls or rolcreatedb or rolcreaterole or rolreplication or rolinherit))
+    or exists (select 1 from pg_auth_members m join pg_roles r on r.oid = m.member
+      where r.rolname in ('tm8_vault_owner', 'tm8_vault_broker', 'tm8_vault_audit_writer')) then
+    raise exception 'vault: a vault role exists with attributes or memberships 450 does not grant' using errcode = '42501';
+  end if;
+end
+$guard$;
 create schema vault authorization tm8_vault_owner;
 revoke all on schema vault from public, tm8_app;
 grant usage on schema vault to tm8_vault_broker, tm8_vault_audit_writer;
