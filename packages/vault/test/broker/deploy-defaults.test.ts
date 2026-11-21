@@ -9,7 +9,8 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_BROKER_SOCKET, DEFAULT_FILL_SOCKET } from '../../src/broker/main.js';
+import { BrokerConfigError } from '../../src/broker/config.js';
+import { DEFAULT_BROKER_SOCKET, DEFAULT_FILL_SOCKET, brokerCommand } from '../../src/broker/main.js';
 import { createBrokerServer } from '../../src/broker/server.js';
 import { exportAttestationKeyPair, generateAttestationKeyPair } from '../../src/relay/attestation.js';
 import { testBroker } from '../support/kit.js';
@@ -18,10 +19,32 @@ import { stubHandlers } from './support.js';
 const deployFile = (name: string): Promise<string> =>
   readFile(new URL(`../../../../deploy/vault/fill-worker/${name}`, import.meta.url), 'utf8');
 
+/** The arguments of every `node packages/vault/dist/broker/main.js ...` command the runbook prints. */
+const runbookBrokerCommands = async (): Promise<string[][]> => {
+  const text = await readFile(new URL('../../../../deploy/vault/README.md', import.meta.url), 'utf8');
+  return [...text.matchAll(/`node packages\/vault\/dist\/broker\/main\.js([^`]*)`/g)].map((match) => match[1]!.split(/\s+/).filter(Boolean));
+};
+
 /** Each `d <path> <mode> ...` line of a tmpfiles.d file, as path → mode. */
 const tmpfilesDirectories = (text: string): Map<string, string> => new Map(text.split('\n')
   .map((line) => line.trim().split(/\s+/))
   .flatMap((fields) => (fields[0] === 'd' && fields[1] && fields[2] ? [[fields[1], fields[2]] as const] : [])));
+
+describe('the runbook against the broker entry point', () => {
+  it('prints a start command that serves and an enroll command that enrolls, and nothing the entry refuses', async () => {
+    const commands = await runbookBrokerCommands();
+    expect(commands.map((args) => brokerCommand(args).command)).toEqual(['serve', 'enroll']);
+  });
+
+  it('refuses every argument but enroll before any I/O, serve included', () => {
+    expect(brokerCommand([])).toEqual({ command: 'serve' });
+    expect(brokerCommand(['enroll', 'a', 'b', '60'])).toEqual({ command: 'enroll', args: ['a', 'b', '60'] });
+    for (const argv of [['serve'], ['--help'], ['', 'enroll'], ['ENROLL']]) {
+      expect(() => brokerCommand(argv)).toThrow(BrokerConfigError);
+      expect(() => brokerCommand(argv)).toThrow('vault broker: invalid arguments');
+    }
+  });
+});
 
 describe('broker socket defaults against the shipped units', () => {
   it('looks for the fill worker where its unit listens', async () => {

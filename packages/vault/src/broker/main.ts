@@ -35,9 +35,11 @@ import type { BrokerServer } from './server.js';
 import { startBroker } from './start.js';
 
 /**
- * Composition root of the vault broker process:
+ * Composition root of the vault broker process. With no argument it serves;
+ * its only subcommand is enroll. Any other argument, `serve` included, is
+ * refused (brokerCommand):
  *
- *   node packages/vault/dist/broker/main.js                      serve
+ *   node packages/vault/dist/broker/main.js
  *   node packages/vault/dist/broker/main.js enroll <member> <space> <ttlSeconds>
  *
  * Mode `off` (the default) exits 0 before it opens a database, a KMS, a file or
@@ -399,10 +401,17 @@ export function failureMessage(error: unknown): string {
   return 'vault broker: start failed';
 }
 
+/** What the process was asked to do: serve with no argument, or enroll. Anything else is refused before any I/O. */
+export function brokerCommand(argv: readonly string[]): { command: 'serve' } | { command: 'enroll'; args: readonly string[] } {
+  if (argv[0] === 'enroll') return { command: 'enroll', args: argv.slice(1) };
+  if (argv.length > 0) throw new BrokerConfigError('arguments');
+  return { command: 'serve' };
+}
+
 async function main(argv: readonly string[]): Promise<void> {
   process.umask(0o077);
-  if (argv[0] === 'enroll') { await enroll(process.env, argv.slice(1)); return; }
-  if (argv.length > 0) throw new BrokerConfigError('arguments');
+  const command = brokerCommand(argv);
+  if (command.command === 'enroll') { await enroll(process.env, command.args); return; }
   const broker = await composeBroker(process.env);
   if (!broker) { logLine({ event: 'vault_broker_off' }); return; }
   logLine({ event: 'vault_broker_listening', mode: broker.config.mode, mtls: broker.server.https !== null,

@@ -225,8 +225,10 @@ same uid can connect.
 - **`TM8_VAULT_FILL_SOCKET`:** the broker's default is the shipped worker unit's own path,
   `/run/tm8-vault/fill.sock`, and `test/broker/deploy-defaults.test.ts` keeps the two
   equal. If you move it, set the knob on both units.
-- **Start command:** `node packages/vault/dist/broker/main.js serve`. Mode `off` exits 0
-  before it opens a database, a KMS, a file or a socket.
+- **Start command:** `node packages/vault/dist/broker/main.js`, with no argument. Any
+  argument other than `enroll`, including `serve`, stops it with
+  `vault broker: invalid arguments`. Mode `off` exits 0 before it opens a database, a KMS,
+  a file or a socket.
 
 ### Owner enrollment
 
