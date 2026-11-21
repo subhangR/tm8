@@ -17,7 +17,7 @@ retention policy or a payment processor, and none of it installs or enables itse
 | Capture page `/vault/capture/*` | `404` for everyone, never the SPA. |
 | Settings → Secure vault (UI) | Says “The vault is switched off.” It calls only the same-origin relay and sends no bearer. |
 | Broker and fill worker | Not running. Nothing starts them. |
-| Chat paste guard | Its own knob, `TM8_VAULT_PASTE_GUARD`, which this deploy also leaves unset or `off`. Off, the server builds nothing, and every message is stored as sent. Any value but `off` or `on` stops the server at start with `tm8-server failed to start: vault relay: TM8_VAULT_PASTE_GUARD must be off or on`. Turning it on is §5's last subsection. |
+| Chat paste guard | Its own knob, `TM8_VAULT_PASTE_GUARD`, which this deploy also leaves unset or `off`. Off, the server builds nothing, and every message is stored as sent. Any value but `off` or `on` refuses to boot: the node never listens, and the journal shows `tm8-server failed to start: vault relay: TM8_VAULT_PASTE_GUARD must be off or on`. Turning it on is §5's last subsection. |
 | Database | Migrations **450** and **451** apply (below). They write no member data. The one row 450 inserts is the audit chain's genesis head. |
 
 **Migration 450 (`450_vault_store.sql`)** creates:
@@ -248,22 +248,25 @@ first passkey (an open review item), so:
 
 ### Chat paste guard (`TM8_VAULT_PASTE_GUARD=on`)
 
-Turning it on is a separate owner decision. It is the one part of this build that works
-with the vault off. It puts nothing in the vault and holds no secret, so the review gate
-does not apply to it. It changes what tm8 stores, though, so it needs its own decision.
+Turning it on is a separate owner decision, not part of a flag-off deploy. It is the one
+part of this build that works with the vault off: it puts nothing in the vault and holds no
+secret. It does change what tm8 stores for every message a person sends, and its limits are
+on the review list in §6. Whether to wait for the review is part of that decision.
 
-With the guard on, the server redacts secret-shaped text that a person sends before
-storing it:
-- `messages.post`, `messages.edit` and `chat.start`;
-- a bridged message's body, slash-command text and media captions.
+With the guard on, the server replaces secret-shaped text that a person sends with
+`[redacted:<kind>]` before it stores anything:
+- `messages.post` and `chat.start`. The sender gets a `vault_paste_redacted` warning that
+  names kinds of secret, never values. A post or start that no longer fits once marked is
+  refused.
+- `messages.edit`. An edit whose new text holds secret-shaped text is refused
+  (`invalid_input`, reason `vault_paste_redacted`), and the message keeps its earlier text.
+- A bridged person's message, and their edit at the provider: body, slash-command text and
+  media captions. The chat gets one notice per message and one per edit, threaded on the
+  stored copy.
 
-The sender gets a `vault_paste_redacted` warning. It names kinds of secret, never values.
-- An edit that adds secret-shaped text is refused, and the message keeps its old text.
-- A bridged chat gets one notice per message.
-- Agents' posts are not scanned.
-- With `TM8_VAULT_MODE=off`, the warning leaves out the capture-link advice.
-
-Detection is best-effort. Plan `01a1fab7` §10 lists what it does not catch.
+It does not read agents' posts, bots, attachments or file names. With `TM8_VAULT_MODE=off`
+the warning leaves out the capture-link advice. Detection is best-effort. Plan `01a1fab7` §10
+lists what it does not catch, including the legacy WhatsApp bridge's own store.
 
 To verify after the restart, check the boot log for `[tm8] vault paste guard on (vault off)`
 (or `(vault on)`). Never post a real secret to test it.
