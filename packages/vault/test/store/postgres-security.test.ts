@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import pg from 'pg';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuditUnavailableError, SYSTEM_ACTOR, StoreNotFoundError, StoreUnavailableError, actorOf, type AuditBody, type VaultTx } from '../../src/core-types.js';
 import { VaultAuditGate } from '../../src/audit/gate.js';
@@ -48,6 +49,54 @@ else describe('Postgres vault security', () => {
     const raw = ' { "params":{}, "spaceId":null, "subjectMemberId":null, "itemId":null, "actor":{"kind":"system","memberId":null,"sessionId":null,"name":null}, "action":"session.ended" } ';
     const sql = (await h.admin.query('select * from vault.append_audit($1,$2)', [raw, T0])).rows[0];
     expect(sql.body_text).toBe(raw); expect(sql.at.toISOString()).toBe(second.at);
+  });
+
+  it('a broker session cannot run its own code as a definer through a temporary type: pg_temp is searched last (C1)', async () => {
+    // Unless a function's search_path lists pg_temp, Postgres searches the session's temporary
+    // schema FIRST for type names, and the broker role may create temporary objects. A temporary
+    // domain named uuid, jsonb, text or timestamptz, whose CHECK calls the session's own function,
+    // then runs that function as the owner of any SECURITY DEFINER function that casts to the name,
+    // directly or through the claim helpers it calls: the schema owner, who can grant itself the
+    // audit table, or the audit writer. Measured at the reviewed head: both, before this fix.
+    // A fresh session, so no plan cached before the types were planted can hide the lookup.
+    const client = new pg.Client({ connectionString: h.url });
+    client.on('error', () => undefined);
+    await client.connect();
+    try {
+      await client.query('begin');
+      await client.query('set local role tm8_vault_broker');
+      await client.query("select pg_catalog.set_config('vault.member_id', $1, true), pg_catalog.set_config('vault.space_id', $2, true), pg_catalog.set_config('vault.at', $3, true)", [OWNER_ID, SPACE_A, T0]);
+      for (const type of ['uuid', 'jsonb', 'text', 'timestamptz']) {
+        await client.query(`create function pg_temp.probe(pg_catalog.${type}) returns pg_catalog.bool language plpgsql as $probe$
+          begin if current_user <> 'tm8_vault_broker' then raise exception 'pg_temp probe ran as %', current_user; end if; return true; end $probe$`);
+        await client.query(`create domain pg_temp.${type} as pg_catalog.${type} check (pg_temp.probe(value))`);
+      }
+      const attempt = async (sql: string, params: unknown[] = []): Promise<string> => {
+        await client.query('savepoint attempt');
+        const outcome = await client.query(sql, params).then(() => 'returned', (error: Error) => error.message);
+        await client.query('rollback to savepoint attempt');
+        return outcome;
+      };
+      const calls: Record<string, [string, unknown[]]> = {
+        owns_item: ['select vault.owns_item($1::pg_catalog.uuid)', [randomUUID()]],
+        sees_item: ['select vault.sees_item($1::pg_catalog.uuid)', [randomUUID()]],
+        sees_approval: ['select vault.sees_approval($1::pg_catalog.uuid)', [randomUUID()]],
+        hash_in_use: ['select vault.hash_in_use($1::pg_catalog.text)', ['0'.repeat(64)]],
+        fill_failure_streak: ['select vault.fill_failure_streak($1::pg_catalog.uuid, $2::pg_catalog.text)', [randomUUID(), 'https://login.example.test']],
+        append_audit: ['select (vault.append_audit($1::pg_catalog.text, $2::pg_catalog.timestamptz)).seq', [auditBodyText(event()), T0]],
+      };
+      const outcomes: Record<string, string> = {};
+      for (const [name, [sql, params]] of Object.entries(calls)) outcomes[name] = await attempt(sql, params);
+      expect(outcomes).toEqual(Object.fromEntries(Object.keys(calls).map((name) => [name, 'returned'])));
+      expect((await client.query("select pg_catalog.has_table_privilege('tm8_vault_broker', 'vault.audit_events', 'INSERT, UPDATE, DELETE, TRUNCATE') as any")).rows[0].any).toBe(false);
+      // Not blind: in this session an unqualified type name does reach the planted type, and the probe
+      // does fire for any other role (here the admin login, with the broker role reset).
+      expect((await client.query("select t.typnamespace = pg_catalog.pg_my_temp_schema() as temporary from pg_catalog.pg_type t where t.oid = pg_catalog.pg_typeof('00000000-0000-4000-8000-000000000000'::uuid)")).rows).toEqual([{ temporary: true }]);
+      expect(await attempt("reset role; select '00000000-0000-4000-8000-000000000000'::uuid")).toMatch(/^pg_temp probe ran as /);
+    } finally {
+      await client.query('rollback').catch(() => undefined);
+      await client.end().catch(() => undefined);
+    }
   });
 
   it('audit UPDATE, DELETE and TRUNCATE fail for the owner and superuser; only the definer inserts', async () => {

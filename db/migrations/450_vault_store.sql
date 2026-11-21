@@ -56,17 +56,24 @@ set role tm8_vault_owner;
 alter default privileges in schema vault revoke all on tables from public;
 alter default privileges in schema vault revoke all on functions from public;
 alter default privileges in schema vault revoke all on sequences from public;
+-- Every function below lists pg_temp LAST in its search_path. Unlisted, the session's
+-- temporary schema is searched FIRST for type names, and any role may create temporary
+-- objects: a temporary domain named uuid, jsonb, text or timestamptz, with a CHECK that
+-- calls the session's own function, would run that function as the owner of a definer
+-- that casts to the name, directly or through the claim helpers. Measured before this
+-- rule (review addendum 2, C1): the broker role ran its own code as tm8_vault_owner and
+-- tm8_vault_audit_writer (packages/vault/test/store/postgres-security.test.ts).
 
-create function vault.member_id() returns uuid language sql stable set search_path = pg_catalog as $$
+create function vault.member_id() returns uuid language sql stable set search_path = pg_catalog, pg_temp as $$
   select nullif(current_setting('vault.member_id', true), '')::uuid
 $$;
-create function vault.space_id() returns uuid language sql stable set search_path = pg_catalog as $$
+create function vault.space_id() returns uuid language sql stable set search_path = pg_catalog, pg_temp as $$
   select nullif(current_setting('vault.space_id', true), '')::uuid
 $$;
-create function vault.scope_time() returns timestamptz language sql stable set search_path = pg_catalog as $$
+create function vault.scope_time() returns timestamptz language sql stable set search_path = pg_catalog, pg_temp as $$
   select nullif(current_setting('vault.at', true), '')::timestamptz
 $$;
-create function vault.is_system() returns boolean language sql stable set search_path = pg_catalog as $$
+create function vault.is_system() returns boolean language sql stable set search_path = pg_catalog, pg_temp as $$
   select coalesce(current_setting('vault.system_purpose', true) in ('reconcile','expire','audit','deletion_ledger','enrollment','cleanup'), false)
 $$;
 
@@ -210,11 +217,11 @@ create table vault.checkpoints (
 );
 
 create function vault.owns_item(p_id uuid) returns boolean language sql stable security definer
-set search_path = pg_catalog, vault as $$
+set search_path = pg_catalog, vault, pg_temp as $$
   select vault.is_system() or exists (select 1 from vault.items i where i.id = p_id and i.owner_member_id = vault.member_id() and i.space_id = vault.space_id())
 $$;
 create function vault.sees_item(p_id uuid) returns boolean language sql stable security definer
-set search_path = pg_catalog, vault as $$
+set search_path = pg_catalog, vault, pg_temp as $$
   select vault.is_system() or exists (
     select 1 from vault.items i where i.id = p_id and i.space_id = vault.space_id() and
       (i.owner_member_id = vault.member_id() or exists (
@@ -223,18 +230,18 @@ set search_path = pg_catalog, vault as $$
           and ((g.grantee_kind = 'member' and g.grantee_id = vault.member_id()) or (g.grantee_kind = 'space' and g.grantee_id = vault.space_id())))))
 $$;
 create function vault.sees_approval(p_id uuid) returns boolean language sql stable security definer
-set search_path = pg_catalog, vault as $$
+set search_path = pg_catalog, vault, pg_temp as $$
   select vault.is_system() or exists (select 1 from vault.approvals a where a.id = p_id and a.space_id = vault.space_id()
     and (a.owner_member_id = vault.member_id() or a.requester_member_id = vault.member_id()))
 $$;
 create function vault.hash_in_use(p_hash text) returns boolean language sql stable security definer
-set search_path = pg_catalog, vault as $$ select exists (select 1 from vault.session_hashes where hash = p_hash) $$;
+set search_path = pg_catalog, vault, pg_temp as $$ select exists (select 1 from vault.session_hashes where hash = p_hash) $$;
 -- Count-only and global for the repeated-fill-failure alert. RLS shows a grantee
 -- only its own audit events, so a read through it would let failures spread over
 -- several requesters stay under the threshold. Only the integer leaves; an item
 -- the caller cannot see counts 0.
 create function vault.fill_failure_streak(p_item uuid, p_origin text) returns integer language sql stable security definer
-set search_path = pg_catalog, vault as $$
+set search_path = pg_catalog, vault, pg_temp as $$
   select case when not vault.sees_item(p_item) then 0 else (
     select count(*)::integer from vault.audit_events e
     where e.item_id = p_item and e.action = 'fill.refused'
@@ -245,7 +252,7 @@ set search_path = pg_catalog, vault as $$
 $$;
 
 create function vault.sync_session_hashes() returns trigger language plpgsql security definer
-set search_path = pg_catalog, vault as $$
+set search_path = pg_catalog, vault, pg_temp as $$
 begin
   if tg_op = 'UPDATE' and new.token_hash = old.token_hash and new.refresh_hash = old.refresh_hash then return new; end if;
   if tg_op = 'UPDATE' then
@@ -256,7 +263,7 @@ begin
 end $$;
 create trigger session_hashes before insert or update on vault.vault_sessions for each row execute function vault.sync_session_hashes();
 create function vault.sync_origins() returns trigger language plpgsql security definer
-set search_path = pg_catalog, vault as $$
+set search_path = pg_catalog, vault, pg_temp as $$
 begin
   delete from vault.origin_bindings where item_id = new.id;
   insert into vault.origin_bindings select new.id, unnest(new.origins);
@@ -264,7 +271,7 @@ begin
 end $$;
 create trigger item_origins after insert or update of origins on vault.items for each row execute function vault.sync_origins();
 
-create function vault.terminal_state_guard() returns trigger language plpgsql set search_path = pg_catalog as $$
+create function vault.terminal_state_guard() returns trigger language plpgsql set search_path = pg_catalog, pg_temp as $$
 begin
   if tg_table_name = 'items' and old.state = 'tombstoned' and new.state <> old.state then
     raise exception 'vault: terminal item state' using errcode = '23514';
@@ -280,7 +287,7 @@ create trigger item_state before update on vault.items for each row execute func
 create trigger approval_state before update on vault.approvals for each row execute function vault.terminal_state_guard();
 
 -- The schema owner cannot append directly: only the separate definer role can.
-create function vault.audit_immutable() returns trigger language plpgsql set search_path = pg_catalog as $$
+create function vault.audit_immutable() returns trigger language plpgsql set search_path = pg_catalog, pg_temp as $$
 begin
   if tg_op = 'INSERT' and current_user = 'tm8_vault_audit_writer' then return new; end if;
   raise exception 'vault: audit is append only' using errcode = '42501';
@@ -289,7 +296,7 @@ create trigger audit_append_only before insert or update or delete on vault.audi
 create trigger audit_no_truncate before truncate on vault.audit_events for each statement execute function vault.audit_immutable();
 
 create function vault.append_audit(p_body_text text, p_at timestamptz) returns vault.audit_events
-language plpgsql security definer set search_path = pg_catalog, vault as $$
+language plpgsql security definer set search_path = pg_catalog, vault, pg_temp as $$
 declare h vault.audit_head; e vault.audit_events; b jsonb; at_text text;
 begin
   if p_at is null or not isfinite(p_at) then raise exception 'vault: invalid audit time'; end if;
