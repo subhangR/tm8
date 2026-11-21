@@ -17,7 +17,14 @@
 .vault-section button { cursor: pointer; }
 .vault-section button:hover:not(:disabled) { background: var(--pn-hover); }
 .vault-section button:disabled { opacity: .55; cursor: default; }
-.vault-section :focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 3px; }
+/* Controls draw the ring; a text field tints its own border instead, because a
+   focused field is always :focus-visible and a ring box inside it is the
+   2026-10-17 report (styles/text-field-focus.css.test.ts). */
+.vault-section button:focus-visible,
+.vault-section a:focus-visible,
+.vault-section select:focus-visible,
+.vault-section input:is([type="checkbox"], [type="radio"]):focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 3px; }
+.vault-section input:not([type="checkbox"], [type="radio"]):focus-visible { outline: none; border-color: var(--pn-brand); }
 .vault-section input[type="checkbox"] { min-height: auto; margin-right: 8px; }
 .vault-row-heading, .vault-actions, .vault-navigation { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .vault-row-heading { justify-content: space-between; }
