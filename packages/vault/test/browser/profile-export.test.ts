@@ -10,7 +10,9 @@
  * is in flight there is no debug port, no listener and no extension, and the
  * page's cookie is live only in that fill. Its profile is one owner-only tmpfs
  * directory, which is gone when the fill ends, and the same driver's next fill
- * of the same origin sends no cookie.
+ * of the same origin sends no cookie. A fill that is killed (the deadline, its
+ * broker gone, its child or its worker SIGKILLed) leaves no profile either:
+ * worker.test.ts and broker-kill.test.ts check that its directory is removed.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';

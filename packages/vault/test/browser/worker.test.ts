@@ -1,14 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
-import { connect } from 'node:net';
 import { mkdtemp, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { RemoteFillDriver } from '../../src/browser/remote-driver.js';
-import { FrameReader, MAX_RESPONSE_BYTES, encodeJsonFrame } from '../../src/browser/protocol.js';
 import { SecretMaterial, zeroize } from '../../src/secret-material.js';
-import { E2E_REASON, descendants, e2eEnabled, localServer, loginPage, until } from './fixtures.js';
+import { E2E_REASON, descendants, e2eEnabled, ended, gatherFiles, localServer, loginPage, pin, reap, settles, startWorkerHost, until,
+  waitExit, workerHealth, type PinnedProcess } from './fixtures.js';
 
 describe.skipIf(!e2eEnabled)(`worker isolation and SIGKILL acceptance 13 — ${E2E_REASON}`, () => {
   let site: Awaited<ReturnType<typeof localServer>>;
@@ -30,24 +27,16 @@ describe.skipIf(!e2eEnabled)(`worker isolation and SIGKILL acceptance 13 — ${E
     const directory = await mkdtemp('/dev/shm/vault-worker-test-');
     const profile = join(directory, 'profile'); await mkdir(profile, { mode: 0o700 });
     const socketPath = join(directory, 'fill.sock');
-    const output: Buffer[] = [];
-    const errors: Buffer[] = [];
-    const child = spawn(process.execPath, [fileURLToPath(new URL('./worker-host.mjs', import.meta.url)), socketPath, profile, String(timeoutMs)],
-      { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, TMPDIR: profile, DEBUG: '', PWDEBUG: '0', NODE_OPTIONS: '' } });
-    child.stdout.on('data', (chunk: Buffer) => output.push(chunk));
-    child.stderr.on('data', (chunk: Buffer) => errors.push(chunk));
-    let exited = false; child.once('exit', () => { exited = true; });
-    try { await until(async () => { if (exited) throw new Error('test worker exited before ready'); return output.some((x) => x.includes('worker-ready')); }); }
-    catch { child.kill('SIGKILL'); await rm(directory, { recursive: true, force: true }); throw new Error('test worker unavailable'); }
-    return { child, directory, profile, socketPath, output, errors,
-      async cleanup() {
-        const pids = child.pid ? await descendants(child.pid) : [];
-        if (!exited) child.kill('SIGTERM');
-        for (const pid of pids) { try { process.kill(pid, 'SIGKILL'); } catch { /* exited */ } }
-        if (!exited) await waitExit(child);
-        for (const buffer of [...output, ...errors]) zeroize(buffer);
-        await rm(directory, { recursive: true, force: true });
-      } };
+    let host: Awaited<ReturnType<typeof startWorkerHost>>;
+    try { host = await startWorkerHost(socketPath, profile, timeoutMs); }
+    catch (error) { await rm(directory, { recursive: true, force: true }); throw error; }
+    return { ...host, directory, profile, socketPath,
+      async cleanup() { await host.stop(); await rm(directory, { recursive: true, force: true }); } };
+  }
+  /** The in-flight fill: the worker's one fill child, and the browser under it. */
+  async function inFlight(host: { child: { pid?: number } }) {
+    const tree = await pin(await descendants(host.child.pid!));
+    return { fillChild: tree.filter((entry) => entry.parent === host.child.pid), browser: tree.filter((entry) => entry.parent !== host.child.pid) };
   }
   function material() { return { username: 'fixture-user', password: SecretMaterial.fromUtf8(['canary', randomUUID(), 'fixture'].join('-')), totp: null }; }
   function intent(path: string) { return { operationId: randomUUID(), itemId: 'fixture-login', origin: site.origin, startUrl: `${site.origin}${path}`, submit: false, devMode: true }; }
@@ -58,7 +47,7 @@ describe.skipIf(!e2eEnabled)(`worker isolation and SIGKILL acceptance 13 — ${E
     const login = material();
     try {
       expect((await stat(host.socketPath)).mode & 0o777).toBe(0o660);
-      const health = await getHealth(host.socketPath);
+      const health = await workerHealth(host.socketPath);
       expect(health).toEqual({ id: 'health-test', op: 'health', ok: true, ready: true });
       const outcome = await driver.fill({ intent: intent('/'), material: login });
       try { expect(outcome.ok).toBe(true); expect(outcome.screenshot !== null).toBe(true); }
@@ -76,7 +65,7 @@ describe.skipIf(!e2eEnabled)(`worker isolation and SIGKILL acceptance 13 — ${E
     const pending = driver.fill({ intent: intent('/slow'), material: login });
     try {
       await until(() => filled > before);
-      expect((await getHealth(host.socketPath)).ready).toBe(false);
+      expect((await workerHealth(host.socketPath)).ready).toBe(false);
       const duplicate = await driver.fill({ intent: intent('/'), material: login });
       try { expect(duplicate.ok).toBe(false); if (!duplicate.ok) expect(duplicate.code).toBe('browser_unavailable'); }
       finally { zeroize(duplicate.screenshot?.data); }
@@ -85,6 +74,94 @@ describe.skipIf(!e2eEnabled)(`worker isolation and SIGKILL acceptance 13 — ${E
       finally { zeroize(outcome.screenshot?.data); }
       expect(Date.now() - started < 5_000).toBe(true);
     } finally {
+      const outcome = await pending; zeroize(outcome.screenshot?.data);
+      login.password.dispose(); await driver.close(); await host.cleanup();
+    }
+  });
+
+  // Playwright starts Chromium in a session of its own, outside the fill child's
+  // process group. A stopped browser cannot exit on its closed DevTools pipe, so
+  // only the worker's own kill can end it: these two tests prove that kill.
+  it('kills a wedged browser at the hard deadline and removes its profile', async () => {
+    // The deadline must outlast launching Chromium and typing on a loaded host, or it kills the browser before
+    // the test can wedge it.
+    const host = await worker(8_000);
+    const driver = new RemoteFillDriver(host.socketPath, { timeoutMs: 12_000 });
+    const login = material();
+    const before = filled;
+    const pending = driver.fill({ intent: intent('/slow'), material: login });
+    let answered = false; void pending.then(() => { answered = true; });
+    let browser: PinnedProcess[] = [];
+    try {
+      await until(() => filled > before);
+      browser = (await inFlight(host)).browser;
+      if (browser.length === 0) {
+        throw new Error(answered ? 'test harness: the fill ended before its browser was wedged; raise the worker deadline'
+          : 'test harness: no browser outside the fill child, or the deadline has just killed it');
+      }
+      for (const { pid } of browser) process.kill(pid, 'SIGSTOP');
+      const outcome = await pending;
+      try { expect(outcome.ok).toBe(false); if (!outcome.ok) expect(outcome.code).toBe('timeout'); }
+      finally { zeroize(outcome.screenshot?.data); }
+      expect(await settles(() => ended(browser), 3_000)).toBe(true);
+      expect(await settles(async () => (await readdir(host.profile)).length === 0, 3_000)).toBe(true);
+    } finally {
+      await reap(browser);
+      const outcome = await pending; zeroize(outcome.screenshot?.data);
+      login.password.dispose(); await driver.close(); await host.cleanup();
+    }
+  }, 30_000);
+
+  it('kills the browser of a fill child that died on its own, found by its profile, and removes the profile', async () => {
+    const host = await worker();
+    const driver = new RemoteFillDriver(host.socketPath);
+    const login = material();
+    const before = filled;
+    const pending = driver.fill({ intent: intent('/slow'), material: login });
+    let browser: PinnedProcess[] = [];
+    try {
+      await until(() => filled > before);
+      const tree = await inFlight(host);
+      browser = tree.browser;
+      expect([tree.fillChild.length, browser.length > 0]).toEqual([1, true]);
+      for (const { pid } of browser) process.kill(pid, 'SIGSTOP');
+      // Orphaned, the browser has no parent the worker could follow.
+      process.kill(tree.fillChild[0]!.pid, 'SIGKILL');
+      const outcome = await pending;
+      try { expect(outcome.ok).toBe(false); if (!outcome.ok) expect(outcome.code).toBe('browser_unavailable'); }
+      finally { zeroize(outcome.screenshot?.data); }
+      expect(await settles(() => ended(browser), 3_000)).toBe(true);
+      expect(await settles(async () => (await readdir(host.profile)).length === 0, 3_000)).toBe(true);
+    } finally {
+      await reap(browser);
+      const outcome = await pending; zeroize(outcome.screenshot?.data);
+      login.password.dispose(); await driver.close(); await host.cleanup();
+    }
+  });
+
+  it('kills a wedged browser when its worker dies mid-fill, and removes its profile', async () => {
+    const host = await worker();
+    const driver = new RemoteFillDriver(host.socketPath);
+    const login = material();
+    const before = filled;
+    const pending = driver.fill({ intent: intent('/slow'), material: login });
+    let fill: PinnedProcess[] = [];
+    try {
+      await until(() => filled > before);
+      const tree = await inFlight(host);
+      fill = [...tree.fillChild, ...tree.browser];
+      expect([tree.fillChild.length, tree.browser.length > 0]).toEqual([1, true]);
+      // A responsive browser exits when its CDP pipe closes. A wedged one cannot: only the fill child, told by
+      // its own parent pipe that the worker died, can kill it.
+      for (const { pid } of tree.browser) process.kill(pid, 'SIGSTOP');
+      host.child.kill('SIGKILL');
+      await waitExit(host.child);
+      const outcome = await pending;
+      try { expect(outcome.ok).toBe(false); } finally { zeroize(outcome.screenshot?.data); }
+      expect(await settles(() => ended(fill), 3_000)).toBe(true);
+      expect(await settles(async () => (await readdir(host.profile)).length === 0, 3_000)).toBe(true);
+    } finally {
+      await reap(fill);
       const outcome = await pending; zeroize(outcome.screenshot?.data);
       login.password.dispose(); await driver.close(); await host.cleanup();
     }
@@ -113,6 +190,8 @@ describe.skipIf(!e2eEnabled)(`worker isolation and SIGKILL acceptance 13 — ${E
         }
         return true;
       });
+      // Its supervisor gone, the fill child killed the browser and removed its profile.
+      expect(await readdir(host.profile)).toEqual([]);
       // Scan complete streams too: a canary may span two transport chunks.
       const artifacts = [Buffer.concat(host.output), Buffer.concat(host.errors)];
       await gatherFiles(host.directory, artifacts);
@@ -127,36 +206,3 @@ describe.skipIf(!e2eEnabled)(`worker isolation and SIGKILL acceptance 13 — ${E
     }
   });
 });
-
-async function getHealth(path: string): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const socket = connect(path);
-    const outgoing = encodeJsonFrame({ id: 'health-test', op: 'health' });
-    const reader = new FrameReader(MAX_RESPONSE_BYTES, (body) => {
-      try { resolve(JSON.parse(body.toString('utf8'))); }
-      catch { reject(new Error('invalid test health response')); }
-      finally { zeroize(body); reader.dispose(); socket.destroy(); }
-    });
-    const timer = setTimeout(() => { socket.destroy(); reject(new Error('test health timeout')); }, 2_000);
-    socket.on('connect', () => socket.write(outgoing, () => zeroize(outgoing)));
-    socket.on('data', (chunk) => { try { reader.push(chunk); } catch { reject(new Error('invalid test health frame')); socket.destroy(); } });
-    socket.on('error', () => reject(new Error('test health unavailable')));
-    socket.on('close', () => { clearTimeout(timer); zeroize(outgoing); reader.dispose(); });
-  });
-}
-
-async function gatherFiles(directory: string, result: Buffer[]): Promise<void> {
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) await gatherFiles(path, result);
-    else if (entry.isFile()) {
-      // Includes all runtime and profile files, and any core/minidump files.
-      try { result.push(await readFile(path)); } catch { throw new Error('test artifact scan failed'); }
-    }
-  }
-}
-
-async function waitExit(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  await new Promise<void>((resolve) => child.once('exit', () => resolve()));
-}

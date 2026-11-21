@@ -44,13 +44,28 @@ until the separate security review and penetration test pass.
    an independently authorized agent tool.
 
 The root-owned setgid runtime directory supplies the socket group. `/tmp` is a
-private 512 MiB tmpfs. Playwright creates only disposable browser profiles there;
-the driver refuses a non-tmpfs temporary directory. No persistent context,
-tracing, video, HAR, downloads, clipboard, extensions, cookie export or browser
-control capability is exposed. The worker holds one fill at a time, rejects
-concurrent fills, and kills its fill process group at the hard deadline. Closing
-the broker connection cancels the fill. Parent pipe EOF kills the child group if
-the socket supervisor dies. The unit additionally kills the entire cgroup.
+private 512 MiB tmpfs. Each fill child gets its own owner-only scratch directory
+there (`/tmp/fill-*`), and Playwright creates that fill's disposable browser
+profile inside it; the driver refuses a non-tmpfs temporary directory. No
+persistent context, tracing, video, HAR, downloads, clipboard, extensions, cookie
+export or browser control capability is exposed. The worker holds one fill at a
+time and rejects concurrent fills.
+
+However a fill ends, every process of it dies and its scratch directory is
+removed:
+
+* at the hard deadline, the worker kills the fill;
+* when the broker closes its connection, the worker cancels and kills the fill;
+* when the fill child dies on its own, the worker kills what it left running;
+* when the socket supervisor dies, the child sees its parent pipe close, kills
+  the browser, removes its scratch directory, then kills its own process group.
+
+Playwright starts Chromium in a session of its own, so killing the fill child's
+process group never reaches the browser. The worker kills each descendant of the
+fill child, and each process of its own user whose command line names a path
+inside that fill's scratch directory; that is how a browser the child orphaned
+is found. The unit additionally kills the entire cgroup on stop, and a restart's
+fresh `/tmp` drops anything left behind.
 
 ## Protocol
 

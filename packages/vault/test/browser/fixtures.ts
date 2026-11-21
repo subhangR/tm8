@@ -1,6 +1,11 @@
+import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readdir, readFile, readlink } from 'node:fs/promises';
+import { connect } from 'node:net';
+import { fileURLToPath } from 'node:url';
 import { inflateSync } from 'node:zlib';
+import { FrameReader, MAX_RESPONSE_BYTES, encodeJsonFrame } from '../../src/browser/protocol.js';
+import { zeroize } from '../../src/secret-material.js';
 
 export const E2E_REASON = 'requires TM8_VAULT_BROWSER_E2E=1 (local Chromium, /proc and SIGKILL harness)';
 export const e2eEnabled = process.env.TM8_VAULT_BROWSER_E2E === '1';
@@ -29,6 +34,57 @@ export async function until(check: () => Promise<boolean> | boolean, timeoutMs =
   }
 }
 
+/** `until` as a boolean, so that a failed assertion names the condition that never held. */
+export async function settles(check: () => Promise<boolean> | boolean, timeoutMs = 10_000): Promise<boolean> {
+  try { await until(check, timeoutMs); return true; } catch { return false; }
+}
+
+export async function waitExit(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise<void>((resolve) => child.once('exit', () => resolve()));
+}
+
+/** The fill worker in a process of its own (worker-host.mjs), once it serves. Its output is kept for canary scans. */
+export async function startWorkerHost(socketPath: string, runtimeDirectory: string, timeoutMs: number) {
+  const output: Buffer[] = [];
+  const errors: Buffer[] = [];
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./worker-host.mjs', import.meta.url)), socketPath, runtimeDirectory, String(timeoutMs)],
+    { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, TMPDIR: runtimeDirectory, DEBUG: '', PWDEBUG: '0', NODE_OPTIONS: '' } });
+  child.stdout.on('data', (chunk: Buffer) => output.push(chunk));
+  child.stderr.on('data', (chunk: Buffer) => errors.push(chunk));
+  let exited = false; child.once('exit', () => { exited = true; });
+  try { await until(async () => { if (exited) throw new Error('test worker exited before ready'); return output.some((x) => x.includes('worker-ready')); }); }
+  catch { child.kill('SIGKILL'); await waitExit(child); throw new Error('test worker unavailable'); }
+  return { child, output, errors,
+    /** SIGTERM the worker, SIGKILL anything it still parents, and zeroize its output. */
+    async stop() {
+      // An exited worker's pid may already name another process: never walk its tree.
+      const pids = child.pid && !exited ? await descendants(child.pid) : [];
+      if (!exited) child.kill('SIGTERM');
+      for (const pid of pids) { try { process.kill(pid, 'SIGKILL'); } catch { /* exited */ } }
+      if (!exited) await waitExit(child);
+      for (const buffer of [...output, ...errors]) zeroize(buffer);
+    } };
+}
+
+/** One health round trip on a fill worker's socket. */
+export async function workerHealth(path: string): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const socket = connect(path);
+    const outgoing = encodeJsonFrame({ id: 'health-test', op: 'health' });
+    const reader = new FrameReader(MAX_RESPONSE_BYTES, (body) => {
+      try { resolve(JSON.parse(body.toString('utf8'))); }
+      catch { reject(new Error('invalid test health response')); }
+      finally { zeroize(body); reader.dispose(); socket.destroy(); }
+    });
+    const timer = setTimeout(() => { socket.destroy(); reject(new Error('test health timeout')); }, 2_000);
+    socket.on('connect', () => socket.write(outgoing, () => zeroize(outgoing)));
+    socket.on('data', (chunk) => { try { reader.push(chunk); } catch { reject(new Error('invalid test health frame')); socket.destroy(); } });
+    socket.on('error', () => reject(new Error('test health unavailable')));
+    socket.on('close', () => { clearTimeout(timer); zeroize(outgoing); reader.dispose(); });
+  });
+}
+
 export async function descendants(root: number): Promise<number[]> {
   const parents = new Map<number, number>();
   for (const entry of await readdir('/proc')) {
@@ -45,6 +101,55 @@ export async function descendants(root: number): Promise<number[]> {
     for (const [pid, ppid] of parents) if (ppid === queue[index]) { result.push(pid); queue.push(pid); }
   }
   return result;
+}
+
+/** One process, pinned by its start time so that a recycled pid never stands in for it. */
+export interface PinnedProcess { pid: number; parent: number; start: string }
+
+async function processStat(pid: number): Promise<{ state: string; parent: number; start: string } | null> {
+  try {
+    const stat = await readFile(`/proc/${pid}/stat`, 'utf8');
+    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+    return { state: fields[0]!, parent: Number(fields[1]), start: fields[19]! };
+  } catch { return null; }
+}
+
+/** Pins each pid that is still running. One that has already exited is left out. */
+export async function pin(pids: number[]): Promise<PinnedProcess[]> {
+  const pinned: PinnedProcess[] = [];
+  for (const pid of pids) {
+    const stat = await processStat(pid);
+    if (stat && stat.state !== 'Z') pinned.push({ pid, parent: stat.parent, start: stat.start });
+  }
+  return pinned;
+}
+
+/** True once every pinned process has exited: gone, a zombie, or its pid reused. */
+export async function ended(processes: PinnedProcess[]): Promise<boolean> {
+  for (const entry of processes) {
+    const stat = await processStat(entry.pid);
+    if (stat && stat.start === entry.start && stat.state !== 'Z') return false;
+  }
+  return true;
+}
+
+/** Test cleanup only: SIGKILL each pinned process that is still the same process. */
+export async function reap(processes: PinnedProcess[]): Promise<void> {
+  for (const entry of processes) {
+    const stat = await processStat(entry.pid);
+    if (stat && stat.start === entry.start && stat.state !== 'Z') { try { process.kill(entry.pid, 'SIGKILL'); } catch { /* exited */ } }
+  }
+}
+
+/** Every regular file under `directory`, read whole: runtime, profile, crash and core files alike. */
+export async function gatherFiles(directory: string, result: Buffer[]): Promise<void> {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = `${directory}/${entry.name}`;
+    if (entry.isDirectory()) await gatherFiles(path, result);
+    else if (entry.isFile()) {
+      try { result.push(await readFile(path)); } catch { throw new Error('test artifact scan failed'); }
+    }
+  }
 }
 
 export async function inspectBrowserProcesses(pids: number[]) {

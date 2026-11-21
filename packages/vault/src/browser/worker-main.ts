@@ -1,6 +1,8 @@
 import { createServer, type Socket } from 'node:net';
-import { chmod } from 'node:fs/promises';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { chmod, rm } from 'node:fs/promises';
 import { spawn, type ChildProcess } from 'node:child_process';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SecretMaterial, zeroize } from '../secret-material.js';
 import type { FillOutcome } from '../types.js';
@@ -18,7 +20,7 @@ interface WorkerOptions {
 
 export async function startFillWorker(options: WorkerOptions): Promise<{ close(): Promise<void> }> {
   const sockets = new Set<Socket>();
-  let active: ChildProcess | null = null;
+  let active: FillChild | null = null;
   let closed = false;
   const timeoutMs = options.timeoutMs ?? DEFAULT_FILL_TIMEOUT_MS;
   // Probe sandbox AND renderer before accepting material. A failed probe leaves
@@ -45,15 +47,18 @@ export async function startFillWorker(options: WorkerOptions): Promise<{ close()
       // Drop parsed password strings before awaiting the child. V8 copies cannot be wiped.
       request.password_b64 = '';
       if (!browserReady || active || closed) { zeroize(body); send(socket, encodeOutcome(id, refusal('browser_unavailable'))); return; }
-      const child = spawnFillChild(options);
-      active = child;
+      let fill: FillChild;
+      try { fill = spawnFillChild(options); }
+      catch { zeroize(body); send(socket, encodeOutcome(id, refusal('browser_unavailable'))); return; }
+      const { child } = fill;
+      active = fill;
       let finished = false;
       const finish = (outcome: FillOutcome) => {
         if (finished) { zeroize(outcome.screenshot?.data); return; }
         finished = true;
         if (timer) clearTimeout(timer);
         timer = null;
-        killGroup(child);
+        fill.kill();
         responseReader.dispose();
         // Keep the busy flag until the old process has actually exited.
         send(socket, encodeOutcome(id, outcome));
@@ -67,7 +72,7 @@ export async function startFillWorker(options: WorkerOptions): Promise<{ close()
         try { responseReader.push(chunk); } catch { finish(refusal('browser_unavailable')); }
       });
       child.once('error', () => finish(refusal('browser_unavailable')));
-      child.once('exit', () => { if (active === child) active = null; finish(refusal('browser_unavailable')); });
+      child.once('exit', () => { if (active === fill) active = null; finish(refusal('browser_unavailable')); });
       const outgoing = frame(body);
       zeroize(body);
       child.stdin?.on('error', () => { zeroize(outgoing); finish(refusal('browser_unavailable')); });
@@ -96,7 +101,7 @@ export async function startFillWorker(options: WorkerOptions): Promise<{ close()
   return {
     async close() {
       closed = true;
-      if (active) killGroup(active);
+      if (active) active.kill();
       for (const socket of sockets) socket.destroy();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
@@ -110,33 +115,108 @@ function send(socket: Socket, outgoing: Buffer): void {
   socket.end(outgoing, () => { wipe(); socket.removeListener('close', wipe); });
 }
 
-function killGroup(child: ChildProcess): void {
-  if (!child.pid) return;
-  try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already reaped */ }
+/** One fill's child process, and the only way to kill everything the fill started. */
+interface FillChild { child: ChildProcess; kill(): void }
+
+/**
+ * Every process of one fill: what the live fill child parents, and any process
+ * of this user whose command line names a path inside the fill's scratch
+ * directory, where Chromium keeps its profile. Playwright starts Chromium in a
+ * session of its own, so the child's process group never holds the browser,
+ * and a browser the child orphaned is found only by that path. A non-fill
+ * scratch path matches nothing.
+ */
+function fillProcesses(root: number | null, scratch: string): Set<number> {
+  const found = new Set<number>();
+  const inside = isAbsolute(scratch) && basename(scratch).startsWith('fill-') ? `${scratch}/` : null;
+  const uid = typeof process.getuid === 'function' ? process.getuid() : -1;
+  const children = new Map<number, number[]>();
+  let entries: string[];
+  try { entries = readdirSync('/proc'); } catch { return found; }
+  for (const entry of entries) {
+    if (!/^\d+$/.test(entry)) continue;
+    const pid = Number(entry);
+    try {
+      if (root !== null) {
+        const stat = readFileSync(`/proc/${entry}/stat`, 'utf8');
+        const parent = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1]);
+        const siblings = children.get(parent);
+        if (siblings) siblings.push(pid); else children.set(parent, [pid]);
+      }
+      if (inside !== null && readFileSync(`/proc/${entry}/cmdline`, 'utf8').includes(inside) && realUid(entry) === uid) found.add(pid);
+    } catch { /* exited during the scan */ }
+  }
+  const queue = root === null ? [] : [root];
+  while (queue.length > 0) for (const pid of children.get(queue.shift()!) ?? []) { found.add(pid); queue.push(pid); }
+  return found;
 }
 
-function spawnFillChild(options: WorkerOptions): ChildProcess {
+/** A process's real uid. Its status file stays readable and true when the process has made itself non-dumpable. */
+function realUid(pid: string): number {
+  const match = /^Uid:\s+(\d+)/m.exec(readFileSync(`/proc/${pid}/status`, 'utf8'));
+  return match ? Number(match[1]) : -1;
+}
+
+/** SIGKILL each process and the group it leads. A process that leads no group only gets the first refusal. */
+function killEach(pids: Iterable<number>): void {
+  for (const pid of pids) {
+    try { process.kill(-pid, 'SIGKILL'); } catch { /* leads no group */ }
+    try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
+  }
+}
+
+/** The browser and every other descendant die before the fill child's own group. */
+function killFill(child: ChildProcess, scratch: string): void {
+  const alive = child.pid !== undefined && child.exitCode === null && child.signalCode === null;
+  killEach(fillProcesses(alive ? child.pid! : null, scratch));
+  if (alive) { try { process.kill(-child.pid!, 'SIGKILL'); } catch { /* already reaped */ } }
+}
+
+/**
+ * Each child gets its own owner-only scratch directory, which holds Playwright's
+ * profile. A child the worker kills (the deadline, a closed broker connection)
+ * never runs Playwright's cleanup, so the worker removes the directory once the
+ * child has exited and the fill's browser is dead. A killed fill then leaves no
+ * profile, cookie or cache on the tmpfs. If the worker itself dies, the child
+ * does this (runFillChild); a restart's fresh tmpfs drops anything left.
+ */
+function spawnFillChild(options: WorkerOptions): FillChild {
+  const scratch = resolve(mkdtempSync(join(options.runtimeDirectory ?? '/dev/shm', 'fill-')));
   const child = spawn(process.execPath, [fileURLToPath(import.meta.url), '--fill-child'], {
     detached: true,
     stdio: ['pipe', 'pipe', 'ignore', 'ipc'],
     env: {
       PATH: process.env.PATH,
       LD_LIBRARY_PATH: process.env.LD_LIBRARY_PATH,
-      TMPDIR: options.runtimeDirectory ?? '/dev/shm',
+      TMPDIR: scratch,
       PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH,
       TM8_VAULT_CHROMIUM_EXECUTABLE: options.executablePath,
       TM8_VAULT_FILL_TIMEOUT_MS: String(options.timeoutMs ?? DEFAULT_FILL_TIMEOUT_MS),
       DEBUG: '', PWDEBUG: '0', NODE_OPTIONS: '',
     },
   });
+  const kill = () => killFill(child, scratch);
+  let removed = false;
+  const remove = () => {
+    if (removed) return;
+    removed = true;
+    // A browser the child orphaned is still writing this profile: it dies first.
+    kill();
+    void rm(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 }).catch(() => undefined);
+  };
+  child.once('exit', remove);
+  child.once('error', remove);
   // This private inherited channel is never connected to the broker socket.
   // No CLI argument or environment variable can enable unsafe test flags.
   child.send?.({ testOnlyDisableSandbox: options.testOnlyDisableSandbox === true }, () => {});
-  return child;
+  return { child, kill };
 }
 
 async function probeWorker(options: WorkerOptions): Promise<boolean> {
-  const child = spawnFillChild({ ...options, timeoutMs: 5_000 });
+  let probe: FillChild;
+  // No scratch directory means no fill: the socket stays reachable and unready.
+  try { probe = spawnFillChild({ ...options, timeoutMs: 5_000 }); } catch { return false; }
+  const { child } = probe;
   return new Promise<boolean>((resolve) => {
     let finished = false;
     const finish = (ready: boolean) => {
@@ -144,7 +224,7 @@ async function probeWorker(options: WorkerOptions): Promise<boolean> {
       finished = true;
       clearTimeout(timer);
       reader.dispose();
-      killGroup(child);
+      probe.kill();
       resolve(ready);
     };
     const reader = new FrameReader(MAX_RESPONSE_BYTES, (body) => {
@@ -220,8 +300,15 @@ async function runFillChild(): Promise<void> {
   process.stdin.on('data', (chunk: Buffer) => { try { reader.push(chunk); } catch { reader.dispose(); process.exitCode = 1; process.stdin.destroy(); } });
   process.stdin.on('error', () => { reader.dispose(); });
   process.stdin.once('end', () => {
-    // Includes Chromium descendants when a supervisor is killed without systemd.
-    if (!completed) { try { process.kill(-process.pid, 'SIGKILL'); } catch { process.exitCode = 1; } }
+    if (completed) return;
+    // The supervisor died mid-fill. Kill the browser (a session of its own), drop
+    // this fill's scratch profile, then this group, this process included.
+    const scratch = process.env.TMPDIR ?? '';
+    killEach(fillProcesses(process.pid, scratch));
+    if (isAbsolute(scratch) && basename(scratch).startsWith('fill-')) {
+      try { rmSync(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 }); } catch { /* a restart's fresh tmpfs drops it */ }
+    }
+    try { process.kill(-process.pid, 'SIGKILL'); } catch { process.exitCode = 1; }
   });
 }
 
