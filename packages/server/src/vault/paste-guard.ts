@@ -282,9 +282,13 @@ export function redactedKinds(...redactions: readonly (PasteRedaction | null | u
 
 /**
  * chat.start's opening message and title, both written by the person starting the chat (the op is people-only).
- * The start is refused when the redacted body no longer fits. A redacted title that no longer fits is dropped, and
- * the chat takes its default title from the redacted body. `warning` is null when nothing was redacted, and then
- * `input` is the input itself.
+ * The start is refused when the redacted body no longer fits.
+ *
+ * When the body loses a secret, the title sent is dropped as well, and the chat takes its default title from the
+ * redacted body. A client may cut its title from the body: the new-chat screen can send its first 240 characters.
+ * A secret cut there can be too short for its own pattern, so redacting the title alone could keep part of it.
+ * Otherwise a redacted title is kept, or dropped when it no longer fits. `warning` is null when nothing was
+ * redacted, and then `input` is the input itself.
  */
 export function guardChatStart(guard: PasteGuard, input: StartChatInput): { readonly input: StartChatInput; readonly warning: ResultWarning | null } {
   const body = guard.redact(input.body, MESSAGE_BODY_MAX);
@@ -296,7 +300,7 @@ export function guardChatStart(guard: PasteGuard, input: StartChatInput): { read
     input: {
       ...input,
       body: body.text,
-      ...(title && title.kinds.length > 0 ? { title: title.fits ? title.text : null } : {}),
+      ...(title === null ? {} : { title: body.kinds.length === 0 && title.fits ? title.text : null }),
     },
     warning: guard.warning(kinds),
   };

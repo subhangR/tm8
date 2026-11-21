@@ -304,12 +304,44 @@ describe('paste guard: chat.start', () => {
     expect(guarded.warning).toBeNull();
   });
 
-  it('redacts the opening message and the title', () => {
+  it('redacts a title over a clean opening message, and keeps it', () => {
     const value = github();
-    const guarded = guardChatStart(guard, start(`use ${value}`, `deploy with ${value}`));
-    expect(leaks(guarded.input.body, value) || leaks(guarded.input.title ?? '', value)).toBe(false);
+    const guarded = guardChatStart(guard, start('deploy the release', `deploy with ${value}`));
+    expect(leaks(guarded.input.title ?? '', value)).toBe(false);
     expect(guarded.input.title).toBe('deploy with [redacted:github_token]');
+    expect(guarded.input.body).toBe('deploy the release');
     expect(guarded.warning?.code).toBe('vault_paste_redacted');
+  });
+
+  /** Whether the text keeps any 8-character run of the value. Never prints either. */
+  const keepsPart = (text: string, value: string) => {
+    for (let i = 0; i + 8 <= value.length; i++) if (text.includes(value.slice(i, i + 8))) return true;
+    return false;
+  };
+
+  it('drops the title sent when the opening message loses a secret, so a title cut from it keeps no part', () => {
+    // A fine-grained token's pattern takes its full length, so a cut one is not redacted on its own.
+    const pat = 'github' + '_pat_' + 'A'.repeat(22) + '_' + 'B'.repeat(59);
+    const body = 'x '.repeat(110) + pat + ' and more';
+    // The new-chat screen can send the body's first 240 characters as the title: that cut keeps 20 of the token's.
+    const sliced = guardChatStart(guard, start(body, body.slice(0, 240)));
+    // Booleans first: a failing toBeNull would print the title it received.
+    expect(keepsPart(sliced.input.title ?? '', pat) || keepsPart(sliced.input.body, pat)).toBe(false);
+    expect(sliced.input.title).toBeNull();
+    // A six-word label of "my card is 4111 1111 1111 1111 …" keeps 12 of the card's 16 digits.
+    const opening = `my card is ${card()} exp 12/29`;
+    const label = guardChatStart(guard, start(opening, opening.split(' ').slice(0, 6).join(' ')));
+    expect(keepsPart(label.input.title ?? '', card()) || keepsPart(label.input.body, card())).toBe(false);
+    expect(label.input.title).toBeNull();
+    // The guard cannot tell how a client made its title, so it drops one that shares nothing with the secret too.
+    expect(guardChatStart(guard, start(`use ${github()}`, 'Release notes')).input.title).toBeNull();
+  });
+
+  it('redacting a 240-character cut on its own misses the part of a fine-grained token it keeps (why the title is dropped)', () => {
+    const pat = 'github' + '_pat_' + 'A'.repeat(22) + '_' + 'B'.repeat(59);
+    const cut = ('x '.repeat(110) + pat).slice(0, 240);
+    expect(guard.redact(cut).kinds).toEqual([]);
+    expect(keepsPart(cut, pat)).toBe(true);
   });
 
   it('drops a title its markers push past the limit, so the chat titles itself from the redacted body', () => {

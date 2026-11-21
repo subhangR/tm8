@@ -257,7 +257,9 @@ With the guard on, the server replaces secret-shaped text that a person sends wi
 `[redacted:<kind>]` before it stores anything:
 - `messages.post` and `chat.start`. The sender gets a `vault_paste_redacted` warning that
   names kinds of secret, never values. A post or start that no longer fits once marked is
-  refused.
+  refused. When a start's opening message loses a secret, the title sent is dropped and the
+  chat takes its default title from the redacted message: a title cut from the message can
+  keep a piece of the secret too short to detect.
 - `messages.edit`. An edit whose new text holds secret-shaped text is refused
   (`invalid_input`, reason `vault_paste_redacted`), and the message keeps its earlier text.
 - A bridged person's message, and their edit at the provider: body, slash-command text and

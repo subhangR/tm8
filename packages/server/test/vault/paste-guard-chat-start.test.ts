@@ -78,17 +78,29 @@ const startArgs = (calls: { name: string; args: unknown[] }[]) => {
 describe('chat.start with the paste guard on', () => {
   const guard = createPasteGuard({ vaultAvailable: true });
 
-  it('hands start_chat the redacted opening message and title, and answers the paste warning', async () => {
+  it('hands start_chat the redacted opening message and no title when the message lost a secret, and answers the paste warning', async () => {
     const { calls, facade, chat } = fakes();
     const body = `deploy with ${github()}`, title = `key ${github()}`;
     const result = await startHandler(facade, chat, guard)({ body, title });
     const stored = startArgs(calls);
+    // Booleans first: a failing equality would print the value it received.
+    expect(leaks(String(stored.body), github())).toBe(false);
     expect(stored.body).toBe(guard.redact(body).text);
-    expect(stored.title).toBe(guard.redact(title).text);
-    expect(leaks(stored.body, github()) || leaks(stored.title, github())).toBe(false);
+    // The chat takes its default title from the redacted body: a title cut from the raw body could keep part of it.
+    expect(stored.title).toBeNull();
     expect(String(stored.body).includes('[redacted:github_token]')).toBe(true);
     expect(result.warnings?.[0]?.code).toBe(VAULT_PASTE_WARNING_CODE);
     expect(leaks(JSON.stringify(result), github())).toBe(false);
+  });
+
+  it('hands start_chat a redacted title over a clean opening message', async () => {
+    const { calls, facade, chat } = fakes();
+    const title = `key ${github()}`;
+    const result = await startHandler(facade, chat, guard)({ body: 'plan the release', title });
+    const stored = startArgs(calls);
+    expect(leaks(String(stored.title), github())).toBe(false);
+    expect(stored).toEqual({ title: guard.redact(title).text, body: 'plan the release' });
+    expect(result.warnings?.[0]?.code).toBe(VAULT_PASTE_WARNING_CODE);
   });
 
   it('a clean start is passed through unchanged and warns nobody', async () => {
