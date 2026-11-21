@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { BROKER_CORE_OPS, memberScope } from '../../src/core-types.js';
+import { BROKER_CORE_OPS, actorOf, memberScope } from '../../src/core-types.js';
 import { sealCapture } from '../../src/capture/seal.js';
 import { createImportParser } from '../../src/import/index.js';
 import { createBrokerCoreHandlers } from '../../src/broker/handlers/index.js';
@@ -131,6 +131,18 @@ describe('core item, grant and audit handlers', () => {
     const good = await h.send('vault.policies.set', { params: { itemId: api.id }, input: { ...stepCommand(), expectedVersion: 1, policy: github } });
     expect(good.status).toBe(200);
     expect(good.json.data.policy).toMatchObject({ mode: 'connector', connector: 'github', hosts: ['api.github.com'] });
+  });
+  it('shows the mode a stored policy runs in, so a connector row without vetted operations reads generic (review F02)', async () => {
+    const h = await setup();
+    const api = await seedItem(h.store, testCaller, newApiKey());
+    // vault.policies.set refuses this row (test above). It exists only if written below the handlers,
+    // or if a template were retired, and the egress runs it in generic mode either way.
+    await h.store.transaction(memberScope(testCaller), (tx) => tx.policies.set(api.id, 1, { mode: 'connector', connector: 'retired_connector',
+      hosts: ['api.github.com'], methods: ['GET'], pathPrefixes: ['/user'], maxRequestBytes: 1024, maxResponseBytes: 1024,
+      injection: { kind: 'bearer' } }, actorOf(testCaller)));
+    const detail = await h.send('vault.items.get', { params: { itemId: api.id } });
+    expect(detail.status).toBe(200);
+    expect(detail.json.data.policy).toMatchObject({ mode: 'generic', connector: 'retired_connector', hosts: ['api.github.com'] });
   });
   it('creates use-only grants, projects constrained metadata and revokes with only a session', async () => {
     const h = await setup();

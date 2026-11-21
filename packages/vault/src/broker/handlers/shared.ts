@@ -5,6 +5,7 @@ import {
   type ItemMetadataFields, type VaultTx,
 } from '../../core-types.js';
 import type { ItemMetadata } from '../../capture/payload.js';
+import { enforcedMode } from '../../egress/connectors.js';
 
 /** A handler re-checks owner presence even when called without the HTTP dispatcher. */
 export function assertOwnerSession(ctx: HandlerContext, stepUp = false): void {
@@ -74,8 +75,9 @@ export async function itemView(ctx: HandlerContext, tx: VaultTx, item: ItemRecor
 
 export async function itemDetail(ctx: HandlerContext, tx: VaultTx, item: ItemRecord): Promise<VaultItemDetail> {
   const row = await tx.policies.get(item.id);
+  // The mode shown is the mode the policy runs in, the one each per-use approval binds (review F02).
   let policy: VaultPolicyView | null = row ? {
-    version: row.version, mode: row.mode, connector: row.connector, hosts: row.hosts.slice(), methods: row.methods.slice(),
+    version: row.version, mode: enforcedMode(row), connector: row.connector, hosts: row.hosts.slice(), methods: row.methods.slice(),
     pathPrefixes: row.pathPrefixes.slice(), maxRequestBytes: row.maxRequestBytes, maxResponseBytes: row.maxResponseBytes, injection: row.injection,
   } : null;
   const owned = item.ownerMemberId === ctx.caller.memberId;

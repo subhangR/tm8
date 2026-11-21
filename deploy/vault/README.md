@@ -372,9 +372,9 @@ on `01a1fa87` holds the full set with severities. The headline items:
       grant form, and each per-use API approval, above Approve.
     - Each per-use API approval binds the mode the policy runs in (`enforcedMode`) and where the
       key goes. So an approval given under one mode never authorizes a request under the other.
-    - A stored connector policy whose template lists no vetted operations is bound as generic.
-      `vault.policies.set` refuses to store one, and a test fails if a built-in template loses
-      its operations.
+    - A stored connector policy whose template lists no vetted operations is bound as generic,
+      and the item's API policy shows it as generic too. `vault.policies.set` refuses to store
+      one, and a test fails if a built-in template loses its operations.
     - Only a grantee whose grants all require approval per use gets an approval. The owner's own
       sessions and agents get none: their authorization is the owner's step-up
       `vault.policies.set` call that chose generic mode. No UI makes that call, so a policy can
