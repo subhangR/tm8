@@ -174,14 +174,29 @@ export function createBrokerCoreHandlers(): HandlersFor<BrokerCoreOp> {
     },
     'vault.grants.revoke': async (ctx, { params }) => {
       assertOwnerSession(ctx);
-      return ctx.store.transaction(memberScope(ctx.caller), async (tx) => {
-        const before = await tx.grants.get(params.grantId);
-        if (!before) throw new StoreNotFoundError();
-        await getItem(ctx, tx, before.itemId, true);
-        const grant = await tx.grants.revoke(before.id, { ...ctx.actor, name: null });
-        if (!before.revokedAt) await appendAudit(ctx, tx, 'grant.revoked', grant.itemId);
+      const before = await ctx.store.transaction(memberScope(ctx.caller), async (tx) => {
+        const grant = await tx.grants.get(params.grantId);
+        if (!grant) throw new StoreNotFoundError();
+        return { grant, item: await getItem(ctx, tx, grant.itemId, true) };
+      });
+      // The ledger line comes first, so a database restore cannot revive the grant (test 17). A retry writes it again: the
+      // earlier attempt may be the one whose append failed. A ledger fault never keeps a grantee's access alive, so the
+      // revocation commits regardless and the fault is reported after it.
+      let ledgerFault: unknown = null;
+      try {
+        await ctx.components.deletionLedger.appendRevocation({ kind: 'grant_revoked', grantId: before.grant.id, itemId: before.item.id,
+          spaceId: before.item.spaceId, ownerMemberId: before.item.ownerMemberId, revokedAt: before.grant.revokedAt ?? ctx.clock.now().toISOString() });
+      } catch (error) { ledgerFault = error; }
+      const revoked = await ctx.store.transaction(memberScope(ctx.caller), async (tx) => {
+        const current = await tx.grants.get(before.grant.id);
+        if (!current) throw new StoreNotFoundError();
+        await getItem(ctx, tx, current.itemId, true);
+        const grant = await tx.grants.revoke(current.id, { ...ctx.actor, name: null });
+        if (!current.revokedAt) await appendAudit(ctx, tx, 'grant.revoked', grant.itemId);
         return { data: grantView(grant) };
       });
+      if (ledgerFault) throw ledgerFault;
+      return revoked;
     },
     'vault.audit.list': async (ctx, { input }) => {
       assertOwnerSession(ctx);

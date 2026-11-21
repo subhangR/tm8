@@ -34,8 +34,10 @@ import {
   type CheckpointRecord,
   type Clock,
   type CodeRecord,
+  type ApprovalConsumedLedgerEntry,
   type DeletionLedgerEntry,
   type DeletionLedgerRepo,
+  type GrantRevokedLedgerEntry,
   type EnrollmentCodeRecord,
   type EnrollmentCodesRepo,
   type GrantConstraints,
@@ -689,6 +691,22 @@ class Grants implements GrantsRepo {
     c.s.grants.set(grant.id, deepFreeze(next));
     return out(next);
   }
+  async forceRevoke(entry: GrantRevokedLedgerEntry): Promise<boolean> {
+    const c = this.c;
+    c.enter();
+    c.system();
+    const grantId = uuid(entry.grantId, 'grantId');
+    const itemId = uuid(entry.itemId, 'itemId');
+    const revokedAt = iso(entry.revokedAt, 'revokedAt');
+    const grant = c.s.grants.get(grantId);
+    if (!grant) return false;
+    if (grant.itemId !== itemId) throw new StoreStateError('ledger_mismatch');
+    if (grant.revokedAt !== null) return false;
+    const next: GrantRecord = { ...grant, revokedAt, revokedBy: SYSTEM_ACTOR };
+    c.s.grants.set(grant.id, deepFreeze(next));
+    return true;
+  }
+
 
   async activeForCaller(itemId: string): Promise<GrantRecord[]> {
     const c = this.c;
@@ -831,6 +849,25 @@ class Approvals implements ApprovalsRepo {
     c.s.approvals.set(approval.id, deepFreeze(next));
     return c.viewApproval(next);
   }
+  async forceConsume(entry: ApprovalConsumedLedgerEntry): Promise<boolean> {
+    const c = this.c;
+    c.enter();
+    c.system();
+    const approvalId = uuid(entry.approvalId, 'approvalId');
+    const itemId = uuid(entry.itemId, 'itemId');
+    const operationId = uuid(entry.operationId, 'operationId');
+    const consumedAt = iso(entry.consumedAt, 'consumedAt');
+    const approval = c.s.approvals.get(approvalId);
+    if (!approval) return false;
+    if (approval.itemId !== itemId) throw new StoreStateError('ledger_mismatch');
+    let next: ApprovalRecord;
+    if (approval.state === 'approved' && approval.oneUse) next = { ...approval, state: 'consumed', consumedAt, consumedByOperationId: operationId };
+    else if (approval.state === 'pending') next = { ...approval, state: 'expired' };
+    else return false;
+    c.s.approvals.set(approval.id, deepFreeze(next));
+    return true;
+  }
+
 
   async expireDue(): Promise<ApprovalRecord[]> {
     const c = this.c;

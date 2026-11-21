@@ -10,11 +10,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { VAULT_OPERATIONS } from '@tm8/contract';
 import { BROKER_ENV_KNOBS, BrokerConfigError } from '../../src/broker/config.js';
 import { BROKER_RUNTIME_ENV_KNOBS, composeBroker, createVaultHandlers, failureMessage, type ComposedBroker } from '../../src/broker/main.js';
-import { VaultError, actorOf, systemClock, type VaultAlert } from '../../src/core-types.js';
+import { SYSTEM_ACTOR, VaultError, actorOf, systemClock, type VaultAlert, type VaultTx } from '../../src/core-types.js';
 import { crc32c } from '../../src/gcp/crc32c.js';
 import { VAULT_ALERTS_HEADER, decodeVaultAlerts } from '../../src/relay/alerts.js';
 import { exportAttestationKeyPair, generateAttestationKeyPair, signAttestation } from '../../src/relay/attestation.js';
-import { OWNER_ID, SPACE_A, scopeOf, testCaller } from '../support/kit.js';
+import { OWNER_ID, SPACE_A, fakeSecret, newLogin, otherCaller, scopeOf, testCaller } from '../support/kit.js';
 import { json, keyName, keyVersionName, loopbackSuite, tokens } from '../gcp/fake.js';
 import { PG_ENABLED, PG_REASON, pgHarness, type PgHarness } from '../store/pg-harness.js';
 
@@ -269,6 +269,33 @@ else describe('broker composition root over Postgres', () => {
       .then(() => null, (reason: unknown) => reason);
     expect(failureMessage(error)).toBe('vault broker: refused (audit_unavailable)');
     await expect(lstat(join(dir, 'broker.sock'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('replays the ledger file before the socket binds: a grant a restore revived is revoked again, and a damaged line stops the start', async () => {
+    const h = await database();
+    const dir = await temporary();
+    await writeRelayKey(dir);
+    const as = <T>(caller: typeof testCaller, fn: (tx: VaultTx) => Promise<T>): Promise<T> => h.store.transaction(scopeOf(caller), fn);
+    const item = await as(testCaller, (tx) => tx.items.create(newLogin(), fakeSecret()));
+    const grant = await as(testCaller, (tx) => tx.grants.create({ id: randomUUID(), itemId: item.id, granteeKind: 'member', granteeId: otherCaller.memberId,
+      constraints: { origins: null, hosts: null, requireApprovalPerUse: false }, expiresAt: null, createdBy: actorOf(testCaller) }));
+    // As a restore leaves it: the ledger holds the revocation, the database holds the grant active.
+    const line = { kind: 'grant_revoked', grantId: grant.id, itemId: item.id, spaceId: item.spaceId, ownerMemberId: item.ownerMemberId,
+      revokedAt: '2026-11-21T00:00:00.000Z' };
+    const env = preReviewEnv(dir, { TM8_VAULT_DATABASE_URL: h.url });
+
+    await writeFile(join(dir, 'deletions.log'), JSON.stringify({ ...line, itemId: randomUUID() }) + '\n', { mode: 0o600 });
+    const error = await composeBroker(env, { log: () => undefined }).then(() => null, (reason: unknown) => reason);
+    expect(failureMessage(error)).toBe('vault broker: start failed');
+    await expect(lstat(join(dir, 'broker.sock'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await as(testCaller, (tx) => tx.grants.get(grant.id)))?.revokedAt).toBeNull();
+
+    await writeFile(join(dir, 'deletions.log'), JSON.stringify(line) + '\n', { mode: 0o600 });
+    const broker = (await composeBroker(env, { log: () => undefined }))!;
+    brokers.push(broker);
+    expect(await as(testCaller, (tx) => tx.grants.get(grant.id))).toMatchObject({ revokedAt: line.revokedAt, revokedBy: SYSTEM_ACTOR });
+    expect(await as(otherCaller, (tx) => tx.items.get(item.id))).toBeNull();
+    expect((await statusOverSocket(join(dir, 'broker.sock'), true)).status).toBe(200);
   });
 
   describe('production', () => {

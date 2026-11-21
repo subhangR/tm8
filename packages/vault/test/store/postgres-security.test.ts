@@ -127,6 +127,45 @@ else describe('Postgres vault security', () => {
     expect((await h.store.transaction(scopeOf(testCaller), (tx) => tx.audit.list({ action: 'item.tombstone_replayed' }))).rows).toHaveLength(1);
   });
 
+  it('a real dump restore plus FileDeletionLedger replay revives no revoked grant and no consumed approval (17)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'vault-pg-ledger-')); dirs.push(dir);
+    const file = join(dir, 'deletions.jsonl');
+    const ledger = new FileDeletionLedger(file);
+    const as = <T>(caller: typeof testCaller, fn: (tx: VaultTx) => Promise<T>): Promise<T> => h.store.transaction(scopeOf(caller), fn);
+    const item = await as(testCaller, (tx) => tx.items.create(newLogin(), fakeSecret()));
+    const grant = await as(testCaller, (tx) => tx.grants.create({ id: randomUUID(), itemId: item.id, granteeKind: 'member', granteeId: otherCaller.memberId,
+      constraints: { origins: null, hosts: null, requireApprovalPerUse: false }, expiresAt: null, createdBy: actorOf(testCaller) }));
+    const approval = await as(otherCaller, (tx) => tx.approvals.create(newApproval(item.id, otherCaller, h.clock)));
+    await as(testCaller, (tx) => tx.approvals.decide(approval.id, { state: 'approved', decidedBy: actorOf(testCaller), standing: false }));
+    const dump = await h.dump(); h.clock.advance(1000);
+    const operationId = randomUUID();
+    await as(otherCaller, async (tx) => {
+      const consumed = await tx.approvals.consume(approval.id, operationId);
+      await ledger.appendRevocation({ kind: 'approval_consumed', approvalId: approval.id, itemId: item.id, spaceId: item.spaceId,
+        ownerMemberId: item.ownerMemberId, operationId, consumedAt: consumed.consumedAt! });
+    });
+    h.clock.advance(1000);
+    const revokedAt = h.clock.iso();
+    await ledger.appendRevocation({ kind: 'grant_revoked', grantId: grant.id, itemId: item.id, spaceId: item.spaceId, ownerMemberId: item.ownerMemberId, revokedAt });
+    await as(testCaller, (tx) => tx.grants.revoke(grant.id, actorOf(testCaller)));
+
+    await h.restoreDump(dump);
+    expect(await as(otherCaller, (tx) => tx.items.currentSecret(item.id))).not.toBeNull();
+    expect((await as(testCaller, (tx) => tx.approvals.get(approval.id)))?.state).toBe('approved');
+    expect(await replayDeletionLedger(h.store, new FileDeletionLedger(file))).toBe(2);
+    expect(await replayDeletionLedger(h.store, ledger)).toBe(0);
+    expect(await as(otherCaller, (tx) => tx.items.get(item.id))).toBeNull();
+    expect(await as(otherCaller, (tx) => tx.items.currentSecret(item.id))).toBeNull();
+    expect(await as(testCaller, (tx) => tx.grants.get(grant.id))).toMatchObject({ revokedAt, revokedBy: SYSTEM_ACTOR });
+    expect(await as(testCaller, (tx) => tx.approvals.get(approval.id))).toMatchObject({ state: 'consumed', consumedByOperationId: operationId });
+    // The stored rows, read by the admin past every policy.
+    const stored = (await h.admin.query(`select (select revoked_at is not null from vault.grants where id = $1) as revoked,
+      (select state from vault.approvals where id = $2) as approval`, [grant.id, approval.id])).rows;
+    expect(stored).toEqual([{ revoked: true, approval: 'consumed' }]);
+    const replayed = (await as(testCaller, (tx) => tx.audit.list({}))).rows.filter((row) => row.action.endsWith('_replayed')).map((row) => row.action).sort();
+    expect(replayed).toEqual(['approval.consume_replayed', 'grant.revoke_replayed']);
+  });
+
   it('all item-related repos give strangers the same result for existing and missing ids, in SQL and through repos (19)', async () => {
     const item = await h.store.transaction(scopeOf(testCaller), (tx) => tx.items.create(newLogin(), fakeSecret()));
     const approval = await h.store.transaction(scopeOf(testCaller), (tx) => tx.approvals.create(newApproval(item.id, testCaller, h.clock)));

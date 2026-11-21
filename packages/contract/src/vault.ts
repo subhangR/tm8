@@ -296,6 +296,8 @@ export const VAULT_AUDIT_ACTIONS = [
   'spend.requested', 'spend.started', 'spend.executed', 'spend.refused', 'spend.unknown', 'spend.reconciled',
   'approval.requested', 'approval.approved', 'approval.denied', 'approval.expired', 'approval.consumed',
   'grant.created', 'grant.revoked', 'grant.dropped_on_leave',
+  /** Start-up replay of the ledger re-applied a revocation or a consumption a database restore had undone (test 17). */
+  'grant.revoke_replayed', 'approval.consume_replayed',
   'capture.link_created', 'capture.link_refused',
   'session.signed_in', 'session.refreshed', 'session.ended', 'session.revoked', 'session.refresh_reuse_detected',
   'passkey.registered', 'passkey.revoked', 'passkey.new_device',

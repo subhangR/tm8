@@ -52,6 +52,7 @@ import {
   testCaller,
   tokenPair,
 } from './kit.js';
+import { replayDeletionLedger } from '../../src/store/deletion-ledger.js';
 
 export interface StoreHarness {
   readonly store: VaultStore;
@@ -399,6 +400,94 @@ export function describeStoreConformance(name: string, makeHarness: () => Promis
         const events = (await as(testCaller, (tx) => tx.audit.list({ action: 'item.tombstone_replayed' }))).rows;
         expect(events.map((row) => row.itemId)).toEqual([item.id]);
         expect(await replay()).toBe(0);
+      });
+
+      it('forceRevoke and forceConsume run in the ledger scope only, apply once, and refuse a line that names another item', async () => {
+        const item = await seed();
+        const other = await seed();
+        const grant = await share(item.id);
+        const revokedAt = h.clock.iso();
+        const revoke = { kind: 'grant_revoked' as const, grantId: grant.id, itemId: item.id, spaceId: SPACE_A, ownerMemberId: OWNER_ID, revokedAt };
+        await expect(as(testCaller, (tx) => tx.grants.forceRevoke(revoke))).rejects.toBeInstanceOf(StoreScopeError);
+        await expect(sys('deletionLedger', (tx) => tx.grants.forceRevoke({ ...revoke, itemId: other.id }))).rejects.toMatchObject(state('ledger_mismatch'));
+        expect(await sys('deletionLedger', (tx) => tx.grants.forceRevoke({ ...revoke, grantId: randomUUID() }))).toBe(false);
+        h.clock.advance(MINUTE);
+        expect(await sys('deletionLedger', (tx) => tx.grants.forceRevoke(revoke))).toBe(true);
+        // The ledger's time, not the replay's: the grant died when the owner revoked it.
+        expect(await as(testCaller, (tx) => tx.grants.get(grant.id))).toMatchObject({ revokedAt, revokedBy: SYSTEM_ACTOR });
+        expect(await as(otherCaller, (tx) => tx.items.get(item.id))).toBeNull();
+        expect(await sys('deletionLedger', (tx) => tx.grants.forceRevoke(revoke))).toBe(false);
+        await expect(sys('deletionLedger', (tx) => tx.grants.forceRevoke({ ...revoke, itemId: other.id }))).rejects.toMatchObject(state('ledger_mismatch'));
+
+        const create = (n: number, kind: 'use' | 'new_origin' = 'use') =>
+          as(testCaller, (tx) => tx.approvals.create(newApproval(item.id, testCaller, h.clock, { kind, boundParams: { itemId: item.id, n } })));
+        const decide = (approvalId: string, decision: 'approved' | 'denied', standing = false) =>
+          as(testCaller, (tx) => tx.approvals.decide(approvalId, { state: decision, decidedBy: actorOf(testCaller), standing }));
+        const pending = await create(1);
+        const approved = await create(2);
+        await decide(approved.id, 'approved');
+        const denied = await create(3);
+        await decide(denied.id, 'denied');
+        const standing = await create(4, 'new_origin');
+        await decide(standing.id, 'approved', true);
+        const operationId = randomUUID();
+        const consumedAt = h.clock.iso();
+        const consume = (approvalId: string) => ({ kind: 'approval_consumed' as const, approvalId, itemId: item.id, spaceId: SPACE_A,
+          ownerMemberId: OWNER_ID, operationId, consumedAt });
+        await expect(as(testCaller, (tx) => tx.approvals.forceConsume(consume(approved.id)))).rejects.toBeInstanceOf(StoreScopeError);
+        await expect(sys('deletionLedger', (tx) => tx.approvals.forceConsume({ ...consume(approved.id), itemId: other.id }))).rejects.toMatchObject(state('ledger_mismatch'));
+        expect(await sys('deletionLedger', (tx) => tx.approvals.forceConsume(consume(randomUUID())))).toBe(false);
+        h.clock.advance(MINUTE);
+        expect(await sys('deletionLedger', (tx) => tx.approvals.forceConsume(consume(approved.id)))).toBe(true);
+        expect(await sys('deletionLedger', (tx) => tx.approvals.forceConsume(consume(pending.id)))).toBe(true);
+        // Terminal states, and a standing approval (never consumable), are left as they are.
+        expect(await sys('deletionLedger', (tx) => tx.approvals.forceConsume(consume(denied.id)))).toBe(false);
+        expect(await sys('deletionLedger', (tx) => tx.approvals.forceConsume(consume(standing.id)))).toBe(false);
+        expect(await as(testCaller, (tx) => tx.approvals.get(approved.id))).toMatchObject({ state: 'consumed', consumedAt, consumedByOperationId: operationId });
+        const states = await as(testCaller, async (tx) => Promise.all([pending, denied, standing].map(async (row) => (await tx.approvals.get(row.id))?.state)));
+        expect(states).toEqual(['expired', 'denied', 'approved']);
+        for (const row of [approved, pending]) expect(await sys('deletionLedger', (tx) => tx.approvals.forceConsume(consume(row.id)))).toBe(false);
+      });
+
+      it('test 17: restoring a backup never revives a revoked grant or a consumed approval', async (ctx: TestContext) => {
+        if (!h.hooks.snapshot || !h.hooks.restore) return ctx.skip();
+        const ledger = new MemoryDeletionLedger();
+        const item = await seed();
+        const grant = await share(item.id);
+        const approval = await as(otherCaller, (tx) => tx.approvals.create(newApproval(item.id, otherCaller, h.clock)));
+        await as(testCaller, (tx) => tx.approvals.decide(approval.id, { state: 'approved', decidedBy: actorOf(testCaller), standing: false }));
+        const backup = await h.hooks.snapshot();
+
+        // A use: the ledger line inside the reserving transaction (consumeApproval).
+        h.clock.advance(MINUTE);
+        const operationId = randomUUID();
+        const consumedAt = await as(otherCaller, async (tx) => {
+          const consumed = await tx.approvals.consume(approval.id, operationId);
+          await ledger.appendRevocation({ kind: 'approval_consumed', approvalId: approval.id, itemId: item.id, spaceId: item.spaceId,
+            ownerMemberId: item.ownerMemberId, operationId, consumedAt: consumed.consumedAt! });
+          return consumed.consumedAt!;
+        });
+        // The revoke handler: the ledger line, then the transaction.
+        h.clock.advance(MINUTE);
+        const revokedAt = h.clock.iso();
+        await ledger.appendRevocation({ kind: 'grant_revoked', grantId: grant.id, itemId: item.id, spaceId: item.spaceId, ownerMemberId: item.ownerMemberId, revokedAt });
+        await as(testCaller, (tx) => tx.grants.revoke(grant.id, actorOf(testCaller)));
+
+        await h.hooks.restore(backup);
+        expect(await as(otherCaller, (tx) => tx.items.currentSecret(item.id))).not.toBeNull();
+        expect((await as(otherCaller, (tx) => tx.approvals.findUsable(item.id, 'use', approval.intentHash)))?.id).toBe(approval.id);
+
+        // Start-up replay, before the broker serves.
+        h.clock.advance(MINUTE);
+        expect(await replayDeletionLedger(h.store, ledger)).toBe(2);
+        expect(await as(otherCaller, (tx) => tx.items.get(item.id))).toBeNull();
+        expect(await as(otherCaller, (tx) => tx.items.currentSecret(item.id))).toBeNull();
+        expect(await as(testCaller, (tx) => tx.grants.get(grant.id))).toMatchObject({ revokedAt, revokedBy: SYSTEM_ACTOR });
+        expect(await as(testCaller, (tx) => tx.approvals.get(approval.id))).toMatchObject({ state: 'consumed', consumedAt, consumedByOperationId: operationId });
+        const replayed = async (action: string) => (await as(testCaller, (tx) => tx.audit.list({ action }))).rows.map((row) => row.params);
+        expect(await replayed('grant.revoke_replayed')).toEqual([{ grantId: grant.id }]);
+        expect(await replayed('approval.consume_replayed')).toEqual([{ approvalId: approval.id, operationId }]);
+        expect(await replayDeletionLedger(h.store, ledger)).toBe(0);
       });
     });
 

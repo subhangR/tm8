@@ -32,6 +32,7 @@ import {
   type Clock,
   type DeletionLedger,
   type DeletionLedgerEntry,
+  type RevocationLedgerEntry,
   type EgressExecutor,
   type EncryptedSecretVersion,
   type FillDriver,
@@ -247,6 +248,8 @@ export async function seedItem(store: VaultStore, caller: VaultCaller = testCall
 /** `DeletionLedger` in memory. It survives `MemoryVaultStore.testing.restore`, as the real file survives a database restore. */
 export class MemoryDeletionLedger implements DeletionLedger {
   readonly #entries: DeletionLedgerEntry[] = [];
+  readonly #revocations: RevocationLedgerEntry[] = [];
+  /** Fails every append, tombstone and revocation alike, as a full or failed disk would. */
   failAppend = false;
 
   async append(entry: DeletionLedgerEntry): Promise<void> {
@@ -256,6 +259,15 @@ export class MemoryDeletionLedger implements DeletionLedger {
 
   async entries(): Promise<DeletionLedgerEntry[]> {
     return this.#entries.map((entry) => ({ ...entry }));
+  }
+
+  async appendRevocation(entry: RevocationLedgerEntry): Promise<void> {
+    if (this.failAppend) throw new Error('deletion ledger: append failed (test)');
+    this.#revocations.push({ ...entry });
+  }
+
+  async revocations(): Promise<RevocationLedgerEntry[]> {
+    return this.#revocations.map((entry) => ({ ...entry }));
   }
 }
 

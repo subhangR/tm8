@@ -178,9 +178,27 @@ same uid can connect.
 
 ### Files the operator creates (the broker never provisions them)
 
-- **`TM8_VAULT_DELETION_LEDGER`:** an append-only tombstone file. Keep it on different
-  media from the database, so that a restored backup can be checked against it and can
-  never revive a deleted item.
+- **`TM8_VAULT_DELETION_LEDGER`:** the append-only deletion and revocation ledger. It
+  holds one JSON line, fsynced, for each:
+  - deleted item;
+  - revoked grant;
+  - consumed one-use approval.
+
+  Each line is written before the transaction that makes the change commits. At every
+  start, the broker replays the whole file before it serves, so a restored database backup
+  never revives a deleted item, a revoked grant or a consumed approval.
+
+  Keep the file on different media from the database, and never restore it from the same
+  backup: a ledger rolled back with the database undoes its own guarantee. The file is
+  0600 and owned by the broker user. The start stops with `vault broker: start failed`,
+  before the socket binds, when a line cannot be parsed or names a grant or approval
+  under another item. Either one means the file has been damaged.
+
+  When the file cannot be written:
+  - deleting an item fails and deletes nothing;
+  - a use that needs a one-use approval fails and nothing runs;
+  - revoking a grant still revokes it in the database and then reports the error. Until a
+    retry succeeds, a restore could bring that grant back.
 - **Checkpoint sink:**
   - `file` uses the directory `TM8_VAULT_CHECKPOINT_DIR`;
   - `gcs` uses the bucket `TM8_VAULT_GCS_BUCKET`.

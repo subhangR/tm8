@@ -589,6 +589,33 @@ export interface DeletionLedgerEntry {
   tombstonedAt: IsoTime;
 }
 
+/**
+ * The other terminal states the deletion/revocation ledger keeps across a
+ * database restore (MSG 12, failure case 13, test 17). A ledger line with a
+ * `kind` is one of these; a line without one is a `DeletionLedgerEntry`.
+ * `ownerMemberId` is the item owner, the subject of the replay's audit event.
+ */
+export interface GrantRevokedLedgerEntry {
+  kind: 'grant_revoked';
+  grantId: string;
+  itemId: string;
+  spaceId: string;
+  ownerMemberId: string;
+  revokedAt: IsoTime;
+}
+
+export interface ApprovalConsumedLedgerEntry {
+  kind: 'approval_consumed';
+  approvalId: string;
+  itemId: string;
+  spaceId: string;
+  ownerMemberId: string;
+  operationId: string;
+  consumedAt: IsoTime;
+}
+
+export type RevocationLedgerEntry = GrantRevokedLedgerEntry | ApprovalConsumedLedgerEntry;
+
 // ---------------------------------------------------------------------------
 // The store
 // ---------------------------------------------------------------------------
@@ -730,6 +757,13 @@ export interface GrantsRepo {
   listForItem(itemId: string): Promise<GrantRecord[]>;
   /** Owner only. Idempotent: an already revoked grant comes back unchanged. */
   revoke(grantId: string, revokedBy: ActorRecord): Promise<GrantRecord>;
+  /**
+   * System scope: ledger replay after a restore. Revokes the grant at the
+   * entry's time, by the system, if the restore brought it back active. A
+   * missing or already revoked grant is left alone. True when it changed, so
+   * replay can audit `grant.revoke_replayed`.
+   */
+  forceRevoke(entry: GrantRevokedLedgerEntry): Promise<boolean>;
   /** Active grants on the item that name the scope member or space. Read at every use; never cached (revocation bound, test 12). */
   activeForCaller(itemId: string): Promise<GrantRecord[]>;
   countActive(itemId: string): Promise<number>;
@@ -756,6 +790,14 @@ export interface ApprovalsRepo {
    * standing approval. Exactly one concurrent caller wins.
    */
   consume(approvalId: string, operationId: string): Promise<ApprovalRecord>;
+  /**
+   * System scope: ledger replay after a restore. A stored state the restore
+   * brought back approved (one-use) becomes `consumed` with the entry's time and
+   * operation. A pending one becomes `expired`: it was consumed once, so nobody
+   * may approve and use it again. Any other state, or a missing approval, is
+   * left alone. True when it changed (`approval.consume_replayed`).
+   */
+  forceConsume(entry: ApprovalConsumedLedgerEntry): Promise<boolean>;
   /** System scope. Pending, and approved one-use, past expiry become `expired`. Returns them for audit. */
   expireDue(): Promise<ApprovalRecord[]>;
   countPending(itemId: string): Promise<number>;
@@ -910,15 +952,27 @@ export interface DeletionLedgerRepo {
 // ---------------------------------------------------------------------------
 
 /**
- * The deletion ledger that survives a database restore (failure case 13,
- * test 17). The tombstone handler appends here FIRST (fsync), then runs the
- * tombstone transaction. At start, before serving, the broker replays every
- * entry with `items.forceTombstone`, so a restore never revives a dead item.
- * A crash between the two steps errs toward deletion, which is what the owner asked for.
+ * The deletion/revocation ledger that survives a database restore (MSG 12,
+ * failure case 13, test 17). It is written FIRST (fsync), before the
+ * transaction that makes the state terminal:
+ * - the tombstone handler, before its tombstone transaction;
+ * - the grant revoke handler, before its revoke transaction;
+ * - every one-use approval consumption, inside the reserving transaction
+ *   before it commits, so a fill, call or spend that cannot record its
+ *   consumption never runs.
+ * At start, before serving, the broker replays every entry: tombstones with
+ * `items.forceTombstone`, then revocations with `grants.forceRevoke` and
+ * `approvals.forceConsume`. A restore therefore never revives a dead item, a
+ * revoked grant or a consumed approval. A crash or a rolled-back transaction
+ * after the append errs toward the terminal state: the item is deleted, the
+ * grant revoked, the approval used up, and the requester asks again.
  */
 export interface DeletionLedger {
   append(entry: DeletionLedgerEntry): Promise<void>;
   entries(): Promise<DeletionLedgerEntry[]>;
+  /** The same file and the same fsync as `append`. */
+  appendRevocation(entry: RevocationLedgerEntry): Promise<void>;
+  revocations(): Promise<RevocationLedgerEntry[]>;
 }
 
 // ---------------------------------------------------------------------------

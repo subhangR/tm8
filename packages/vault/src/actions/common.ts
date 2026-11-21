@@ -173,10 +173,15 @@ export async function usableApproval(tx: VaultTx, itemId: string, kind: Approval
 }
 
 export async function consumeApproval(tx: VaultTx, ctx: HandlerContext, item: ItemRecord, approval: ApprovalRecord, operationId: string): Promise<void> {
-  try { await tx.approvals.consume(approval.id, operationId); } catch (error) {
+  let consumed: ApprovalRecord;
+  try { consumed = await tx.approvals.consume(approval.id, operationId); } catch (error) {
     if (error instanceof StoreStateError) throw VaultError.reason('approval_not_pending');
     throw error;
   }
+  // Recorded before the reserving transaction commits, so a database restore can never hand the approval out again
+  // (test 17). A failed append rolls the transaction back and the fill, call or spend never runs.
+  await ctx.components.deletionLedger.appendRevocation({ kind: 'approval_consumed', approvalId: consumed.id, itemId: item.id,
+    spaceId: item.spaceId, ownerMemberId: item.ownerMemberId, operationId, consumedAt: consumed.consumedAt ?? tx.now });
   await audit(tx, ctx, 'approval.consumed', item, { approvalId: approval.id, operationId });
 }
 
