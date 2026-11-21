@@ -148,3 +148,23 @@ function secretFile(path: string | undefined, knob: string): Buffer {
   }
   try { return readFileSync(file.path); } catch { throw new VaultRelayConfigError(knob, 'names a file that cannot be read'); }
 }
+
+/**
+ * The chat paste guard (vault/paste-guard.ts; MSG 6 Journey A step 3). TM8_VAULT_PASTE_GUARD is off,
+ * the default, or on: anything else refuses to start. Off returns null and nothing reads a message.
+ * On, the guard also needs to know whether this node runs the vault (TM8_VAULT_MODE is not off), so
+ * its advice names the capture link only where there is one. It is independent of the vault mode:
+ * a node with the vault off can still keep secrets out of its chat history.
+ */
+export interface VaultPasteGuardConfig {
+  readonly vaultAvailable: boolean;
+}
+
+export function vaultPasteGuardFromEnv(env: NodeJS.ProcessEnv = process.env): VaultPasteGuardConfig | null {
+  const value = (env.TM8_VAULT_PASTE_GUARD ?? 'off').trim();
+  if (value !== 'off' && value !== 'on') {
+    throw new VaultRelayConfigError('TM8_VAULT_PASTE_GUARD', 'must be off or on');
+  }
+  if (value === 'off') return null;
+  return { vaultAvailable: (env.TM8_VAULT_MODE ?? 'off').trim() !== 'off' };
+}

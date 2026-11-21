@@ -114,6 +114,13 @@ export const VAULT_REVOCATION_BOUND_SECONDS = 5;
 export const VAULT_MAX_SCREENSHOT_BASE64 = 4 * 1024 * 1024;
 export const VAULT_MAX_CAPTURE_CIPHERTEXT = 64 * 1024;
 export const VAULT_MAX_IMPORT_CIPHERTEXT = 8 * 1024 * 1024;
+/**
+ * MSG 6, Journey A step 3. When the server's chat paste guard (TM8_VAULT_PASTE_GUARD=on) replaces
+ * secret-shaped text in a person's message with `[redacted:<kind>]` before storing it, the result
+ * carries a warning with this code. An edit that would add such text is refused instead, as
+ * invalid_input with `details.reason` set to this code. The warning text never repeats the value.
+ */
+export const VAULT_PASTE_WARNING_CODE = 'vault_paste_redacted';
 
 export const VAULT_MODES = ['off', 'dev', 'pre_review', 'production'] as const;
 export const VaultModeSchema = z.enum(VAULT_MODES);

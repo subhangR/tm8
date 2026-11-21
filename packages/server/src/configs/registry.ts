@@ -227,6 +227,7 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_VAULT_RELAY_TLS_CA_FILE', group: 'Secure Vault', summary: 'Absolute path of the CA bundle the broker\'s TLS certificate must chain to. Nothing else is trusted.', default: null, definedIn: VAULT },
   { name: 'TM8_VAULT_RELAY_PRIVATE_KEY_FILE', group: 'Secure Vault', summary: 'Absolute path of the PKCS#8 Ed25519 key the relay signs every vault request with; the broker holds only the public half. Must be chmod 600 and owned by the server\'s user, or boot fails.', default: null, definedIn: VAULT },
   { name: 'TM8_VAULT_RELAY_TIMEOUT_MS', group: 'Secure Vault', summary: 'How long the relay waits for the broker to answer, 10000 to 600000 ms. The default outlasts the broker\'s longest fill.', default: '190000', definedIn: VAULT },
+  { name: 'TM8_VAULT_PASTE_GUARD', group: 'Secure Vault', summary: 'off or on. On, secret-shaped text a person sends in a message, a chat start or a bridged chat is replaced with [redacted:<kind>] before it is stored, and the sender is warned to rotate it. Independent of TM8_VAULT_MODE. Any other value refuses to boot.', default: 'off', definedIn: VAULT },
 
   // ── Keys ─────────────────────────────────────────────────────────────
   { name: 'TYPESAFE_API_KEY', group: 'Keys', summary: 'Node key for Jev (TypeSafe), used when a member has none.', default: null, definedIn: MAIN, secret: true },

@@ -1,5 +1,9 @@
 import type { PasteDetector, PasteFinding, PasteKind, TokenSpanScanner } from '../types.js';
 
+// `@tm8/vault/paste` is this module: the tm8 server's chat paste guard loads the detector from here
+// (packages/server/src/vault/paste-guard.ts). It is pure text matching, with no store, key, socket or file.
+export type { PasteDetector, PasteFinding, PasteKind, PasteScanResult, TokenSpanScanner } from '../types.js';
+
 // Bounded provider patterns run in overlapping UTF-16 windows. The overlap is
 // larger than the longest provider match. Unbounded lexical runs and PEM blocks
 // have separate forward-only passes, so window edges never truncate a finding.

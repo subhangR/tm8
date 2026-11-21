@@ -13,6 +13,10 @@
       "types": "./dist/relay/index.d.ts",
       "default": "./dist/relay/index.js"
     },
+    "./paste": {
+      "types": "./dist/paste/index.d.ts",
+      "default": "./dist/paste/index.js"
+    },
     "./capture-page/index.html": "./capture-page/index.html"
   },
   "scripts": {

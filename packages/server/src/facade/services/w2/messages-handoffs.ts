@@ -45,6 +45,7 @@ import {
   type MessageDeliveryPort,
 } from './message-dispatch.js';
 import { stampChatTurnTeam } from '../../../chat/turn-team.js';
+import { MESSAGE_BODY_MAX, type PasteGuard } from '../../../vault/paste-guard.js';
 
 export interface ReservedMessageDelivery {
   readonly deliveryId: string;
@@ -159,6 +160,13 @@ export interface W2MessagesHandoffsServiceOptions {
     requesterIdentityId: string,
     messages: readonly MessageView[],
   ) => void;
+  /**
+   * The chat paste guard (vault/paste-guard.ts), present only with TM8_VAULT_PASTE_GUARD=on. It
+   * reads only a message a PERSON wrote: no session and no chat source. A post is stored with its
+   * secret-shaped spans redacted and answers a `vault_paste_redacted` warning; an edit that holds
+   * one is refused.
+   */
+  readonly pasteGuard?: PasteGuard;
 }
 
 interface BatchRpcResult {
@@ -457,7 +465,7 @@ export class W2MessagesHandoffsService {
   ) {}
 
   readonly post: OperationHandler = async (ctx) => {
-    const input = ctx.body as PostMessageInput;
+    const received = ctx.body as PostMessageInput;
     const { claims, viewerIdentityId } = await accessFor(this.deps, ctx, true);
     const sourceWorkSessionId = this.options.resolveAuthoredFromWorkSessionId
       ? await this.options.resolveAuthoredFromWorkSessionId(ctx)
@@ -465,6 +473,15 @@ export class W2MessagesHandoffsService {
     const sourceChatId = this.options.resolveAuthoredFromChatId
       ? await this.options.resolveAuthoredFromChatId(ctx)
       : null;
+    // MSG 6 Journey A step 3: a person's secret-shaped text is redacted before anything stores,
+    // routes or bridges the body. Redaction is deterministic, so a retry with the same
+    // clientMutationId replays the same body.
+    const paste = this.options.pasteGuard && sourceWorkSessionId === null && sourceChatId === null
+      ? this.options.pasteGuard.redact(received.body, MESSAGE_BODY_MAX)
+      : null;
+    if (paste && !paste.fits) throw this.options.pasteGuard!.tooLong(paste.kinds);
+    const input: PostMessageInput = paste && paste.kinds.length > 0 ? { ...received, body: paste.text } : received;
+    const pasteWarning = paste && paste.kinds.length > 0 ? this.options.pasteGuard!.warning(paste.kinds) : null;
     const requestedAnchorIds = uniqueIds(input.anchorIds, 'anchorIds');
     const mentionIds = uniqueIds(input.mentionIds ?? [], 'mentionIds');
     const attachmentIds = uniqueIds(input.attachmentIds ?? [], 'attachmentIds');
@@ -655,8 +672,11 @@ export class W2MessagesHandoffsService {
       // disagree.
       ...(dispositions.length > 0 ? { delivery: dispositions } : {}),
       ...(bridgeDelivery.length > 0 ? { bridgeDelivery } : {}),
-      // Absent unless the sender holds an anchored task still `working` (P0g).
-      ...(stored.statusNudges.length > 0 ? { warnings: stored.statusNudges } : {}),
+      // Absent unless the sender holds an anchored task still `working` (P0g), or the paste guard
+      // redacted the body.
+      ...(pasteWarning || stored.statusNudges.length > 0
+        ? { warnings: [...(pasteWarning ? [pasteWarning] : []), ...stored.statusNudges] }
+        : {}),
     };
   };
 
@@ -676,6 +696,20 @@ export class W2MessagesHandoffsService {
       ? null
       : uniqueIds(input.mentions.map((mention) => mention.entityId), 'mentions');
     const { claims, viewerIdentityId } = await accessFor(this.deps, ctx, true);
+    // MSG 6 Journey A step 3: a person's edit that holds secret-shaped text is refused, and the message
+    // keeps its earlier text (an edit result has no warnings channel). The author is resolved only
+    // for such an edit, the way post resolves it, so no other edit changes.
+    const guard = this.options.pasteGuard;
+    const paste = guard ? guard.redact(input.body) : null;
+    if (guard && paste && paste.kinds.length > 0) {
+      const sourceWorkSessionId = this.options.resolveAuthoredFromWorkSessionId
+        ? await this.options.resolveAuthoredFromWorkSessionId(ctx)
+        : null;
+      const sourceChatId = this.options.resolveAuthoredFromChatId
+        ? await this.options.resolveAuthoredFromChatId(ctx)
+        : null;
+      if (sourceWorkSessionId === null && sourceChatId === null) throw guard.editRefusal(paste.kinds);
+    }
     return this.deps.db.tx(claims, async (q) => {
       const result = await q.rpc<MessageCommandRpcResult>('w2_edit_message', [
         id, input.body, mentionIds, input.expectedVersion,

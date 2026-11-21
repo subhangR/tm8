@@ -1808,6 +1808,12 @@ export interface StartChatResult {
   chat: EntitySummary;
   /** The opening message, already queued as turn one. */
   messageId: EntityId;
+  /**
+   * Non-fatal notes on the start, never present empty. `vault_paste_redacted` (VAULT_PASTE_WARNING_CODE)
+   * means the server's paste guard replaced secret-shaped text in the opening message or the title before
+   * storing it.
+   */
+  warnings?: ResultWarning[];
 }
 
 /**

@@ -107,7 +107,8 @@ import { directoryTargetResolver } from './remote/directory-resolver.js';
 import { createW2FileUploadRoute } from './http/w2-file-upload.js';
 import { createClipboardUploadRoute } from './http/clipboard-upload.js';
 import { createVaultCapturePage } from './vault/capture-page.js';
-import { vaultRelayConfigFromEnv } from './vault/config.js';
+import { vaultPasteGuardFromEnv, vaultRelayConfigFromEnv } from './vault/config.js';
+import { createPasteGuard } from './vault/paste-guard.js';
 import { createVaultRelay } from './vault/relay.js';
 import { createVoiceWebhookRoute } from './http/voice-webhook.js';
 import { ConnectionAuthRelay, lazyRuntimeLink } from './bridges/connection-auth.js';
@@ -571,6 +572,15 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * which the runtime's inbound route and the watchdog's sweep read; without
    * it nothing a group sends is a command.
    */
+  /**
+   * Secure Vault's chat paste guard (MSG 6 Journey A step 3; vault/paste-guard.ts), read once
+   * here. TM8_VAULT_PASTE_GUARD=off, the default, builds nothing and every message is stored as
+   * sent; any value but off or on refuses to boot. On, secret-shaped text a person sends through
+   * messages.post, messages.edit, chat.start or a bridged chat is redacted before it is stored.
+   */
+  const pasteGuardConfig = vaultPasteGuardFromEnv(process.env);
+  const pasteGuard = pasteGuardConfig ? createPasteGuard(pasteGuardConfig) : undefined;
+  if (pasteGuardConfig) console.info(`[tm8] vault paste guard on (vault ${pasteGuardConfig.vaultAvailable ? 'on' : 'off'})`);
   // 426: set once the runtime hub below exists; the group port reads it per command.
   let bridgeHubRef: BridgeRuntimeHub | undefined;
   const bridgeCommandExecutor = db && execution
@@ -678,6 +688,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           }
         : {}),
       ...(chat ? { chat: { orchestrator: chat, dataDir } } : {}),
+      ...(pasteGuard ? { pasteGuard } : {}),
       membership: {
         sockets: subscriptions,
         ...(execution ? { sessions: execution.spawnService } : {}),
@@ -1003,6 +1014,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         ...(bridgeDeliver ? { deliver: bridgeDeliver } : {}),
         ...(bridgeKeeper ? { keepSession: (bridgeId: string, messageId: string) => bridgeKeeper.ensure(bridgeId, messageId) } : {}),
         ...(chat ? { wakeChat: (chatId: string, identityId: string) => { void chat.wake(chatId, identityId); } } : {}),
+        ...(pasteGuard ? { pasteGuard } : {}),
         log: (line) => console.warn(line),
       })
     : undefined;

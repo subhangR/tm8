@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { describe, expect, it } from 'vitest';
 import { createPasteDetector, tokenSpanScanner } from '../../src/paste/index.js';
@@ -127,5 +128,18 @@ describe('paste detector: all 18 kinds', () => {
       detector.scan(input);
       expect(performance.now() - start).toBeLessThan(500);
     }
+  });
+});
+
+describe('@tm8/vault/paste', () => {
+  it('is the detector entry the tm8 server loads: pure text matching, with no store, key, socket or file', async () => {
+    const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')) as { exports: Record<string, unknown> };
+    expect(pkg.exports['./paste']).toEqual({ types: './dist/paste/index.d.ts', default: './dist/paste/index.js' });
+    expect(Object.keys(await import('../../src/paste/index.js')).sort()).toEqual(['createPasteDetector', 'tokenSpanScanner']);
+    // packages/server/src/vault/paste-guard.ts imports this module, so its only imports are types.
+    const source = await readFile(new URL('../../src/paste/index.ts', import.meta.url), 'utf8');
+    const imports = [...source.matchAll(/^(?:import|export)\b[^;]*?\bfrom '([^']+)'/gm)];
+    expect(imports.map((m) => m[1])).toEqual(['../types.js', '../types.js']);
+    expect(imports.every((m) => /^(?:import|export) type \{/.test(m[0]))).toBe(true);
   });
 });

@@ -38,6 +38,7 @@ import {
 } from '../shell';
 import type { NavPort } from '../shell/nav-port';
 import { registerNoticeSink } from '../terminal/notifications';
+import { registerPasteWarningHost } from '../vault/paste-warning';
 import { screenKeyOf, screenStackStore, topOf, useScreenStackStore } from '../stores/screenStackStore';
 import type { ScreenKey } from '../stores/screenStackStore';
 import { isDirectlyBelow } from '../stores/phoneHistory';
@@ -2330,6 +2331,14 @@ export function GateApp(props: GateAppProps = {}) {
      churn its runtime wiring on every GateApp render. */
   const openPaletteOverlay = useCallback(() => setPaletteOpen(true), []);
   const navigateRouteView = useCallback((view: NavView) => navStore.getState().navigate(view), []);
+  /* Secure Vault's paste warning (vault/paste-warning.ts): the seam reports it and this shell shows it.
+     It offers to open the vault only where the settings below mount a vault section. */
+  useEffect(() => registerPasteWarningHost({
+    push: notices.push,
+    ...(data.spaceId && activeServer.id === LOCAL_SERVER.id
+      ? { openVault: () => navigateRouteView({ view: 'settings', section: 'vault' }) }
+      : {}),
+  }), [notices.push, navigateRouteView, data.spaceId, activeServer.id]);
   /* Craft → Designs: the home's source, and its door into one design. */
   const craftsSource = useMemo(
     () => craftsSourceFromSeam(data.seam, data.spaceId as SpaceId),
