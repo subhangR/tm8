@@ -139,7 +139,8 @@ the value.
 `production` requires all of the following:
 - `TM8_VAULT_REVIEW_GATE=passed`;
 - `TM8_VAULT_KMS_KIND=gcp-kms`;
-- a checkpoint sink (`TM8_VAULT_AUDIT_SINK`, `file` or `gcs`) signed through `TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION`;
+- the `gcs` checkpoint sink (`TM8_VAULT_AUDIT_SINK=gcs`), on a bucket whose retention policy is locked, signed through
+  `TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION`. Production refuses `off` and `file` (review F01, §5);
 - no local KEK file and no local checkpoint key;
 - an mTLS listener, with the relay's client certificate pinned (`TM8_VAULT_RELAY_CLIENT_CERT_SHA256`);
 - a dedicated database role.
@@ -337,12 +338,15 @@ only on a staging host, in a run the owner has approved.
   - revoking a grant still revokes it in the database and then reports the error. Until a
     retry succeeds, a restore could bring that grant back.
 - **Checkpoint sink:**
-  - `file` uses the directory `TM8_VAULT_CHECKPOINT_DIR`;
-  - `gcs` uses the bucket `TM8_VAULT_GCS_BUCKET`.
+  - `file` uses the directory `TM8_VAULT_CHECKPOINT_DIR`. It is for `dev` and `pre_review`
+    only. Production refuses it, because the directory sits on the broker's own host: whoever
+    holds the broker uid or root could delete the newer checkpoints, roll the database back
+    and restart the broker unseen;
+  - `gcs` uses the bucket `TM8_VAULT_GCS_BUCKET`. It is the only sink production accepts.
 
   tm8 writes create-only objects. It never sets, holds or locks a bucket's retention.
   **Do not enable Bucket Lock or any irreversible retention** until the owner decides so
-  explicitly.
+  explicitly. Until the owner does, a production broker cannot start (see below).
 
   **The sink is the audit chain's independent anchor (review F01).** The database's own
   record of what was anchored is only a hint. On every verification the broker:
@@ -372,10 +376,15 @@ only on a staging host, in a run the owner has approved.
   when it cannot anchor events that have stayed unanchored for longer than the budget.
 
   Operating rules that follow from this:
-  - **Production GCS needs a retention policy on the bucket before the broker starts.** It
-    may be locked or unlocked. The broker only reads it, logs it as
-    `vault_checkpoint_sink {retention}`, and refuses to start without one
-    (`audit_unavailable`).
+  - **Production needs a locked retention policy on the bucket before the broker starts.**
+    The broker only reads it and logs it as `vault_checkpoint_sink {retention}`. It refuses
+    to start (`audit_unavailable`) when the policy is missing (`none`), unreadable
+    (`unknown`) or `unlocked`, because a bucket admin can shorten or remove an unlocked
+    policy and then delete the newer checkpoints. Locking is irreversible and is the bucket
+    owner's decision. Relaxing this rule is a code change, not a knob.
+  - **The retention period is the protection window.** A checkpoint older than the period can
+    be deleted. Choose a period longer than the chain can go without a new checkpoint, plus
+    the time an operator needs to notice. The broker does not check the period's length.
   - **Give the bucket no lifecycle rule that deletes or rewrites objects under
     `checkpoints/`.**
   - **Grant the broker's service account no more than this:** `storage.objects.create`,
@@ -633,8 +642,9 @@ on `01a1fa87` holds the full set with severities. The headline items:
     broker anchors them at its next start.
   - A `file` sink is a witness on the same host. Whoever can write its directory can delete
     from it, and a database restore plus a deletion of the newer files goes unseen unless the
-    process saw them first. Whether production may use it is an owner decision. So are
-    locking the bucket's retention, and the recovery path after a rollback.
+    process saw them first. Production therefore refuses it, and refuses an unlocked bucket.
+    Locking the bucket's retention, choosing its period, and the recovery path after a
+    rollback are owner decisions.
 - The ledger needs separate media.
 - Relay alerts queued in the broker are lost on a broker restart.
 - Canaries have no production planting.

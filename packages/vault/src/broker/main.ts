@@ -75,8 +75,8 @@ export const BROKER_RUNTIME_ENV_KNOBS = [
   { name: 'TM8_VAULT_GCP_KMS_KEY', default: '', meaning: 'Cloud KMS cryptoKey resource name when TM8_VAULT_KMS_KIND=gcp-kms' },
   { name: 'TM8_VAULT_CHECKPOINT_KEY_FILE', default: '', meaning: 'Ed25519 PKCS#8 key (0600) for local checkpoint signatures; dev and pre_review only' },
   { name: 'TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION', default: '', meaning: 'Cloud KMS asymmetric-sign cryptoKeyVersion for checkpoint signatures' },
-  { name: 'TM8_VAULT_CHECKPOINT_DIR', default: '', meaning: 'Checkpoint directory when TM8_VAULT_AUDIT_SINK=file' },
-  { name: 'TM8_VAULT_GCS_BUCKET', default: '', meaning: 'Checkpoint bucket when TM8_VAULT_AUDIT_SINK=gcs; tm8 never sets, holds or locks its retention' },
+  { name: 'TM8_VAULT_CHECKPOINT_DIR', default: '', meaning: 'Checkpoint directory when TM8_VAULT_AUDIT_SINK=file; dev and pre_review only, because production refuses a sink on the broker host (review F01)' },
+  { name: 'TM8_VAULT_GCS_BUCKET', default: '', meaning: 'Checkpoint bucket when TM8_VAULT_AUDIT_SINK=gcs; production requires a locked retention policy on it, and tm8 never sets, holds or locks one' },
   { name: 'TM8_VAULT_CHECKPOINT_INTERVAL_MS', default: '300000', meaning: 'Checkpoint period, 10000..86400000; each period also verifies the chain from its last verified seq against the retained anchor' },
   { name: 'TM8_VAULT_AUDIT_VERIFY_INTERVAL_MS', default: '3600000', meaning: 'Full audit chain verification period (every event from seq 1, against the retained anchor), 60000..86400000' },
   { name: 'TM8_VAULT_AUDIT_ANCHOR_BUDGET_MS', default: '900000', meaning: 'Longest an audit event may stay unanchored, or the retained anchor go unverified, before audited actions fail closed; 20000..172800000 and at least twice the checkpoint period' },
@@ -214,7 +214,9 @@ function canarySet(env: Env) {
 function productionPrerequisites(env: Env): void {
   if (env.TM8_VAULT_REVIEW_GATE !== 'passed') throw new BrokerConfigError('TM8_VAULT_REVIEW_GATE');
   if ((env.TM8_VAULT_KMS_KIND ?? 'local-dev') !== 'gcp-kms') throw new BrokerConfigError('TM8_VAULT_KMS_KIND');
-  if ((env.TM8_VAULT_AUDIT_SINK ?? 'off') === 'off') throw new BrokerConfigError('TM8_VAULT_AUDIT_SINK');
+  // Review F01 (builder-side F01-1): a file sink sits on the broker's own host. Whoever holds the broker uid or
+  // root could delete the newer checkpoints and roll the database back unseen, so production anchors off-host.
+  if ((env.TM8_VAULT_AUDIT_SINK ?? 'off') !== 'gcs') throw new BrokerConfigError('TM8_VAULT_AUDIT_SINK');
   if (optional(env, 'TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION') === null) throw new BrokerConfigError('TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION');
   if (optional(env, 'TM8_VAULT_LOCAL_KEK_FILE') !== null) throw new BrokerConfigError('TM8_VAULT_LOCAL_KEK_FILE');
   if (optional(env, 'TM8_VAULT_CHECKPOINT_KEY_FILE') !== null) throw new BrokerConfigError('TM8_VAULT_CHECKPOINT_KEY_FILE');
@@ -246,10 +248,9 @@ interface AuditAnchorParts { checkpointer: AuditCheckpointer; sink: CheckpointSi
 
 async function buildCheckpointer(env: Env, config: BrokerConfig, store: PgVaultStore,
   gcp: () => Required<Pick<GcpEndpoints, 'tokens'>> & GcpEndpoints, log: (record: Record<string, unknown>) => void): Promise<AuditAnchorParts | null> {
-  if (config.auditSink === 'off') {
-    if (config.mode === 'production') throw new BrokerConfigError('TM8_VAULT_AUDIT_SINK');
-    return null;
-  }
+  // Checked again here for a caller that skips productionPrerequisites.
+  if (config.mode === 'production' && config.auditSink !== 'gcs') throw new BrokerConfigError('TM8_VAULT_AUDIT_SINK');
+  if (config.auditSink === 'off') return null;
   let signer: CheckpointSigner & CheckpointVerifier;
   const keyVersion = optional(env, 'TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION');
   if (keyVersion === null && config.mode === 'production') throw new BrokerConfigError('TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION');
@@ -279,9 +280,11 @@ async function buildCheckpointer(env: Env, config: BrokerConfig, store: PgVaultS
   try { health = await sink.health(); } catch { health = { ok: false, retention: 'unknown' }; }
   log({ event: 'vault_checkpoint_sink', sink: sink.kind, ok: health.ok, retention: health.retention });
   if (!health.ok) throw VaultError.reason('audit_unavailable');
-  // Review F01: a production anchor must outlive a compromised broker, so the bucket must already carry a
-  // retention policy. tm8 only reads it; setting or locking one is the bucket owner's decision.
-  if (config.mode === 'production' && sink.kind === 'gcs' && health.retention !== 'locked' && health.retention !== 'unlocked') {
+  // Review F01: a production anchor must outlive a compromised broker and a cloud admin alike. A bucket admin
+  // can shorten or remove an unlocked retention policy and then delete the newer checkpoints (builder-side
+  // F01-2), so production requires a locked one. tm8 only reads the policy. Locking a bucket is irreversible
+  // and is the bucket owner's decision.
+  if (config.mode === 'production' && (sink.kind !== 'gcs' || health.retention !== 'locked')) {
     throw VaultError.reason('audit_unavailable');
   }
   return { checkpointer: new AuditCheckpointer({ store, signer, sink }), sink, verifier: signer };

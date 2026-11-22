@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { VAULT_OPERATIONS, VAULT_OUTPUT_SCHEMAS } from '@tm8/contract';
-import { BROKER_ENV_KNOBS, BrokerConfigError, loadBrokerConfig } from '../../src/broker/config.js';
+import { BROKER_ENV_KNOBS, BrokerConfigError, assertBrokerConfig, loadBrokerConfig } from '../../src/broker/config.js';
 import { BrokerRateLimiter, BROKER_RATE_LIMITS, BROKER_SHARED_LIMITS, kdfCost, rateClass } from '../../src/broker/rate-limit.js';
 import { parseVaultCookies, serializeVaultCookie } from '../../src/broker/dispatcher.js';
 import { RECOVERY_CODE_COUNT } from '../../src/owner-auth/codes.js';
@@ -17,13 +17,32 @@ describe('broker config and closed runtime settings', () => {
     expect(loadBrokerConfig({ TM8_VAULT_MODE: 'pre_review' }).features.import).toBe(false);
   });
   it('admits production only after both gates with a real production-grade adapter', () => {
-    const env = { TM8_VAULT_MODE: 'production', TM8_VAULT_REVIEW_GATE: 'passed', TM8_VAULT_PUBLIC_ORIGIN: 'https://vault.example.com' };
+    const env = { TM8_VAULT_MODE: 'production', TM8_VAULT_REVIEW_GATE: 'passed', TM8_VAULT_PUBLIC_ORIGIN: 'https://vault.example.com',
+      TM8_VAULT_AUDIT_SINK: 'gcs' };
     expect(() => loadBrokerConfig({ ...env, TM8_VAULT_REVIEW_GATE: 'open' }, { kind: 'gcp-kms', productionGrade: true })).toThrow('TM8_VAULT_REVIEW_GATE');
     expect(() => loadBrokerConfig(env)).toThrow('TM8_VAULT_KMS_KIND');
     expect(() => loadBrokerConfig(env, { kind: 'local-dev', productionGrade: false })).toThrow('TM8_VAULT_KMS_KIND');
     expect(() => loadBrokerConfig(env, { kind: 'local-dev', productionGrade: true })).toThrow('TM8_VAULT_KMS_KIND');
     expect(() => loadBrokerConfig(env, { kind: 'gcp-kms', productionGrade: false })).toThrow('TM8_VAULT_KMS_KIND');
     expect(loadBrokerConfig(env, { kind: 'gcp-kms', productionGrade: true }).mode).toBe('production');
+  });
+  it('review F01: admits production only with the off-host gcs checkpoint sink, for a loaded or an injected config', () => {
+    const kms = { kind: 'gcp-kms' as const, productionGrade: true };
+    const env = { TM8_VAULT_MODE: 'production', TM8_VAULT_REVIEW_GATE: 'passed', TM8_VAULT_PUBLIC_ORIGIN: 'https://vault.example.com' };
+    for (const sink of [undefined, 'off', 'file']) {
+      expect(() => loadBrokerConfig({ ...env, TM8_VAULT_AUDIT_SINK: sink }, kms)).toThrow('vault broker: invalid TM8_VAULT_AUDIT_SINK');
+    }
+    const admitted = loadBrokerConfig({ ...env, TM8_VAULT_AUDIT_SINK: 'gcs' }, kms);
+    expect(admitted.auditSink).toBe('gcs');
+    // A composition root that builds its own config meets the same gate.
+    for (const auditSink of ['off', 'file'] as const) {
+      expect(() => assertBrokerConfig({ ...admitted, auditSink }, kms)).toThrow('vault broker: invalid TM8_VAULT_AUDIT_SINK');
+    }
+    expect(() => assertBrokerConfig(admitted, kms)).not.toThrow();
+    // Every earlier mode keeps the file sink.
+    for (const mode of ['dev', 'pre_review']) {
+      expect(loadBrokerConfig({ TM8_VAULT_MODE: mode, TM8_VAULT_AUDIT_SINK: 'file' }).auditSink).toBe('file');
+    }
   });
   it.each(BROKER_ENV_KNOBS.map((knob) => knob.name))('refuses an invalid %s without echoing it', (knob) => {
     const marker = 'test-only-invalid-value?private=never-echo' + (knob === 'TM8_VAULT_WEBAUTHN_RP_NAME' ? '\n' : '');
@@ -44,7 +63,7 @@ describe('broker config and closed runtime settings', () => {
   });
   it('puts capture links and WebAuthn on https only, with loopback http outside production alone (review addendum 2, C3)', () => {
     const kms = { kind: 'gcp-kms' as const, productionGrade: true };
-    const production = { TM8_VAULT_MODE: 'production', TM8_VAULT_REVIEW_GATE: 'passed' };
+    const production = { TM8_VAULT_MODE: 'production', TM8_VAULT_REVIEW_GATE: 'passed', TM8_VAULT_AUDIT_SINK: 'gcs' };
     for (const mode of ['off', 'dev', 'pre_review']) {
       expect(() => loadBrokerConfig({ TM8_VAULT_MODE: mode, TM8_VAULT_PUBLIC_ORIGIN: 'http://vault.example.com' })).toThrow('TM8_VAULT_PUBLIC_ORIGIN');
       expect(() => loadBrokerConfig({ TM8_VAULT_MODE: mode, TM8_VAULT_PUBLIC_ORIGIN: 'https://vault.example.com',

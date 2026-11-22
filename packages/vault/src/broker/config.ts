@@ -19,7 +19,7 @@ export const BROKER_ENV_KNOBS = [
   { name: 'TM8_VAULT_PRE_REVIEW_MAX_ITEMS', default: '20', meaning: 'Maximum owned live items in pre_review' },
   { name: 'TM8_VAULT_PRE_REVIEW_FILL_ORIGINS', default: '', meaning: 'Comma-separated exact test origins' },
   { name: 'TM8_VAULT_PRE_REVIEW_API_HOSTS', default: '', meaning: 'Comma-separated exact test API hosts' },
-  { name: 'TM8_VAULT_AUDIT_SINK', default: 'off', meaning: 'off, file or gcs checkpoint sink' },
+  { name: 'TM8_VAULT_AUDIT_SINK', default: 'off', meaning: 'off, file or gcs checkpoint sink; production requires gcs (review F01)' },
 ] as const;
 
 export class BrokerConfigError extends Error {
@@ -71,6 +71,8 @@ export function assertBrokerConfig(config: BrokerConfig, kms?: Pick<KmsProvider,
   if (config.mode === 'production') {
     if (config.reviewGate !== 'passed') invalid('TM8_VAULT_REVIEW_GATE');
     if (!kms?.productionGrade || kms.kind === 'local-dev') invalid('TM8_VAULT_KMS_KIND');
+    // Review F01: the audit anchor must live off the broker's host, so neither off nor file.
+    if (config.auditSink !== 'gcs') invalid('TM8_VAULT_AUDIT_SINK');
   }
 }
 

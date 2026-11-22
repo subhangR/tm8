@@ -193,7 +193,13 @@ describe('broker composition root: static refusals', () => {
     [{ TM8_VAULT_REVIEW_GATE: 'passed' }, 'TM8_VAULT_KMS_KIND'],
     [{ TM8_VAULT_REVIEW_GATE: 'passed', TM8_VAULT_KMS_KIND: 'local-dev' }, 'TM8_VAULT_KMS_KIND'],
     [{ TM8_VAULT_REVIEW_GATE: 'passed', TM8_VAULT_KMS_KIND: 'gcp-kms' }, 'TM8_VAULT_AUDIT_SINK'],
-    [{ TM8_VAULT_REVIEW_GATE: 'passed', TM8_VAULT_KMS_KIND: 'gcp-kms', TM8_VAULT_AUDIT_SINK: 'file' }, 'TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION'],
+    // Review F01 (builder-side F01-1): a file sink lives on the broker's host, so production refuses it
+    // even when every other prerequisite holds.
+    [{ TM8_VAULT_REVIEW_GATE: 'passed', TM8_VAULT_KMS_KIND: 'gcp-kms', TM8_VAULT_AUDIT_SINK: 'file' }, 'TM8_VAULT_AUDIT_SINK'],
+    [{ TM8_VAULT_REVIEW_GATE: 'passed', TM8_VAULT_KMS_KIND: 'gcp-kms', TM8_VAULT_AUDIT_SINK: 'file',
+      TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION: keyVersionName, TM8_VAULT_LOCAL_KEK_FILE: undefined, ...LISTENER,
+      [PIN]: 'ab'.repeat(32) }, 'TM8_VAULT_AUDIT_SINK'],
+    [{ TM8_VAULT_REVIEW_GATE: 'passed', TM8_VAULT_KMS_KIND: 'gcp-kms', TM8_VAULT_AUDIT_SINK: 'gcs' }, 'TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION'],
     [{ TM8_VAULT_REVIEW_GATE: 'passed', TM8_VAULT_KMS_KIND: 'gcp-kms', TM8_VAULT_AUDIT_SINK: 'gcs',
       TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION: keyVersionName }, 'TM8_VAULT_LOCAL_KEK_FILE'],
     [{ TM8_VAULT_REVIEW_GATE: 'passed', TM8_VAULT_KMS_KIND: 'gcp-kms', TM8_VAULT_AUDIT_SINK: 'gcs',
@@ -609,13 +615,13 @@ else describe('broker composition root over Postgres', () => {
       return port;
     }
     /**
-     * KMS and a checkpoint bucket that already carries a retention policy (review F01). `objects` is what the
-     * bucket retains; the checkpoint key's private half is exposed only so a test can plant a signed anchor.
+     * KMS and a checkpoint bucket that already carries a locked retention policy (review F01). `objects` is what
+     * the bucket retains; the checkpoint key's private half is exposed only so a test can plant a signed anchor.
      */
     async function googleFake(options: { retention?: Record<string, unknown> | null; objects?: Map<string, Buffer> } = {}) {
       const signing = generateKeyPairSync('ed25519');
       const pem = signing.publicKey.export({ type: 'spki', format: 'pem' }).toString();
-      const retention = options.retention === undefined ? { retentionPeriod: '86400', isLocked: false } : options.retention;
+      const retention = options.retention === undefined ? { retentionPeriod: '86400', isLocked: true } : options.retention;
       const objects = options.objects ?? new Map<string, Buffer>();
       const listPath = `/storage/v1/b/${bucket}/o`;
       const server = await fake((req, res) => {
@@ -712,14 +718,18 @@ else describe('broker composition root over Postgres', () => {
       expect(broker.server.refusedPeers).toBe(1);
     }, 30_000);
 
-    it('review F01: refuses a checkpoint bucket with no retention policy, or one it cannot read, and never writes one', async () => {
+    it('review F01: refuses a checkpoint bucket with no retention policy, an unlocked one, or one it cannot read, and never writes one', async () => {
       const h = await database();
       const dir = await temporary();
       await writeRelayKey(dir);
       await certificates(dir);
       const port = await freePort();
       const role = await loginRole(h, 'tm8_vault_broker');
-      for (const [retention, logged] of [[null, { ok: true, retention: 'none' }], [{ isLocked: 'yes' }, { ok: false, retention: 'unknown' }]] as const) {
+      // Builder-side F01-2: a bucket admin can shorten or remove an unlocked policy and then delete newer checkpoints.
+      for (const [retention, logged] of [[null, { ok: true, retention: 'none' }],
+        [{ retentionPeriod: '86400', isLocked: false }, { ok: true, retention: 'unlocked' }],
+        [{ retentionPeriod: '86400' }, { ok: true, retention: 'unlocked' }],
+        [{ isLocked: 'yes' }, { ok: false, retention: 'unknown' }]] as const) {
         const google = await googleFake({ retention });
         const records: Record<string, unknown>[] = [];
         const error = await composeBroker(productionEnv(dir, role, port), { gcp: { tokens, kmsBaseUrl: google.baseUrl, gcsBaseUrl: google.baseUrl }, hostProc: hardenedHost(),
