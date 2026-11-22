@@ -7,6 +7,7 @@ import { catalogProblems, matchOperation, type ConnectorOperation } from '../../
 import { buildCanarySet } from '../../src/canary/index.js';
 import { SecretMaterial } from '../../src/secret-material.js';
 import { EgressRefusal, type ApiRequestBody, type ApiRequestSpec, type BrokerPolicy, type EgressRefusalCode, type HttpMethod } from '../../src/types.js';
+import { zodNodes } from '../support/zod-walk.js';
 
 // Independent review F02: a connector policy used to mean "the vendor's hosts minus a path deny
 // list", so the owner's prefix decided everything else and any body went through. These tests
@@ -442,18 +443,25 @@ describe('a connector template without vetted operations is enforced as generic 
   });
 });
 
-/** Object schemas that accept keys they do not name. Records are data (tool schemas, metadata, content). */
-function looseObjects(schema: z.ZodTypeAny, path = '$'): string[] {
-  if (schema instanceof z.ZodObject) {
-    const shape = schema.shape as Record<string, z.ZodTypeAny>;
-    return [...(schema._def.unknownKeys === 'strict' ? [] : [path]), ...Object.entries(shape).flatMap(([key, value]) => looseObjects(value, `${path}.${key}`))];
-  }
-  if (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable) return looseObjects(schema._def.innerType, path);
-  if (schema instanceof z.ZodArray) return looseObjects(schema._def.type, `${path}[]`);
-  if (schema instanceof z.ZodUnion) return (schema._def.options as z.ZodTypeAny[]).flatMap((option, index) => looseObjects(option, `${path}|${index}`));
-  if (schema instanceof z.ZodEffects) return looseObjects(schema._def.schema, path);
-  return [];
+/**
+ * Object schemas that accept keys they do not name, anywhere in a schema: not strict, or with a catchall.
+ * Records are data (tool schemas, metadata, content): their keys are free, but an object inside one must
+ * still be strict. The walk is the full one in support/zod-walk.ts, which also goes into record values,
+ * discriminated unions, intersections, tuples, lazy, default and pipeline schemas (builder-side review,
+ * NOT CHECKED item; the walk here used to stop at objects, optionals, arrays, unions and effects).
+ */
+function looseObjects(schema: z.ZodTypeAny): string[] {
+  return zodNodes(schema).filter(({ typeName, schema: node }) => typeName === 'ZodObject'
+    && ((node._def as { unknownKeys?: string }).unknownKeys !== 'strict'
+      || (node._def as { catchall?: z.ZodTypeAny }).catchall?._def?.typeName !== 'ZodNever')).map(({ path }) => path || '$');
 }
+
+/** The zod types a JSON body schema may use: containers `zodNodes` walks into, and leaves that hold no schema. Any
+ * other type fails the sweep until someone checks it cannot hide an object (a promise or a function could). */
+const WALKED_ZOD_TYPES: ReadonlySet<string> = new Set(['ZodObject', 'ZodArray', 'ZodSet', 'ZodRecord', 'ZodMap', 'ZodOptional',
+  'ZodNullable', 'ZodDefault', 'ZodCatch', 'ZodReadonly', 'ZodBranded', 'ZodEffects', 'ZodPipeline', 'ZodLazy', 'ZodUnion',
+  'ZodDiscriminatedUnion', 'ZodIntersection', 'ZodTuple', 'ZodString', 'ZodNumber', 'ZodBigInt', 'ZodBoolean', 'ZodDate',
+  'ZodLiteral', 'ZodEnum', 'ZodNativeEnum', 'ZodNull', 'ZodUndefined', 'ZodUnknown', 'ZodAny', 'ZodNever']);
 
 describe('connector catalogs', () => {
   it.each(Object.keys(CONNECTORS))('%s has a sound, non-empty operation list', (id) => {
@@ -467,8 +475,28 @@ describe('connector catalogs', () => {
     }
     // The broker sends the agent's value, so a schema that strips an unknown key would send a key it never checked.
     for (const operation of connector.operations!) {
-      if (operation.body?.kind === 'json') expect(looseObjects(operation.body.schema as z.ZodTypeAny), operation.id).toEqual([]);
+      if (operation.body?.kind !== 'json') continue;
+      const schema = operation.body.schema as z.ZodTypeAny;
+      expect(looseObjects(schema), operation.id).toEqual([]);
+      expect(zodNodes(schema).map(({ typeName }) => typeName).filter((typeName) => !WALKED_ZOD_TYPES.has(typeName)), operation.id).toEqual([]);
     }
+  });
+
+  it('the strictness sweep finds a loose object wherever a schema nests it', () => {
+    const strict = z.object({ k: z.string() }).strict();
+    const loose = z.object({ k: z.string() });
+    const hidden: [string, z.ZodTypeAny][] = [
+      ['top level', loose], ['a passthrough object', strict.passthrough()], ['a catchall', strict.catchall(z.string())],
+      ['an object field', z.object({ inner: loose }).strict()], ['an optional', z.object({ inner: loose.optional() }).strict()],
+      ['an array', z.array(loose)], ['a union', z.union([strict, loose])], ['a record value', z.record(loose)],
+      ['a map value', z.map(z.string(), loose)], ['a discriminated union',
+        z.discriminatedUnion('k', [z.object({ k: z.literal('a') }).strict(), z.object({ k: z.literal('b') })])],
+      ['an intersection', z.intersection(strict, loose)], ['a tuple', z.tuple([strict, loose])], ['a tuple rest', z.tuple([strict]).rest(loose)],
+      ['a lazy schema', z.lazy(() => loose)], ['a default', loose.default({ k: 'x' })], ['a refinement', loose.refine(() => true)],
+      ['a pipeline', z.string().pipe(z.unknown()).pipe(loose)],
+    ];
+    for (const [name, schema] of hidden) expect(looseObjects(schema), name).not.toEqual([]);
+    for (const schema of [strict, z.record(strict), z.array(strict), z.record(z.unknown()), z.lazy(() => strict)]) expect(looseObjects(schema)).toEqual([]);
   });
 
   it('names each broken rule', () => {
