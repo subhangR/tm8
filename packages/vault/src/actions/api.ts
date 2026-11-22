@@ -1,8 +1,10 @@
+import { createHash } from 'node:crypto';
 import type { VaultCallApiResult } from '@tm8/contract';
-import { VaultError, type ItemRecord, type SecretVersionRecord, type VaultHandler } from '../core-types.js';
+import { VaultError, type ItemRecord, type PolicyRecord, type SecretVersionRecord, type VaultHandler } from '../core-types.js';
 import { decryptSecretVersion, VaultCryptoError } from '../crypto/aead.js';
 import { KmsRefusedError, KmsUnavailableError } from '../crypto/kms.js';
 import { enforcedMode } from '../egress/connectors.js';
+import { canonicalJson } from '../intent/hash.js';
 import { SecretMaterial } from '../secret-material.js';
 import { EgressRefusal, type ApiRequestSpec, type ApiResponseOutcome, type BrokerPolicy } from '../types.js';
 import {
@@ -10,6 +12,20 @@ import {
   metadataText, refuseCanaryInput, replay, requestApproval, reserve, storedResult,
   transaction, usableApproval, useParams, type ActionIntent,
 } from './common.js';
+
+/**
+ * A digest of everything a stored policy lets a request do: its mode, connector, hosts, methods, path prefixes,
+ * size limits and key injection (builder-side review F02-1). A per-use approval binds it with the policy's
+ * version, so an approval never authorizes a request under a policy that changed in any of them, nor under a
+ * policy saved again unchanged, and does not depend on version numbers never repeating. The JSON round trip
+ * drops absent optional fields, so every store gives one policy the same digest.
+ */
+export function policyDigest(policy: Pick<PolicyRecord, 'mode' | 'connector' | 'hosts' | 'methods' | 'pathPrefixes'
+  | 'maxRequestBytes' | 'maxResponseBytes' | 'injection'>): string {
+  const { mode, connector, hosts, methods, pathPrefixes, maxRequestBytes, maxResponseBytes, injection } = policy;
+  const content: unknown = JSON.parse(JSON.stringify({ mode, connector, hosts, methods, pathPrefixes, maxRequestBytes, maxResponseBytes, injection }));
+  return createHash('sha256').update(`tm8-vault-policy|v1|${canonicalJson(content)}`, 'utf8').digest('hex');
+}
 
 /** Parsing for approval display and grant selection only. The executor is the sole validator. */
 function destination(request: ApiRequestSpec): { host: string; path: string } | null {
@@ -52,9 +68,12 @@ export const callApi: VaultHandler<'vault.callApi'> = async (ctx, { params, inpu
     if (eligible !== null && eligible.length === 0) code = 'grant_constraint';
     // The mode the policy runs in and where the key goes are bound too (brief addendum 5): the owner
     // sees a generic, weaker mode before approving, and an approval never carries across a change.
+    // So are the connector and the policy itself, as stored, by version and digest (builder-side review F02-1).
     const bound = { ...useParams(ctx, item.id, 'call_api', intent.intentHash),
       host, method: input.request.method, path: parsed?.path ?? null,
-      policyMode: policy ? enforcedMode(policy) : null, keyInjection: policy?.injection.kind ?? null };
+      policyMode: policy ? enforcedMode(policy) : null, keyInjection: policy?.injection.kind ?? null,
+      connector: storedPolicy?.connector ?? null, policyVersion: storedPolicy?.version ?? null,
+      policyDigest: storedPolicy ? policyDigest(storedPolicy) : null };
     if (parsed) metadataText(ctx, parsed.path);
     const needUse = eligible !== null && eligible.length > 0 && eligible.every((grant) => grant.constraints.requireApprovalPerUse);
     const approval = needUse && code === null ? await usableApproval(tx, item.id, 'use', bound) : null;

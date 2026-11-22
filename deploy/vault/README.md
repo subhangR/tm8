@@ -604,6 +604,10 @@ on `01a1fa87` holds the full set with severities. The headline items:
       grant form, and each per-use API approval, above Approve.
     - Each per-use API approval binds the mode the policy runs in (`enforcedMode`) and where the
       key goes. So an approval given under one mode never authorizes a request under the other.
+    - It also binds the connector and the stored policy itself, by version and by a digest of
+      every rule the policy sets (`policyDigest`; builder-side review F02-1). Any policy change,
+      or the same policy saved again, needs a new approval. The digest does not cover a
+      connector template's operations, which change only with the code.
     - A stored connector policy whose template lists no vetted operations is bound as generic,
       and the item's API policy shows it as generic too. `vault.policies.set` refuses to store
       one, and a test fails if a built-in template loses its operations.

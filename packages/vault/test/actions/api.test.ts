@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
+import { policyDigest } from '../../src/actions/api.js';
 import { createBrokerCoreHandlers } from '../../src/broker/handlers/index.js';
 import { CONNECTORS, createEgressExecutor, enforcedMode, type ConnectorRegistry, type EgressTransport } from '../../src/egress/index.js';
 import { buildCanarySet } from '../../src/canary/index.js';
@@ -156,6 +157,76 @@ describe('agent API actions', () => {
     expect(execute.mock.calls[0]![0].policy).toMatchObject({ mode: 'generic', connector: null });
     const { data: unused } = await invoke(broker, 'vault.approvals.get', { approvalId: first.data.approvalId }, {});
     expect(unused).toMatchObject({ state: 'approved', consumedAt: null });
+  });
+
+  // Builder-side review F02-1: an approval given under one connector policy never authorizes the same request
+  // after the policy changes, even when the host, method, path, mode and injection all stay the same.
+  it('builder-side review F02-1: binds the connector and the policy by version and digest, so no approval outlives a policy change', async () => {
+    const { broker, execute } = harness();
+    const github = CONNECTORS.github!;
+    const vetted: PolicyInput = { ...policyInput, mode: 'connector', connector: 'github', hosts: [...github.hosts],
+      pathPrefixes: ['/user'], injection: github.injection };
+    const item = await apiKey(broker, vetted);
+    await share(broker, item.id, otherCaller, { hosts: null, origins: null, requireApprovalPerUse: true });
+    const request: ApiRequestSpec = { method: 'GET', url: 'https://api.github.com/user' };
+    const ask = async () => (await invoke(broker, 'vault.callApi', { itemId: item.id }, apiInput({ request }), { caller: otherCaller })).data;
+    const first = await ask();
+    if (first.state !== 'approval_required') throw new Error('expected approval');
+    const { data: underV1 } = await approve(broker, first.approvalId);
+    // Looser rules for the same host, method and path: more prefixes and a larger body.
+    const looser: PolicyInput = { ...vetted, pathPrefixes: ['/user', '/repos'], maxRequestBytes: vetted.maxRequestBytes * 2 };
+    await setPolicy(broker, item.id, looser);
+    const second = await ask();
+    if (second.state !== 'approval_required') throw new Error('expected a new approval under the looser policy');
+    expect(second.approvalId).not.toBe(first.approvalId);
+    // Saved back exactly as it was: the digest matches the first approval's again, the version does not.
+    await setPolicy(broker, item.id, vetted);
+    const third = await ask();
+    if (third.state !== 'approval_required') throw new Error('expected a new approval under the policy saved again');
+    expect(new Set([first.approvalId, second.approvalId, third.approvalId]).size).toBe(3);
+    expect(execute).not.toHaveBeenCalled();
+    // What each approval is bound to, as the owner sees it.
+    expect(underV1.boundParams).toMatchObject({ policyMode: 'connector', keyInjection: 'bearer', host: 'api.github.com', path: '/user',
+      connector: 'github', policyVersion: 1, policyDigest: policyDigest(vetted) });
+    expect(underV1.boundParams.policyDigest).toMatch(/^[a-f0-9]{64}$/);
+    const { data: underV2 } = await invoke(broker, 'vault.approvals.get', { approvalId: second.approvalId }, {});
+    expect(underV2.boundParams).toMatchObject({ policyMode: 'connector', connector: 'github', policyVersion: 2, policyDigest: policyDigest(looser) });
+    expect(underV2.boundParams.policyDigest).not.toBe(underV1.boundParams.policyDigest);
+    expect(underV2.intentHash).not.toBe(underV1.intentHash);
+    const { data: underV3 } = await invoke(broker, 'vault.approvals.get', { approvalId: third.approvalId }, {});
+    expect(underV3.boundParams).toMatchObject({ policyVersion: 3, policyDigest: underV1.boundParams.policyDigest });
+    await approve(broker, third.approvalId);
+    expect((await ask()).state).toBe('done');
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0]![0].policy).toMatchObject({ version: 3, connector: 'github', pathPrefixes: ['/user'] });
+    const { data: unused } = await invoke(broker, 'vault.approvals.get', { approvalId: first.approvalId }, {});
+    expect(unused).toMatchObject({ state: 'approved', consumedAt: null });
+  });
+
+  it('builder-side review F02-1: the policy digest covers every rule a policy sets, and nothing else', () => {
+    const base = { mode: 'connector', connector: 'github', hosts: ['api.github.com'], methods: ['GET'], pathPrefixes: ['/user'],
+      maxRequestBytes: 4096, maxResponseBytes: 4096, injection: { kind: 'header', name: 'x-test-key', prefix: 'Key' } } as const;
+    const digest = policyDigest(base);
+    expect(digest).toMatch(/^[a-f0-9]{64}$/);
+    // Key order, copies, and a record's other fields leave it unchanged.
+    const reordered = { injection: { prefix: 'Key', name: 'x-test-key', kind: 'header' }, maxResponseBytes: 4096, maxRequestBytes: 4096,
+      pathPrefixes: ['/user'], methods: ['GET'], hosts: ['api.github.com'], connector: 'github', mode: 'connector' } as const;
+    expect(policyDigest(reordered)).toBe(digest);
+    expect(policyDigest({ ...base, version: 9, itemId: 'test-only', createdAt: '2026-01-01T00:00:00.000Z' } as typeof base)).toBe(digest);
+    // An absent optional field and one stored as undefined are the same policy.
+    const bearer = { ...base, injection: { kind: 'bearer' } } as const;
+    expect(policyDigest({ ...base, injection: { kind: 'bearer', prefix: undefined } as unknown as typeof bearer.injection })).toBe(policyDigest(bearer));
+    // Every rule changes it.
+    const changed = [
+      { ...base, mode: 'generic' }, { ...base, connector: null }, { ...base, connector: 'openai' },
+      { ...base, hosts: ['api.github.com', 'uploads.github.com'] }, { ...base, methods: ['GET', 'POST'] },
+      { ...base, pathPrefixes: ['/user', '/repos'] }, { ...base, pathPrefixes: ['/'] },
+      { ...base, maxRequestBytes: 4097 }, { ...base, maxResponseBytes: 4097 },
+      { ...base, injection: { ...base.injection, prefix: 'Bearer' } }, { ...base, injection: { ...base.injection, name: 'x-other-key' } },
+      bearer, { ...base, injection: { kind: 'query', name: 'x-test-key' } },
+    ] as const;
+    const digests = changed.map((policy) => policyDigest(policy as Parameters<typeof policyDigest>[0]));
+    expect(new Set([digest, ...digests]).size).toBe(changed.length + 1);
   });
 
   it.each([
