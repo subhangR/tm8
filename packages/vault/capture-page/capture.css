@@ -1,0 +1,47 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; color: #17232c; background: #f0f3f2; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; line-height: 1.55; }
+.vault-shell { width: min(100% - 2rem, 48rem); margin: 3rem auto; }
+.vault-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+.wordmark { font-size: 2rem; font-weight: 800; letter-spacing: -.08em; }
+.wordmark-dot { color: #247d62; }
+.vault-label { font-size: .85rem; font-weight: 600; color: #435c54; }
+#vault-page { background: #fff; border: 1px solid #d6dfda; border-radius: 1rem; padding: clamp(1.25rem, 4vw, 2.5rem); box-shadow: 0 .5rem 2rem #20382a08; }
+h1 { margin: 0 0 .5rem; font-size: 1.8rem; line-height: 1.2; letter-spacing: -.035em; }
+h2 { font-size: 1.2rem; }
+p { margin: .75rem 0; }
+.description, .hint, footer { color: #52645d; font-size: .9rem; }
+.notice { border-left: 3px solid #d78a23; background: #fff7e9; padding: .7rem 1rem; }
+.status { min-height: 1.6em; }
+.status[data-error="true"] { color: #9c2c26; }
+.countdown { font-variant-numeric: tabular-nums; font-size: .85rem; color: #52645d; }
+form { display: grid; gap: 1rem; margin-top: 1.25rem; }
+.field { display: grid; gap: .35rem; font-size: .9rem; font-weight: 600; }
+input, textarea, select, button { font: inherit; }
+input, textarea, select { width: 100%; border: 1px solid #b8c8bf; border-radius: .45rem; background: #fff; color: inherit; padding: .7rem .8rem; font-weight: 400; }
+input[type="checkbox"] { width: 1.15rem; height: 1.15rem; }
+textarea { min-height: 7rem; resize: vertical; }
+input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible { outline: 3px solid #82bfa9; outline-offset: 2px; }
+button { border: 1px solid transparent; border-radius: .45rem; padding: .75rem 1rem; font-weight: 650; cursor: pointer; color: #fff; background: #216b53; }
+button.secondary { color: #254b3d; background: transparent; border-color: #b8c8bf; }
+button:disabled, input:disabled, select:disabled, textarea:disabled { cursor: default; opacity: .6; }
+.actions { display: flex; gap: .75rem; flex-wrap: wrap; }
+fieldset { border: 1px solid #d6dfda; border-radius: .6rem; padding: 1rem; margin: 0; display: grid; gap: .8rem; min-width: 0; }
+legend { padding: 0 .3rem; font-weight: 650; overflow-wrap: anywhere; }
+.identity-row { display: grid; gap: .75rem; }
+.include-label { display: flex; align-items: center; gap: .6rem; }
+.metadata { font-size: .85rem; overflow-wrap: anywhere; }
+.metadata ul { padding-left: 1.25rem; }
+footer { text-align: center; margin: 1.5rem 1rem; }
+[hidden] { display: none !important; }
+@media (max-width: 36rem) { .vault-shell { margin: 1rem auto; } h1 { font-size: 1.5rem; } .actions button { flex: 1; } }
+@media (prefers-color-scheme: dark) {
+  :root { background: #111b17; color: #e3ece7; }
+  #vault-page { background: #18261f; border-color: #344b3e; }
+  .description, .hint, footer, .countdown, .vault-label { color: #afc3b6; }
+  input, textarea, select { background: #111d16; border-color: #4c6857; }
+  fieldset { border-color: #344b3e; }
+  button.secondary { color: #d1e4d8; border-color: #4c6857; }
+  .notice { background: #352a18; }
+  .status[data-error="true"] { color: #ffafa5; }
+}

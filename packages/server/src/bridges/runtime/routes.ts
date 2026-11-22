@@ -28,6 +28,8 @@ import type { Db, DbClaims } from '../../db/types.js';
 import { readJsonBody } from '../../http/body.js';
 import { sendWireError } from '../../http/errors.js';
 import type { IdentityResolver, RequestIdentity } from '../../http/types.js';
+import { guardInboundFrame, type PasteGuard, type PasteKind } from '../../vault/paste-guard.js';
+import { postBridgeNotice } from '../outbox.js';
 import type { BridgeCommandHook } from './command-hook.js';
 import type { BridgeRuntimeHub } from './hub.js';
 
@@ -76,6 +78,12 @@ export interface BridgeRuntimeRouteOptions {
   /** A media frame carries base64 bytes; everything else is small. */
   readonly maxBodyBytes?: number;
   readonly log?: (line: string) => void;
+  /**
+   * Secure Vault's chat paste guard, present only with TM8_VAULT_PASTE_GUARD=on (vault/paste-guard.ts).
+   * A person's message (not a bot's) is stored with its secret-shaped text redacted, and tm8 answers
+   * it in the chat with a notice to rotate. Absent changes nothing.
+   */
+  readonly pasteGuard?: PasteGuard;
 }
 
 export type BridgeRuntimeRoute = (
@@ -85,7 +93,8 @@ export type BridgeRuntimeRoute = (
 ) => Promise<boolean>;
 
 interface InboundResult {
-  status: 'stored' | 'duplicate' | 'refused' | 'ignored';
+  /** `edited` and `deleted` answer an edit or a delete (bridge_runtime_inbound_change). */
+  status: 'stored' | 'duplicate' | 'refused' | 'ignored' | 'edited' | 'deleted';
   messageId?: string;
   command?: boolean;
   reason?: string;
@@ -93,6 +102,23 @@ interface InboundResult {
   bridgeId?: string;
   /** 425: a routed copy for a session target, and whether that session is running. */
   targetSession?: { sessionId: string; live: boolean } | null;
+}
+
+/**
+ * The paste guard's answer in the chat: a bridge notice, threaded on the stored copy, that names the kinds
+ * removed and says the message is still with the provider. Once per message, and once per edit. It never
+ * holds up or fails the frame, which is already stored.
+ */
+function pasteNotice(o: BridgeRuntimeRouteOptions, result: InboundResult, kinds: readonly PasteKind[], key: string): void {
+  const guard = o.pasteGuard;
+  const bridgeId = result.bridgeId;
+  if (!guard || !bridgeId || !result.messageId) return;
+  void postBridgeNotice(o.db, {
+    bridgeId,
+    text: guard.bridgeNotice(kinds),
+    replyToMessageId: result.messageId,
+    idempotencyKey: `vault-paste:${bridgeId}:${key}`,
+  }).catch((err) => o.log?.(`[bridges] the paste notice on ${bridgeId} failed: ${(err as Error).message}`));
 }
 
 function claimsOf(identity: RequestIdentity, requestId: string): DbClaims {
@@ -224,13 +250,21 @@ async function handle(
  */
 async function inbound(
   o: BridgeRuntimeRouteOptions,
-  frame: InboundFrame,
+  received: InboundFrame,
   claims: DbClaims,
 ): Promise<{ status: number; body: unknown }> {
+  // Secure Vault's paste guard (MSG 6 Journey A step 3): a person's secret-shaped text is redacted
+  // before anything below stores, matches or routes the frame. The message itself stays in the chat
+  // and with the provider, so tm8 says so there once its copy is stored.
+  const guarded = o.pasteGuard ? guardInboundFrame(o.pasteGuard, received) : null;
+  const frame = guarded?.frame ?? received;
   // v4: an edit or a delete at the provider changes the stored copies (443 §5)
   // and is never a new turn: no command, no routing, no wake, no delivery.
   if ((frame.edit !== undefined && frame.edit !== null) || frame.deleted === true) {
     const changed = await o.db.rpc<InboundResult>(claims, 'bridge_runtime_inbound_change', [JSON.stringify(frame)]);
+    if (guarded && guarded.kinds.length > 0 && changed.status === 'edited') {
+      pasteNotice(o, changed, guarded.kinds, `${frame.externalMessageId}:edit:${frame.edit?.editedAt ?? 0}`);
+    }
     return { status: changed.status === 'refused' ? 409 : 200, body: changed };
   }
   // v4: the sender's provider email links them to a member (443 §4) in this
@@ -261,6 +295,9 @@ async function inbound(
     }
     return q.rpc<InboundResult>('bridge_runtime_inbound', [JSON.stringify(stored), command]);
   });
+  if (guarded && guarded.kinds.length > 0 && result.status === 'stored') {
+    pasteNotice(o, result, guarded.kinds, frame.externalMessageId);
+  }
   if (result.status === 'stored' && result.command && result.messageId && hook) {
     const messageId = result.messageId;
     void hook.run(messageId).catch((err) => o.log?.(`[bridges] command ${messageId} failed: ${(err as Error).message}`));

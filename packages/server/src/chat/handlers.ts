@@ -36,6 +36,7 @@ import type { ChatOrchestrator } from './orchestrator.js';
 import { refuseChatRuntimeBearer } from './scope.js';
 import { stampChatTurnTeam } from './turn-team.js';
 import type { DbClaims } from '../db/types.js';
+import { guardChatStart, type PasteGuard } from '../vault/paste-guard.js';
 
 export interface ChatHandlerDeps {
   readonly orchestrator: ChatOrchestrator;
@@ -98,9 +99,13 @@ function configurationResult(stored: SetChatModelResult): SetChatModelResult {
   };
 }
 
-function startChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler {
+function startChat(facade: FacadeDeps, chat?: ChatHandlerDeps, pasteGuard?: PasteGuard): OperationHandler {
   return async (ctx) => {
-    const input = ctx.body as StartChatInput;
+    // Secure Vault's paste guard (TM8_VAULT_PASTE_GUARD=on, vault/paste-guard.ts): secret-shaped text in
+    // the opening message or the title is redacted before anything stores or reads it. chat.start is
+    // people-only, so every start is a person's text.
+    const guarded = pasteGuard ? guardChatStart(pasteGuard, ctx.body as StartChatInput) : null;
+    const input = guarded?.input ?? (ctx.body as StartChatInput);
     const model = admittedModel(input.model, input.reasoningEffort);
     const owner = await facade.owner();
     const requestClaims = claimsFor(owner, ctx);
@@ -191,7 +196,11 @@ function startChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler
       return { chat: chatSummary as EntitySummary, messageId: stored.messageId, id: stored.chatId };
     });
 
-    const result: StartChatResult = { chat: summary.chat, messageId: summary.messageId };
+    const result: StartChatResult = {
+      chat: summary.chat,
+      messageId: summary.messageId,
+      ...(guarded?.warning ? { warnings: [guarded.warning] } : {}),
+    };
     queueMicrotask(() => {
       void chat.orchestrator.wake(summary.id, requesterIdentityId);
     });
@@ -439,9 +448,10 @@ export function registerChatHandlers(
   registry: HandlerRegistry,
   facade: FacadeDeps,
   chat?: ChatHandlerDeps,
+  pasteGuard?: PasteGuard,
 ): void {
   registry.registerAll({
-    'chat.start': humanOnly(startChat(facade, chat)),
+    'chat.start': humanOnly(startChat(facade, chat, pasteGuard)),
     'chat.setModel': humanOnly(setChatModel(facade, chat)),
     'chat.setCredentials': humanOnly(setChatCredentials(facade, chat)),
     'chat.interrupt': humanOnly(interruptChat(facade, chat)),

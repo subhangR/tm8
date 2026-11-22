@@ -91,6 +91,7 @@ export const SETTINGS_NAV_GROUPS: readonly SettingsNavGroupDef[] = [
              so it is an ACCOUNT row — it is minted outside any one Space, and a
              Space admin cannot revoke it (§5.5: their lever is the membership). */
           space('mcp-tokens', { keywords: ['token', 'claude desktop', 'cursor', 'external client', 'bearer'] }),
+          space('vault', { keywords: ['vault', 'passwords', 'secrets', 'api key', 'passkey', 'card', 'fill'] }),
           space('space-links', { keywords: ['links', 'other spaces', 'connect space'] }),
           space('models', { scope: 'browser', keywords: ['model', 'llm', 'catalog', 'launch'] }),
         ],

@@ -1,0 +1,42 @@
+{
+  "name": "@tm8/vault",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "description": "tm8 Secure Vault: write-only secrets, KMS envelope encryption, broker, egress, approvals and tamper-evident audit.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./relay": {
+      "types": "./dist/relay/index.d.ts",
+      "default": "./dist/relay/index.js"
+    },
+    "./paste": {
+      "types": "./dist/paste/index.d.ts",
+      "default": "./dist/paste/index.js"
+    },
+    "./capture-page/index.html": "./capture-page/index.html"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@simplewebauthn/server": "14.1.0",
+    "@tm8/contract": "workspace:*",
+    "@tm8/integrations": "workspace:*",
+    "hash-wasm": "4.13.0",
+    "playwright-core": "1.58.2",
+    "zod": "^3.23.0",
+    "pg": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "jsdom": "28.1.0",
+    "typescript": "^5.5.0",
+    "vitest": "^4.1.11",
+    "@types/pg": "8.20.0"
+  }
+}

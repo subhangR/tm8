@@ -1,0 +1,15 @@
+{
+  "//": "Test-file typecheck gate. vitest compiles test/** but does not typecheck it, and tsconfig.json includes only src, so without this config a type error in a test or in test/support/kit.ts is invisible. Run: npx tsc -p tsconfig.test.json. It emits nothing; @tm8/contract and @tm8/integrations resolve to their built dist, so run `npx tsc -b` first.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["node"]
+  },
+  "include": ["src", "test"],
+  "exclude": []
+}

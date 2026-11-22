@@ -92,6 +92,7 @@ import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileH
 import { createHttpClient, type FetchLike, type SpaceSessionPort } from './http';
 import { chatTurnFrameFromWire, type WireChatTurnFrame } from '../../chat-home/wire';
 import { createOps } from './ops';
+import { surfacePasteWarning } from '../../vault/paste-warning';
 import {
   createConnectionManager,
   type ConnectionConfig,
@@ -524,8 +525,10 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       addToCollection: (collectionId, input) => ops.addToCollection(collectionId, input),
       removeFromCollection: (collectionId, entityId, ctx) =>
         ops.removeFromCollection(collectionId, entityId, ctx),
-      postMessage: (input) => ops.postMessage(input),
-      startChat: (input) => ops.startChat(input),
+      /* Secure Vault's paste guard may answer a warning that it removed secret-shaped text before
+         storing the message; the sender has to see it (vault/paste-warning.ts). */
+      postMessage: (input) => ops.postMessage(input).then(surfacePasteWarning),
+      startChat: (input) => ops.startChat(input).then(surfacePasteWarning),
       setChatCredentials: (chatId, input) => ops.setChatCredentials(chatId, input),
       interruptChat: (chatId) => ops.interruptChat(chatId),
       setChatModel: (chatId, input) => ops.setChatModel(chatId, input),

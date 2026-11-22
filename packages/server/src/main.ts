@@ -106,6 +106,10 @@ import type { RemoteSpaceLinkRoute } from './facade/handlers/w2/space-link-remot
 import { directoryTargetResolver } from './remote/directory-resolver.js';
 import { createW2FileUploadRoute } from './http/w2-file-upload.js';
 import { createClipboardUploadRoute } from './http/clipboard-upload.js';
+import { createVaultCapturePage } from './vault/capture-page.js';
+import { vaultPasteGuardFromEnv, vaultRelayConfigFromEnv } from './vault/config.js';
+import { createPasteGuard } from './vault/paste-guard.js';
+import { createVaultRelay } from './vault/relay.js';
 import { createVoiceWebhookRoute } from './http/voice-webhook.js';
 import { ConnectionAuthRelay, lazyRuntimeLink } from './bridges/connection-auth.js';
 import { InMemoryVoiceRosterStore } from './voice/roster.js';
@@ -568,6 +572,15 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * which the runtime's inbound route and the watchdog's sweep read; without
    * it nothing a group sends is a command.
    */
+  /**
+   * Secure Vault's chat paste guard (MSG 6 Journey A step 3; vault/paste-guard.ts), read once
+   * here. TM8_VAULT_PASTE_GUARD=off, the default, builds nothing and every message is stored as
+   * sent; any value but off or on refuses to boot. On, secret-shaped text a person sends through
+   * messages.post, messages.edit, chat.start or a bridged chat is redacted before it is stored.
+   */
+  const pasteGuardConfig = vaultPasteGuardFromEnv(process.env);
+  const pasteGuard = pasteGuardConfig ? createPasteGuard(pasteGuardConfig) : undefined;
+  if (pasteGuardConfig) console.info(`[tm8] vault paste guard on (vault ${pasteGuardConfig.vaultAvailable ? 'on' : 'off'})`);
   // 426: set once the runtime hub below exists; the group port reads it per command.
   let bridgeHubRef: BridgeRuntimeHub | undefined;
   const bridgeCommandExecutor = db && execution
@@ -675,6 +688,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           }
         : {}),
       ...(chat ? { chat: { orchestrator: chat, dataDir } } : {}),
+      ...(pasteGuard ? { pasteGuard } : {}),
       membership: {
         sockets: subscriptions,
         ...(execution ? { sessions: execution.spawnService } : {}),
@@ -1000,6 +1014,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         ...(bridgeDeliver ? { deliver: bridgeDeliver } : {}),
         ...(bridgeKeeper ? { keepSession: (bridgeId: string, messageId: string) => bridgeKeeper.ensure(bridgeId, messageId) } : {}),
         ...(chat ? { wakeChat: (chatId: string, identityId: string) => { void chat.wake(chatId, identityId); } } : {}),
+        ...(pasteGuard ? { pasteGuard } : {}),
         log: (line) => console.warn(line),
       })
     : undefined;
@@ -1015,6 +1030,20 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   const remoteServerProxy = db && owner
     ? createRemoteServerProxy(directoryTargetResolver(db, owner))
     : undefined;
+
+  /**
+   * Secure Vault (task 01a1fa87-dd1a, WS-A). TM8_VAULT_MODE defaults to off,
+   * and off reads no other knob: every /v2/vault call answers 503
+   * vault_disabled and /vault/capture/* answers 404, never the SPA. Any other
+   * mode refuses to boot on a missing or unsafe key file, socket or URL
+   * (vault/config.ts) rather than start a vault that cannot keep its promises.
+   */
+  const vaultRelayConfig = vaultRelayConfigFromEnv(process.env);
+  const vaultRelay = db && owner
+    ? createVaultRelay({ config: vaultRelayConfig, deps: { db, config, owner } })
+    : undefined;
+  const vaultCapturePage = createVaultCapturePage({ enabled: vaultRelayConfig !== null && vaultRelay !== undefined });
+  if (vaultRelayConfig) console.info(`[tm8] vault relay on (mode=${vaultRelayConfig.mode}, broker=${vaultRelayConfig.broker.kind})`);
 
   /**
    * The LiveKit webhook, and the FIRST PRODUCTION CALLER `publishPresence` has
@@ -1098,6 +1127,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(mcpEndpointRoute ? { mcpEndpointRoute } : {}),
     ...(remoteSpaceLinkRoute ? { remoteSpaceLinkRoute } : {}),
     ...(remoteServerProxy ? { remoteServerProxy } : {}),
+    ...(vaultRelay ? { vaultRelay } : {}),
+    vaultCapturePage,
     ...(db ? { sessionIssuedHere: (token: string) => sessionIssuedHere(db, token) } : {}),
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
   });

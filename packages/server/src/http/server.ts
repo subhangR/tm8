@@ -60,6 +60,8 @@ import {
   type RemoteServerProxy,
 } from './remote-proxy.js';
 import type { W2FileUploadRoute } from './w2-file-upload.js';
+import type { VaultCapturePage } from '../vault/capture-page.js';
+import type { VaultRelay } from '../vault/relay.js';
 import { CLIPBOARD_UPLOAD_PATH, type ClipboardUploadRoute } from './clipboard-upload.js';
 import type { RemoteSpaceLinkRoute } from '../facade/handlers/w2/space-link-remote-route.js';
 import { VOICE_WEBHOOK_PATH, type VoiceWebhookRoute } from './voice-webhook.js';
@@ -137,6 +139,18 @@ export interface FacadeServerOptions {
   readonly mcpEndpointRoute?: McpEndpointRoute;
   /** Same-origin relay for node-local named Server connections. */
   readonly remoteServerProxy?: RemoteServerProxy;
+  /**
+   * Secure Vault (WS-A): `/v2/vault/*` to the vault broker. Dispatched after
+   * identity resolution and before `readJsonBody`, because the attestation it
+   * signs digests the exact body bytes it forwards. Absent: the catalog's 404.
+   */
+  readonly vaultRelay?: VaultRelay;
+  /**
+   * Secure Vault (WS-A): the standalone capture page, `/vault/capture/*`,
+   * GET/HEAD. Ahead of the static handler, so the SPA never renders at a
+   * capture URL, whose fragment carries the capture link's key.
+   */
+  readonly vaultCapturePage?: VaultCapturePage;
   /**
    * Did this node ever issue the session id in this token, in any state? The
    * relay drops such an `Authorization` instead of forwarding it as a remote's
@@ -416,6 +430,14 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         if (await opts.mcpEndpointRoute(req, res, { requestId })) return;
       }
 
+      // Secure Vault capture page: no identity here (the page's API calls go
+      // through the relay below, which authenticates them), and AHEAD OF THE
+      // STATIC HANDLER, whose SPA fallback would otherwise answer a capture URL.
+      if (opts.vaultCapturePage?.matches(pathname)) {
+        opts.vaultCapturePage.serve(method, pathname, res, requestId);
+        return;
+      }
+
       // Static assets never get a chance to shadow the API surface: an unknown
       // `/v2/...` path is an honest `not_found`, never an index.html with a 200.
       if (!isApiPath && method === 'GET') {
@@ -442,6 +464,21 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         // W3: a gate session under enforce has no space to upload into.
         assertSpaceGate(config.spaceSessions, identity, undefined);
         if (await opts.clipboardUploadRoute(req, res, { requestId, identity })) return;
+      }
+
+      // Secure Vault: the relay admits only a member's or an agent's own
+      // session, sent as a bearer or as the session cookie (the browser's
+      // vault screens send only the cookie), and resolves the space itself.
+      // Under enforce, a gate session must enter a space first, as for the
+      // other support routes.
+      if (opts.vaultRelay?.matches(pathname)) {
+        const identity = await resolveIdentity(req.headers, {
+          remoteAddress: req.socket.remoteAddress,
+          disableAutoOwner: config.disableAutoOwner === true,
+        });
+        assertSpaceGate(config.spaceSessions, identity, undefined);
+        await opts.vaultRelay.handleHttp(req, res, { requestId, identity, url });
+        return;
       }
 
       // The named-Server relay. AFTER identity resolution, and only for a human

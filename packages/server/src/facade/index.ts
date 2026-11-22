@@ -110,6 +110,7 @@ import { registerServerHandlers } from './handlers/w2/servers.js';
 import { DisabledRemoteInvokeForwarder, type RemoteInvokeForwarder } from '../remote/forwarder.js';
 import { registerVoiceHandlers } from './handlers/voice.js';
 import { registerChatHandlers, type ChatHandlerDeps } from '../chat/handlers.js';
+import type { PasteGuard } from '../vault/paste-guard.js';
 import type { BridgeCommandHook } from '../bridges/runtime/command-hook.js';
 
 export interface RegisterFacadeHandlersDeps {
@@ -206,6 +207,12 @@ export interface RegisterFacadeHandlersDeps {
   readonly onRemoteSpaceLinkRoute?: (route: RemoteSpaceLinkRoute) => void;
   /** TM8 Chat runtime composition; absent mounts a narrowed 503 degraded mode. */
   readonly chat?: ChatHandlerDeps;
+  /**
+   * Secure Vault's chat paste guard, present only with TM8_VAULT_PASTE_GUARD=on
+   * (vault/paste-guard.ts). It reaches messages.post, messages.edit and
+   * chat.start, and reads only text a person wrote. Absent changes nothing.
+   */
+  readonly pasteGuard?: PasteGuard;
   /**
    * `launch.suggest`'s per-request choice of Jev key (the caller's own, else
    * the node's). Absent: the handler is still mounted and answers every group
@@ -359,8 +366,9 @@ export function registerFacadeHandlers(
         void deps.chat!.orchestrator.wakeForMessages(identityId, messages);
       },
     } : {}),
+    ...(deps.pasteGuard ? { pasteGuard: deps.pasteGuard } : {}),
   });
-  registerChatHandlers(registry, facade, deps.chat);
+  registerChatHandlers(registry, facade, deps.chat, deps.pasteGuard);
 
   /**
    * G12, G13 and G14 are pure additions — no operation below was registered by
