@@ -6170,6 +6170,12 @@ export interface ProjectDirectoryListing {
   separator: '/' | '\\';
   directories: ProjectDirectoryEntry[];
   truncated: boolean;
+  /**
+   * Where a project created with no folder gets its own (`<projectsHome>/<name>`):
+   * the node's `TM8_PROJECTS_HOME`, else its home. Present only when it lies
+   * inside the caller's browse roots.
+   */
+  projectsHome?: string;
 }
 
 /** One readable regular file inside a connected project's working directory. */

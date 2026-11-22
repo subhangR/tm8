@@ -85,17 +85,39 @@ export async function canonicalRoots(rawRoots = configuredRoots()): Promise<stri
  * A default is a claim about what is normal, and `/` is not the normal answer
  * to "where does your project live".
  */
-async function defaultStartPath(roots: readonly string[]): Promise<string> {
+/**
+ * The directory a project with no `workingDir` gets its own folder under:
+ * `TM8_PROJECTS_HOME` when the node sets it, else the node's home. A service
+ * account's home is often not writable (prod runs as `tm8` with HOME at the
+ * root-owned install dir), so the operator points this at a data directory.
+ */
+export function projectsHome(raw = process.env.TM8_PROJECTS_HOME, home: string = homedir()): string {
+  const configured = raw?.trim();
+  return configured ? configured : home;
+}
+
+/** `path` canonical, when it is a directory inside `roots`; else null. */
+async function containedDirectory(path: string, roots: readonly string[]): Promise<string | null> {
   try {
-    const home = await realpath(homedir());
-    if ((await stat(home)).isDirectory() && roots.some((root) => containedBy(root, home))) {
-      return home;
+    const canonical = await realpath(path);
+    if ((await stat(canonical)).isDirectory() && roots.some((root) => containedBy(root, canonical))) {
+      return canonical;
     }
   } catch {
-    // No readable home (or none configured) — the root is still a valid place
-    // to open, and a narrowed TM8_PROJECT_ROOTS lands here by design.
+    // Missing or unreadable: not a place to open.
   }
-  return roots[0]!;
+  return null;
+}
+
+/**
+ * Where the picker opens with no path: the projects home (where a project
+ * with no folder lands), else the node's home, else the first root — a
+ * narrowed TM8_PROJECT_ROOTS lands there by design.
+ */
+async function defaultStartPath(roots: readonly string[]): Promise<string> {
+  return (await containedDirectory(projectsHome(), roots))
+    ?? (await containedDirectory(homedir(), roots))
+    ?? roots[0]!;
 }
 
 export const OUTSIDE_PROJECT_ROOTS = 'project directory is outside TM8_PROJECT_ROOTS';
@@ -205,6 +227,7 @@ export async function listProjectDirectories(
     .sort((a, b) => a.name.localeCompare(b.name));
   const root = roots.find((candidate) => containedBy(candidate, current))!;
   const parent = dirname(current);
+  const home = await containedDirectory(projectsHome(), roots);
 
   return {
     roots,
@@ -213,6 +236,7 @@ export async function listProjectDirectories(
     separator: sep as '/' | '\\',
     directories: allDirectories.slice(0, MAX_PROJECT_DIRECTORIES),
     truncated: allDirectories.length > MAX_PROJECT_DIRECTORIES,
+    ...(home ? { projectsHome: home } : {}),
   };
 }
 
