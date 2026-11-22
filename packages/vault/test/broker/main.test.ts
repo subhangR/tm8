@@ -19,6 +19,7 @@ import { MemoryVaultStore } from '../../src/store/memory.js';
 import { crc32c } from '../../src/gcp/crc32c.js';
 import { VAULT_ALERTS_HEADER, decodeVaultAlerts } from '../../src/relay/alerts.js';
 import { exportAttestationKeyPair, generateAttestationKeyPair, signAttestation } from '../../src/relay/attestation.js';
+import { publicKeySha256 } from '../../src/relay/retired-keys.js';
 import { OWNER_ID, SPACE_A, fakeSecret, newLogin, otherCaller, scopeOf, testCaller } from '../support/kit.js';
 import { json, keyName, keyVersionName, loopbackSuite, tokens } from '../gcp/fake.js';
 import { PG_ENABLED, PG_REASON, pgHarness, type PgHarness } from '../store/pg-harness.js';
@@ -157,6 +158,10 @@ describe('broker composition root: static refusals', () => {
     [{ TM8_VAULT_KMS_KIND: 'vault-transit' }, 'TM8_VAULT_KMS_KIND'],
     [{ TM8_VAULT_KMS_KIND: 'test-fake' }, 'TM8_VAULT_KMS_KIND'],
     [{ TM8_VAULT_CANARY_FILE: '/nonexistent/vault-test-canaries' }, 'TM8_VAULT_CANARY_FILE'],
+    // Review F03, B2: a malformed denylist refuses in every mode, so a typo never drops an entry unseen.
+    [{ TM8_VAULT_RETIRED_KEY_SHA256: 'zz'.repeat(32) }, 'TM8_VAULT_RETIRED_KEY_SHA256'],
+    [{ TM8_VAULT_RETIRED_KEY_SHA256: `${'ab'.repeat(32)},` }, 'TM8_VAULT_RETIRED_KEY_SHA256'],
+    [{ TM8_VAULT_RETIRED_KEY_SHA256: `${'ab'.repeat(32)} ${'cd'.repeat(32)}` }, 'TM8_VAULT_RETIRED_KEY_SHA256'],
   ] as const)('refuses %j as %s with a fixed message and creates nothing', async (patch, knob) => {
     const dir = await temporary();
     const error = await refusal(composeBroker(preReviewEnv(dir, patch)));
@@ -432,6 +437,25 @@ else describe('broker composition root over Postgres', () => {
       .then(() => null, (reason: unknown) => reason);
     expect(failureMessage(error)).toBe('vault broker: refused (audit_unavailable)');
     await expect(lstat(join(dir, 'broker.sock'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('review F03, B2: refuses a relay public key on TM8_VAULT_RETIRED_KEY_SHA256 before the socket binds', async () => {
+    const h = await database();
+    const dir = await temporary();
+    await writeRelayKey(dir);
+    const fingerprint = publicKeySha256(relayPair.publicKey);
+    const records: Record<string, unknown>[] = [];
+    const error = await composeBroker(preReviewEnv(dir, { TM8_VAULT_DATABASE_URL: h.url, TM8_VAULT_RETIRED_KEY_SHA256: `${'ab'.repeat(32)},${fingerprint}` }),
+      { log: (record) => records.push(record), hostProc: hardenedHost() }).then(() => null, (reason: unknown) => reason);
+    expect(error).toBeInstanceOf(BrokerConfigError);
+    expect(failureMessage(error)).toBe('vault broker: TM8_VAULT_RELAY_PUBLIC_KEY_FILE is a retired relay key (TM8_VAULT_RETIRED_KEY_SHA256, review F03 B2)');
+    expect(JSON.stringify([records, Object.getOwnPropertyDescriptors(error)])).not.toContain(fingerprint);
+    await expect(lstat(join(dir, 'broker.sock'))).rejects.toMatchObject({ code: 'ENOENT' });
+    // The same start with the key off the list serves.
+    const broker = (await composeBroker(preReviewEnv(dir, { TM8_VAULT_DATABASE_URL: h.url, TM8_VAULT_RETIRED_KEY_SHA256: 'ab'.repeat(32) }),
+      { log: () => undefined, hostProc: hardenedHost() }))!;
+    brokers.push(broker);
+    expect((await statusOverSocket(join(dir, 'broker.sock'), true)).status).toBe(200);
   });
 
   it('review F01: a database restored to before the newest retained checkpoint is refused at start, though its own receipts agree', async () => {

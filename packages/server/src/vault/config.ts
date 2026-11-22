@@ -28,12 +28,18 @@
  * staging forgery test has passed (deploy/vault/README.md, "Relay key
  * isolation"). dev and
  * pre_review hold synthetic test secrets only.
+ *
+ * RETIRED KEYS (review F03, check R7). Every key a pre_review relay held is
+ * treated as exposed. TM8_VAULT_RETIRED_KEY_SHA256 lists their fingerprints
+ * (@tm8/vault/relay, retired-keys.ts), and the relay refuses to load a signing
+ * key or a TLS client key that is on it. The broker refuses the same list (B2).
+ * A malformed list refuses in every mode, so a typo never drops an entry unseen.
  */
 import { readFileSync, statSync } from 'node:fs';
-import type { KeyObject } from 'node:crypto';
+import { createPrivateKey, type KeyObject } from 'node:crypto';
 import { isAbsolute } from 'node:path';
 
-import { loadAttestationPrivateKey } from '@tm8/vault/relay';
+import { MAX_RETIRED_KEYS, loadAttestationPrivateKey, parseRetiredKeys, publicKeySha256 } from '@tm8/vault/relay';
 
 export const VAULT_RELAY_MODES = ['off', 'dev', 'pre_review', 'production'] as const;
 export type VaultRelayMode = (typeof VAULT_RELAY_MODES)[number];
@@ -89,6 +95,11 @@ export function vaultRelayConfigFromEnv(env: NodeJS.ProcessEnv = process.env): V
   if (socketPath !== '' && mode === 'production') {
     throw new VaultRelayConfigError('TM8_VAULT_BROKER_SOCKET', 'is not allowed in production: use TM8_VAULT_BROKER_URL over mutual TLS');
   }
+  const retiredKeys = parseRetiredKeys(env.TM8_VAULT_RETIRED_KEY_SHA256);
+  if (retiredKeys === null) {
+    throw new VaultRelayConfigError('TM8_VAULT_RETIRED_KEY_SHA256',
+      `must list at most ${MAX_RETIRED_KEYS} comma-separated SHA-256s, each 64 hex digits or 32 colon-separated pairs`);
+  }
   // Review F03: before any key file is opened. See THE SIGNING KEY above.
   if (mode === 'production') {
     throw new VaultRelayConfigError('TM8_VAULT_MODE', 'production is refused (review F03): this server runs agent sessions, '
@@ -117,6 +128,14 @@ export function vaultRelayConfigFromEnv(env: NodeJS.ProcessEnv = process.env): V
   } finally {
     pem.fill(0);
   }
+  // Review F03, R7. Production does not get here while the refusal above stands; dev and
+  // pre_review do. No fingerprint is printed: the message names the file's knob only.
+  if (retiredKeys.size > 0) {
+    if (retiredKeys.has(publicKeySha256(privateKey))) {
+      throw new VaultRelayConfigError('TM8_VAULT_RELAY_PRIVATE_KEY_FILE', 'is a retired key (TM8_VAULT_RETIRED_KEY_SHA256, review F03 R7)');
+    }
+    if (broker.kind === 'mtls') retiredTlsKey(broker.key, retiredKeys);
+  }
 
   const rawTimeout = env.TM8_VAULT_RELAY_TIMEOUT_MS?.trim() ?? '';
   // Digits only: Number() would also take 1e4, 0x2710 and 10_000-shaped surprises.
@@ -126,6 +145,23 @@ export function vaultRelayConfigFromEnv(env: NodeJS.ProcessEnv = process.env): V
   }
 
   return Object.freeze({ mode: mode as VaultRelayConfig['mode'], broker, privateKey, timeoutMs });
+}
+
+/**
+ * The TLS client key against the denylist. Parsing it makes one more in-memory copy, which is
+ * collected with the KeyObject; the agent's TLS context parses its own. A key this cannot parse
+ * cannot be shown not to be retired, so it refuses, and the bytes read are wiped before it throws.
+ */
+function retiredTlsKey(key: Buffer, retiredKeys: ReadonlySet<string>): void {
+  let fingerprint: string;
+  try { fingerprint = publicKeySha256(createPrivateKey(key)); } catch {
+    key.fill(0);
+    throw new VaultRelayConfigError('TM8_VAULT_RELAY_TLS_KEY_FILE', 'is not an unencrypted PEM private key, so it cannot be checked against TM8_VAULT_RETIRED_KEY_SHA256');
+  }
+  if (retiredKeys.has(fingerprint)) {
+    key.fill(0);
+    throw new VaultRelayConfigError('TM8_VAULT_RELAY_TLS_KEY_FILE', 'is a retired key (TM8_VAULT_RETIRED_KEY_SHA256, review F03 R7)');
+  }
 }
 
 /** https only, no credentials, no path, query or fragment: the relay appends /v2/vault/... itself. */

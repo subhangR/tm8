@@ -9,6 +9,7 @@ import type { AddressInfo } from 'node:net';
 import { createConnection } from 'node:net';
 import { connect as tlsConnect } from 'node:tls';
 import { signAttestation } from '../../src/relay/attestation.js';
+import { publicKeySha256 } from '../../src/relay/retired-keys.js';
 import { createBrokerServer } from '../../src/broker/server.js';
 import { testBroker, testCaller } from '../support/kit.js';
 import { harness, stubHandlers, type Harness } from './support.js';
@@ -19,7 +20,7 @@ const pinOf = (pem: Buffer): Buffer => createHash('sha256').update(new X509Certi
 describe('optional mTLS listener: the pinned CA and the pinned relay certificate (review F03)', () => {
   let directory: string;
   let h: Harness;
-  const refused: { fingerprint: string | null }[] = [];
+  const refused: { fingerprint: string | null; retired?: true }[] = [];
   const requests: unknown[] = [];
   const file = (name: string) => join(directory, name);
   function openssl(args: string[]): void {
@@ -47,12 +48,12 @@ describe('optional mTLS listener: the pinned CA and the pinned relay certificate
   }, 20_000);
   afterAll(async () => { await h?.close(); if (directory) await rm(directory, { recursive: true, force: true }); });
 
-  async function send(client: 'client' | 'other' | 'untrusted' | null): Promise<number> {
+  async function send(client: 'client' | 'other' | 'untrusted' | null, to: Harness = h): Promise<number> {
     const ca = await readFile(file('ca.crt'));
     const cert = client ? await readFile(file(`${client}.crt`)) : undefined;
     const key = client ? await readFile(file(`${client}.key`)) : undefined;
-    const port = (h.server.https!.address() as AddressInfo).port;
-    const header = signAttestation({ privateKey: h.pair.privateKey, caller: testCaller, clock: h.clock,
+    const port = (to.server.https!.address() as AddressInfo).port;
+    const header = signAttestation({ privateKey: to.pair.privateKey, caller: testCaller, clock: to.clock,
       request: { method: 'GET', path: '/v2/vault/status', query: '', body: Buffer.alloc(0) } });
     return new Promise((resolve, reject) => {
       const req = request({ host: '127.0.0.1', port, path: '/v2/vault/status', ca, key, cert, agent: false,
@@ -95,6 +96,46 @@ describe('optional mTLS listener: the pinned CA and the pinned relay certificate
     expect(received.length).toBe(0);
     expect(h.server.refusedPeers).toBe(before.refused + 1);
     expect(requests.length).toBe(before.requests);
+  });
+  it('review F03, B2: closes the pinned certificate when its key is retired, as with a pin left stale at a key rotation', async () => {
+    const clientPem = await readFile(file('client.crt'));
+    const seen: { fingerprint: string | null; retired?: true }[] = [];
+    const logged: unknown[] = [];
+    const stale = await harness({ server: {
+      mtls: { host: '127.0.0.1', port: 0, caFile: file('ca.crt'), keyFile: file('server.key'), certFile: file('server.crt'), clientCertSha256: pinOf(clientPem) },
+      retiredRelayKeys: new Set([publicKeySha256(new X509Certificate(clientPem).publicKey)]),
+      onRefusedPeer: (peer) => seen.push(peer), log: (record) => logged.push(record),
+    } });
+    try {
+      // The request carries a valid attestation and the pinned certificate: only its key is retired.
+      await expect(send('client', stale)).rejects.toThrow();
+      expect(stale.server.refusedPeers).toBe(1);
+      expect(seen).toEqual([{ fingerprint: pinOf(clientPem).toString('hex'), retired: true }]);
+      expect(logged).toEqual([]);
+      expect([...stale.server.attestationFailures]).toEqual([]);
+      // A certificate the pin refuses anyway is not reported as retired.
+      await expect(send('other', stale)).rejects.toThrow();
+      expect(seen.at(-1)).toEqual({ fingerprint: pinOf(await readFile(file('other.crt'))).toString('hex') });
+      expect(logged).toEqual([]);
+    } finally {
+      await stale.close();
+    }
+  });
+  it('review F03, B2: admits the pinned certificate when other keys are listed, and keeps its own copy of the list', async () => {
+    const clientPem = await readFile(file('client.crt'));
+    const retired = new Set(['ab'.repeat(32)]);
+    const listed = await harness({ server: {
+      mtls: { host: '127.0.0.1', port: 0, caFile: file('ca.crt'), keyFile: file('server.key'), certFile: file('server.crt'), clientCertSha256: pinOf(clientPem) },
+      retiredRelayKeys: retired,
+    } });
+    try {
+      expect(await send('client', listed)).toBe(200);
+      retired.add(publicKeySha256(new X509Certificate(clientPem).publicKey));
+      expect(await send('client', listed)).toBe(200);
+      expect(listed.server.refusedPeers).toBe(0);
+    } finally {
+      await listed.close();
+    }
   });
   it('refuses to create a listener without a 32-byte pin, before it reads any file', async () => {
     const broker = testBroker();

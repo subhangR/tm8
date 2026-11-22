@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { X509Certificate, createHash, timingSafeEqual } from 'node:crypto';
 import { readFile, mkdir, lstat, chmod, unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -12,7 +12,9 @@ import {
 } from '../relay/attestation.js';
 import { VAULT_ALERTS_HEADER } from '../relay/alerts.js';
 import { VAULT_BODY_LIMITS, vaultBodyLimit } from '../relay/routes.js';
+import { publicKeySha256 } from '../relay/retired-keys.js';
 import type { AlertOutbox } from './alerts.js';
+import { BrokerConfigError } from './config.js';
 import {
   brokerErrorResponse, createBrokerDispatcher, mapBrokerError, matchBrokerRoute, sweepBrokerResponse,
   type BrokerDependencies, type BrokerResponse,
@@ -36,7 +38,14 @@ export interface BrokerServerOptions extends BrokerDependencies {
    * Told of each mTLS connection closed because its verified certificate is not the pinned one,
    * with that certificate's SHA-256 (hex) so the operator can find which certificate the CA issued.
    */
-  onRefusedPeer?: (peer: { fingerprint: string | null }) => void;
+  onRefusedPeer?: (peer: { fingerprint: string | null; retired?: true }) => void;
+  /**
+   * SHA-256s of retired relay keys over DER SubjectPublicKeyInfo (relay/retired-keys.ts; review
+   * F03, B2). A key a pre_review relay held is treated as exposed. The relay public key must not
+   * be one, or the server is not created. A pinned certificate whose key is one is closed like an
+   * unpinned one, and reported with `retired: true`: the pin was left stale at a key rotation.
+   */
+  retiredRelayKeys?: ReadonlySet<string>;
   /**
    * Pending owner alerts ride on attested responses only, so an unattested
    * connection never receives them. The relay strips the header (relay/alerts.ts).
@@ -101,8 +110,13 @@ export async function createBrokerServer(options: BrokerServerOptions): Promise<
   }
   // A copy: the caller cannot change the pin after start.
   const pin = tls ? Buffer.from(tls.clientCertSha256) : null;
-  const verifier = new AttestationVerifier(loadAttestationPublicKey(await readFile(options.relayPublicKeyFile)),
-    { clock: options.clock, maxReplayEntries: options.maxReplayEntries });
+  const retired = new Set(options.retiredRelayKeys ?? []);
+  const relayKey = loadAttestationPublicKey(await readFile(options.relayPublicKeyFile));
+  // Review F03, B2: compared at load, before any listener exists. The fingerprint is not printed.
+  if (retired.has(publicKeySha256(relayKey))) {
+    throw new BrokerConfigError('TM8_VAULT_RELAY_PUBLIC_KEY_FILE', 'is a retired relay key (TM8_VAULT_RETIRED_KEY_SHA256, review F03 B2)');
+  }
+  const verifier = new AttestationVerifier(relayKey, { clock: options.clock, maxReplayEntries: options.maxReplayEntries });
   const dispatch = createBrokerDispatcher(options);
   const failures = new Map<AttestationFailure, number>();
   const active = new Set<AbortController>();
@@ -193,6 +207,14 @@ export async function createBrokerServer(options: BrokerServerOptions): Promise<
     const raw = (socket.getPeerCertificate() as { raw?: unknown } | null)?.raw;
     return Buffer.isBuffer(raw) && raw.length > 0 ? createHash('sha256').update(raw).digest() : null;
   };
+  /** Review F03, B2: whether the verified peer certificate's key is a retired one. Unreadable counts as retired. */
+  const retiredPeer = (socket: TLSSocket): boolean => {
+    if (retired.size === 0) return false;
+    try {
+      const raw = (socket.getPeerCertificate() as { raw?: unknown } | null)?.raw;
+      return !Buffer.isBuffer(raw) || retired.has(publicKeySha256(new X509Certificate(raw).publicKey));
+    } catch { return true; }
+  };
   /** The connections whose verified certificate is the pinned relay certificate (review F03). */
   const admitted = new WeakSet<TLSSocket>();
   const https = tls ? createHttpsServer({
@@ -208,10 +230,12 @@ export async function createBrokerServer(options: BrokerServerOptions): Promise<
   // change afterwards. A refused connection is closed with no response and no echo of the certificate.
   https?.on('secureConnection', (socket: TLSSocket) => {
     const fingerprint = peerFingerprint(socket);
-    if (fingerprint !== null && pin !== null && timingSafeEqual(fingerprint, pin)) { admitted.add(socket); return; }
+    const pinned = fingerprint !== null && pin !== null && timingSafeEqual(fingerprint, pin);
+    const stale = pinned && retiredPeer(socket);
+    if (pinned && !stale) { admitted.add(socket); return; }
     refusedPeers += 1;
     socket.destroy();
-    try { options.onRefusedPeer?.({ fingerprint: fingerprint?.toString('hex') ?? null }); }
+    try { options.onRefusedPeer?.({ fingerprint: fingerprint?.toString('hex') ?? null, ...(stale ? { retired: true as const } : {}) }); }
     catch { /* Logging cannot reopen a closed connection. */ }
   });
   const servers = https ? [http, https] : [http];

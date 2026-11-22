@@ -28,6 +28,7 @@ import { createOwnerAuthHandlers } from '../owner-auth/handlers.js';
 import { createPasteDetector, tokenSpanScanner } from '../paste/index.js';
 import { FileDeletionLedger, replayDeletionLedger } from '../store/deletion-ledger.js';
 import { PgVaultStore } from '../store/postgres.js';
+import { RETIRED_KEY_KNOB, parseRetiredKeys } from '../relay/retired-keys.js';
 import type { VaultMode } from '../types.js';
 import { RelayAlertQueue } from './alerts.js';
 import { BrokerConfigError, loadBrokerConfig } from './config.js';
@@ -80,6 +81,7 @@ export const BROKER_RUNTIME_ENV_KNOBS = [
   { name: 'TM8_VAULT_AUDIT_ANCHOR_BUDGET_MS', default: '900000', meaning: 'Longest an audit event may stay unanchored, or the retained anchor go unverified, before audited actions fail closed; 20000..172800000 and at least twice the checkpoint period' },
   { name: 'TM8_VAULT_DELETION_LEDGER', default: '', meaning: 'Append-only tombstone ledger file outside the database; required unless mode is off' },
   { name: 'TM8_VAULT_CANARY_FILE', default: '', meaning: 'Optional operator decoy values (0600), one per line, 12+ characters each' },
+  { name: 'TM8_VAULT_RETIRED_KEY_SHA256', default: '', meaning: 'Comma-separated SHA-256s of retired relay keys (DER SubjectPublicKeyInfo), at most 256: a relay public key or relay client certificate key on the list is refused (review F03, B2); the relay reads the same knob' },
 ] as const;
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -337,6 +339,9 @@ export async function composeBroker(env: Env, options: {
   const connectionString = databaseUrl(env);
   const socketPath = path(env, 'TM8_VAULT_BROKER_SOCKET', DEFAULT_BROKER_SOCKET, 100);
   const relayPublicKeyFile = path(env, 'TM8_VAULT_RELAY_PUBLIC_KEY_FILE');
+  // Review F03, B2: every mode. A malformed list refuses, so a typo never drops an entry unseen.
+  const retiredRelayKeys = parseRetiredKeys(env.TM8_VAULT_RETIRED_KEY_SHA256);
+  if (retiredRelayKeys === null) throw new BrokerConfigError(RETIRED_KEY_KNOB);
   const ledgerFile = ledgerPath(env);
   const fillSocket = path(env, 'TM8_VAULT_FILL_SOCKET', DEFAULT_FILL_SOCKET, 100);
   const fillTimeoutMs = integer(env, 'TM8_VAULT_FILL_TIMEOUT_MS', DEFAULT_FILL_TIMEOUT_MS, 100, 120_000);
@@ -389,7 +394,7 @@ export async function composeBroker(env: Env, options: {
     const server = await startBroker({
       config, store, audit, components, handlers: createVaultHandlers(),
       auth: createOwnerAuth({ store, config }),
-      socketPath, relayPublicKeyFile, ...(mtls ? { mtls } : {}), alertOutbox: alerts,
+      socketPath, relayPublicKeyFile, retiredRelayKeys, ...(mtls ? { mtls } : {}), alertOutbox: alerts,
       // Longer than the slowest handler (a fill), shorter than the relay's upstream timeout.
       requestTimeoutMs: fillTimeoutMs + 60_000,
       log: (record) => log({ event: 'vault_broker_request', ...record }),

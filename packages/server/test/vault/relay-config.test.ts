@@ -7,7 +7,7 @@
  * Every key is generated at runtime and none is printed. The credential-shaped
  * broker URL is assembled with the URL API.
  */
-import { generateKeyPairSync } from 'node:crypto';
+import { createPrivateKey, generateKeyPairSync } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import type { IncomingMessage } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -16,7 +16,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { CollabError } from '@tm8/contract';
-import { exportAttestationKeyPair, generateAttestationKeyPair } from '@tm8/vault/relay';
+import { exportAttestationKeyPair, generateAttestationKeyPair, publicKeySha256 } from '@tm8/vault/relay';
 
 import type { FacadeDeps } from '../../src/facade/deps.js';
 import type { RequestIdentity } from '../../src/http/types.js';
@@ -30,6 +30,7 @@ let dir: string;
 let keyFile: string;
 let keyPem: string;
 let socketPath: string;
+let tlsPem: string;
 const files: Record<string, string> = {};
 
 /** The knob a refusal names, or 'accepted'. */
@@ -76,6 +77,9 @@ beforeAll(async () => {
   const ec = generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
   await write('ecKey', ec, 0o600);
   await write('garbage', 'not a key', 0o600);
+  // A parseable TLS client key, for the retired-key check (review F03, R7). Throwaway, generated here.
+  tlsPem = generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+  await write('tlsRealKey', tlsPem, 0o600);
   files['dirKey'] = join(dir, 'a-directory');
   await mkdir(files['dirKey'], { mode: 0o700 });
 });
@@ -161,6 +165,59 @@ describe('vaultRelayConfigFromEnv', () => {
       expect(message.includes('PRIVATE KEY')).toBe(false);
       expect(message.includes(keyPem.split('\n')[1]!)).toBe(false);
     }
+  });
+
+  it('review F03, R7: a malformed retired-key list refuses in every mode, before any key file is opened', () => {
+    const url = 'https://broker.invalid:8443';
+    for (const value of ['zz'.repeat(32), `${'ab'.repeat(32)},`, `${'ab'.repeat(32)} ${'cd'.repeat(32)}`, 'ab'.repeat(31), `SHA256 Fingerprint=${'AB:'.repeat(31)}AB`]) {
+      expect(knobOf(socketEnv({ TM8_VAULT_RETIRED_KEY_SHA256: value }))).toBe('TM8_VAULT_RETIRED_KEY_SHA256');
+      expect(knobOf(urlEnv(url, { TM8_VAULT_RETIRED_KEY_SHA256: value }))).toBe('TM8_VAULT_RETIRED_KEY_SHA256');
+      // An absent key file would name its own knob if it had been opened first.
+      expect(knobOf(socketEnv({ TM8_VAULT_RETIRED_KEY_SHA256: value, TM8_VAULT_RELAY_PRIVATE_KEY_FILE: join(dir, 'never-created') }))).toBe('TM8_VAULT_RETIRED_KEY_SHA256');
+      expect(knobOf(urlEnv(url, { TM8_VAULT_MODE: 'production', TM8_VAULT_RETIRED_KEY_SHA256: value }))).toBe('TM8_VAULT_RETIRED_KEY_SHA256');
+    }
+    // Unset or blank is the empty list, the shipped default.
+    for (const value of [undefined, '', '  ']) expect(knobOf(socketEnv({ TM8_VAULT_RETIRED_KEY_SHA256: value }))).toBe('accepted');
+  });
+
+  it('review F03, R7: refuses a signing key or a TLS client key on the list, naming the file knob and never the fingerprint', () => {
+    const url = 'https://broker.invalid:8443';
+    const signing = publicKeySha256(createPrivateKey(keyPem));
+    const tls = publicKeySha256(createPrivateKey(tlsPem));
+    const other = 'ab'.repeat(32);
+    const colons = (fingerprint: string) => fingerprint.toUpperCase().match(/../g)!.join(':');
+    for (const listed of [signing, colons(signing), `${other},${signing}`, `${tls},${signing}`]) {
+      expect(knobOf(socketEnv({ TM8_VAULT_RETIRED_KEY_SHA256: listed }))).toBe('TM8_VAULT_RELAY_PRIVATE_KEY_FILE');
+      expect(knobOf(urlEnv(url, { TM8_VAULT_RELAY_TLS_KEY_FILE: files['tlsRealKey'], TM8_VAULT_RETIRED_KEY_SHA256: listed }))).toBe('TM8_VAULT_RELAY_PRIVATE_KEY_FILE');
+    }
+    for (const listed of [tls, colons(tls), `${other},${tls}`]) {
+      expect(knobOf(urlEnv(url, { TM8_VAULT_RELAY_TLS_KEY_FILE: files['tlsRealKey'], TM8_VAULT_RETIRED_KEY_SHA256: listed }))).toBe('TM8_VAULT_RELAY_TLS_KEY_FILE');
+      expect(knobOf(urlEnv(url, { TM8_VAULT_MODE: 'dev', TM8_VAULT_RELAY_TLS_KEY_FILE: files['tlsRealKey'], TM8_VAULT_RETIRED_KEY_SHA256: listed }))).toBe('TM8_VAULT_RELAY_TLS_KEY_FILE');
+      // A socket target has no TLS key, so a listed TLS key is not this relay's.
+      expect(knobOf(socketEnv({ TM8_VAULT_RETIRED_KEY_SHA256: listed }))).toBe('accepted');
+    }
+    const messages: string[] = [];
+    for (const env of [socketEnv({ TM8_VAULT_RETIRED_KEY_SHA256: signing }), urlEnv(url, { TM8_VAULT_RELAY_TLS_KEY_FILE: files['tlsRealKey'], TM8_VAULT_RETIRED_KEY_SHA256: tls })]) {
+      try { vaultRelayConfigFromEnv(env); } catch (error) { messages.push(String(error)); }
+    }
+    expect(messages).toEqual([
+      'VaultRelayConfigError: vault relay: TM8_VAULT_RELAY_PRIVATE_KEY_FILE is a retired key (TM8_VAULT_RETIRED_KEY_SHA256, review F03 R7)',
+      'VaultRelayConfigError: vault relay: TM8_VAULT_RELAY_TLS_KEY_FILE is a retired key (TM8_VAULT_RETIRED_KEY_SHA256, review F03 R7)',
+    ]);
+    // Keys that are not listed load, in both targets.
+    expect(knobOf(socketEnv({ TM8_VAULT_RETIRED_KEY_SHA256: other }))).toBe('accepted');
+    expect(knobOf(urlEnv(url, { TM8_VAULT_RELAY_TLS_KEY_FILE: files['tlsRealKey'], TM8_VAULT_RETIRED_KEY_SHA256: other }))).toBe('accepted');
+  });
+
+  it('review F03, R7: with a non-empty list, a TLS client key that cannot be parsed cannot be shown not retired, so it refuses', () => {
+    const url = 'https://broker.invalid:8443';
+    // The default fixture is not a key: the empty list never parses it, as before (it is parsed at connect time).
+    expect(knobOf(urlEnv(url))).toBe('accepted');
+    let message = '';
+    try { vaultRelayConfigFromEnv(urlEnv(url, { TM8_VAULT_RETIRED_KEY_SHA256: 'ab'.repeat(32) })); } catch (error) { message = String(error); }
+    expect(message).toBe('VaultRelayConfigError: vault relay: TM8_VAULT_RELAY_TLS_KEY_FILE is not an unencrypted PEM private key, '
+      + 'so it cannot be checked against TM8_VAULT_RETIRED_KEY_SHA256');
+    expect(message.includes('relay tls key')).toBe(false);
   });
 
   it('the timeout is whole milliseconds from 10 s to 10 min, 190 s by default', () => {

@@ -23,8 +23,9 @@ export const BROKER_ENV_KNOBS = [
 ] as const;
 
 export class BrokerConfigError extends Error {
-  constructor(readonly knob: string) {
-    super(`vault broker: invalid ${knob}`);
+  /** Without a rule the message is `invalid <knob>`. A rule says why, and never holds a value. */
+  constructor(readonly knob: string, rule?: string) {
+    super(rule === undefined ? `vault broker: invalid ${knob}` : `vault broker: ${knob} ${rule}`);
     this.name = 'BrokerConfigError';
   }
 }

@@ -150,20 +150,27 @@ describe('alert header codec', () => {
 });
 
 describe('@tm8/vault/relay', () => {
-  it('is the relay entry: request signing, the alerts codec, the route table and cookie names, nothing that opens a store, key or socket', async () => {
+  it('is the relay entry: request signing, the alerts codec, the route table, cookie names and the retired-key denylist, nothing that opens a store, key or socket', async () => {
     const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')) as { exports: Record<string, unknown> };
     expect(pkg.exports['./relay']).toEqual({ types: './dist/relay/index.d.ts', default: './dist/relay/index.js' });
     expect(Object.keys(await import('../../src/relay/index.js')).sort()).toEqual([
       'ATTESTATION_DEFAULT_TTL_SECONDS', 'ATTESTATION_MAX_HEADER_CHARS', 'ATTESTATION_MAX_ORIGIN_CHARS', 'ATTESTATION_MAX_SKEW_SECONDS', 'ATTESTATION_MAX_TTL_SECONDS',
-      'AttestationError', 'AttestationTooLargeError', 'AttestationVerifier', 'VAULT_ALERTS_HEADER', 'VAULT_ALERTS_HEADER_MAX_CHARS',
+      'AttestationError', 'AttestationTooLargeError', 'AttestationVerifier',
+      // The retired-key denylist both ends check (independent review F03, R7 and B2): a parser, and a hash of a key already loaded.
+      'MAX_RETIRED_KEYS', 'RETIRED_KEY_KNOB',
+      'VAULT_ALERTS_HEADER', 'VAULT_ALERTS_HEADER_MAX_CHARS',
       'VAULT_ALERTS_MAX_PER_HEADER', 'VAULT_ALERT_KINDS', 'VAULT_ATTESTATION_HEADER', 'VAULT_BODY_LIMITS', 'VAULT_COOKIE_NAMES', 'VaultAlertHeaderError',
       'VaultAlertSchema', 'decodeVaultAlerts', 'encodeVaultAlerts', 'exportAttestationKeyPair', 'generateAttestationKeyPair',
       // The relay and the broker share one canonical-origin rule for the signed origin claim (independent review F04).
-      'isCanonicalBrowserOrigin', 'loadAttestationPrivateKey', 'loadAttestationPublicKey', 'matchVaultRoute', 'signAttestation', 'vaultBodyLimit',
+      'isCanonicalBrowserOrigin', 'loadAttestationPrivateKey', 'loadAttestationPublicKey', 'matchVaultRoute',
+      'parseRetiredKeys', 'publicKeySha256', 'signAttestation', 'vaultBodyLimit',
     ]);
     // The route table both ends match against is pure data over the contract: no fs, net or store import.
     const routes = await readFile(new URL('../../src/relay/routes.ts', import.meta.url), 'utf8');
     expect([...routes.matchAll(/from '([^']+)'/g)].map((m) => m[1])).toEqual(['@tm8/contract']);
+    // The denylist reads no file and opens nothing: it parses a knob's text and hashes a key the caller loaded.
+    const retired = await readFile(new URL('../../src/relay/retired-keys.ts', import.meta.url), 'utf8');
+    expect([...retired.matchAll(/from '([^']+)'/g)].map((m) => m[1])).toEqual(['node:crypto']);
   });
 });
 
