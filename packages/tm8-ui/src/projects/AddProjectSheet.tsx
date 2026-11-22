@@ -115,6 +115,9 @@ export function AddProjectSheet(props: AddProjectSheetProps) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [job, setJob] = useState<ProjectCloneJob | null>(null);
+  // Where the node puts a project left with no folder (its TM8_PROJECTS_HOME),
+  // read once from the folder listing; null keeps the `~/<name>` hint.
+  const [projectsHome, setProjectsHome] = useState<string | null>(null);
   const cancelUpload = useRef<(() => void) | null>(null);
   const alive = useRef(true);
   const draft = useProjectSourceDraft({
@@ -125,11 +128,20 @@ export function AddProjectSheet(props: AddProjectSheetProps) {
 
   useEffect(() => () => { alive.current = false; }, []);
 
+  useEffect(() => {
+    props.port.directories().then(
+      (listing) => { if (alive.current) setProjectsHome(listing.projectsHome ?? null); },
+      () => { /* No browse access: the hint stays `~/<name>`; the server still decides. */ },
+    );
+  }, []);
+
+  const defaultWorkingDir = projectHomeDisplayPath(projectName, projectsHome);
+
   const validate = (): string | null => {
     if (!projectName.trim()) return 'Give the project a name.';
-    // An empty folder is the home default, `~/<name>`; the name must give one.
+    // An empty folder is the node's default, `<projects home>/<name>`; the name must give one.
     if (draft.sourceKind === 'folder') {
-      return draft.workingDir.trim() || projectHomeDisplayPath(projectName)
+      return draft.workingDir.trim() || defaultWorkingDir
         ? null
         : 'Use letters or digits in the name, or choose the folder this project lives in.';
     }
@@ -252,7 +264,7 @@ export function AddProjectSheet(props: AddProjectSheetProps) {
               nodeLabel={props.nodeLabel}
               githubMode="clone"
               uploadUnavailableReason={props.port.importFolder ? null : FOLDER_UPLOAD_UNAVAILABLE}
-              defaultWorkingDir={projectHomeDisplayPath(projectName)}
+              defaultWorkingDir={defaultWorkingDir}
             />
             <p className="project-onboard__note">
               The project is added untrusted: agents ask for confirmation before running in it until a node admin

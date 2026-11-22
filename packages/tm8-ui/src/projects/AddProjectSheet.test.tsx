@@ -99,6 +99,37 @@ describe('AddProjectSheet', () => {
     expect('ensureWorkingDir' in input).toBe(false);
   });
 
+  it('shows the node’s projects home from the folder listing as the default, still sending no workingDir', async () => {
+    const p = port({
+      directories: vi.fn().mockResolvedValue({
+        roots: ['/'],
+        path: '/var/lib/tm8/prod/projects',
+        parentPath: '/var/lib/tm8/prod',
+        separator: '/',
+        directories: [],
+        truncated: false,
+        projectsHome: '/var/lib/tm8/prod/projects',
+      }),
+    });
+    const onAdded = vi.fn();
+    const view = render(<AddProjectSheet nodeLabel="node" port={p} onAdded={onAdded} onCancel={vi.fn()} />);
+    fireEvent.change(view.getByLabelText('Project name'), { target: { value: 'Wordrobe' } });
+    const field = view.getByLabelText('Working directory') as HTMLInputElement;
+    await waitFor(() => expect(field.placeholder).toBe('/var/lib/tm8/prod/projects/wordrobe'));
+    expect(view.getByTestId('project-default-dir').textContent).toContain('/var/lib/tm8/prod/projects/wordrobe');
+    fireEvent.click(view.getByRole('button', { name: 'Add project' }));
+    await waitFor(() => expect(onAdded).toHaveBeenCalled());
+    expect('workingDir' in vi.mocked(p.add).mock.calls[0]![0]).toBe(false);
+  });
+
+  it('keeps the ~/<name> hint when the folder listing is refused', async () => {
+    const p = port({ directories: vi.fn().mockRejectedValue(new Error('no folder on this node is granted to you')) });
+    const view = render(<AddProjectSheet nodeLabel="node" port={p} onAdded={vi.fn()} onCancel={vi.fn()} />);
+    fireEvent.change(view.getByLabelText('Project name'), { target: { value: 'Wordrobe' } });
+    await waitFor(() => expect(p.directories).toHaveBeenCalled());
+    expect((view.getByLabelText('Working directory') as HTMLInputElement).placeholder).toBe('~/wordrobe');
+  });
+
   it('a typed working directory is sent as is', async () => {
     const p = port();
     const view = render(<AddProjectSheet nodeLabel="node" port={p} onAdded={vi.fn()} onCancel={vi.fn()} />);
