@@ -20,10 +20,15 @@ export function projectDirName(name: string): string {
     .slice(0, 100);
 }
 
-/** The path a project with no folder gets, written with `~` for display. */
-export function projectHomeDisplayPath(name: string): string | null {
+/**
+ * The path a project with no folder gets: `<projectsHome>/<dir>` when the node
+ * reports its projects home (`TM8_PROJECTS_HOME`, on the folder listing), else
+ * `~/<dir>`.
+ */
+export function projectHomeDisplayPath(name: string, projectsHome?: string | null): string | null {
   const dir = projectDirName(name);
-  return dir ? `~/${dir}` : null;
+  if (!dir) return null;
+  return projectsHome ? `${projectsHome.replace(/[/\\]+$/, '')}/${dir}` : `~/${dir}`;
 }
 
 /**

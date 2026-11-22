@@ -15,6 +15,9 @@ describe('the home default for a project working directory', () => {
   it('shows the default as ~/<dir>, or nothing when the name gives no folder', () => {
     expect(projectHomeDisplayPath('Docs Site')).toBe('~/docs-site');
     expect(projectHomeDisplayPath('')).toBeNull();
+    // The node's TM8_PROJECTS_HOME, when the folder listing reports one.
+    expect(projectHomeDisplayPath('Mobile Wordrobe', '/var/lib/tm8/prod/projects/')).toBe('/var/lib/tm8/prod/projects/mobile-wordrobe');
+    expect(projectHomeDisplayPath('Docs Site', null)).toBe('~/docs-site');
   });
 
   it('expands only a leading ~ or ~/', () => {
