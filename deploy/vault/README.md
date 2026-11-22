@@ -295,6 +295,14 @@ Five controls ship now. None of them is the boundary itself.
   memory check in *Plaintext in broker memory*. Groups only NSS knows, a daemon on another path
   or on TCP, and sudo grants are not seen.
 
+The reach checks (design doc `01a1fe13`, section 2) are a separate probe that runs as an agent,
+`deploy/vault/boundary-probe.py`. It is not one of the five controls, and it has never been run,
+here or on any host. Its only test, `packages/server/test/vault/boundary-probe.test.ts`, parses
+and compiles its source and executes none of it. Its header gives the staging procedure, the
+JSON-lines output and the positive control, which comes first: with agents still under the
+server's uid, K1, P1 and D1 must each FAIL before any PASS from the probe is trusted. It may run
+only on a staging host, in a run the owner has approved.
+
 ### Database
 
 - `TM8_VAULT_DATABASE_URL` names a LOGIN role whose only membership is `tm8_vault_broker`.
@@ -551,7 +559,9 @@ on `01a1fa87` holds the full set with severities. The headline items:
   B3 (§5, *Relay key isolation*). Still open:
   - the boundary itself, its reach checks, and the staging cross-member forgery test. The boot
     checks are point-in-time reads of a host's configuration, not proof of the boundary, and R9
-    and the periodic re-check are not built;
+    and the periodic re-check are not built. The reach checks have a probe
+    (`deploy/vault/boundary-probe.py`) that has never been run: its positive control and both
+    staging runs are still to do;
   - owner decisions D1-D9 (design doc `01a1fe13`);
   - agents can read a `pre_review` relay's keys today. That relay holds test secrets only, and
     its keys must be rotated before any production cutover;
