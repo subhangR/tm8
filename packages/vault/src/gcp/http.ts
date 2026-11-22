@@ -37,8 +37,10 @@ export function timeoutMs(value: number | undefined): number {
  * Responses can carry key material (KMS decrypt) or credentials (the metadata token), so the body is
  * kept in as few copies as the runtime allows (review F05). `identity` stops the runtime from
  * decompressing through zlib buffers we cannot wipe. Each stream chunk is already a fresh copy that
- * we own, so it is used in place and every chunk not returned is wiped, on every path. The caller
- * owns `bytes` and wipes it once parsed.
+ * we own (test/gcp/body-chunks.test.ts pins that for the runtime in use), so it is used in place and
+ * every chunk not returned is wiped, on every path. The caller owns `bytes` and wipes it once parsed.
+ * Copies inside the runtime (socket, TLS and parser buffers) are out of reach; the host controls
+ * against core dumps and swap cover those.
  */
 export async function request(options: {
   url: string;
