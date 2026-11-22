@@ -49,6 +49,7 @@ import {
   canonicalRoots,
   ensureProjectWorkingDirectory,
   listProjectDirectories,
+  projectsHome,
   requireAllowed,
 } from './project-directories.js';
 import { PathGrantsService } from './path-grants.js';
@@ -1108,8 +1109,9 @@ export async function allowedWorkingDir(raw: string, roots: readonly string[], e
  * THE FOLDER a `spaces.projects.create` without `folderId` registers.
  *
  * A given `workingDir` is used as is, a leading `~/` expanded against the
- * node's home. With NO `workingDir` the project gets the home default,
- * `~/<projectDirName(name)>`, created by the caller's ensure step. The default
+ * node's home. With NO `workingDir` the project gets the default,
+ * `<projectsHome>/<projectDirName(name)>` (`~/<name>` unless the node sets
+ * `TM8_PROJECTS_HOME`), created by the caller's ensure step. The default
  * must be a NEW folder: an existing `~/prod-data` reached by naming a project
  * "prod-data" would be a folder nobody chose, so it is refused and the caller
  * is told to name it explicitly if that is what they meant.
@@ -1117,6 +1119,7 @@ export async function allowedWorkingDir(raw: string, roots: readonly string[], e
 export function newProjectFolder(
   input: Pick<SpaceProjectCreateInput, 'name' | 'workingDir' | 'ensureWorkingDir'>,
   home: string = homedir(),
+  defaultParent: string = projectsHome(undefined, home),
 ): { workingDir: string; ensureWorkingDir: boolean } {
   if (input.workingDir !== undefined) {
     return { workingDir: expandHomePath(input.workingDir, home), ensureWorkingDir: input.ensureWorkingDir === true };
@@ -1125,11 +1128,11 @@ export function newProjectFolder(
   if (!dir) {
     throw new CollabError('invalid_input', 'the project name gives no folder name for its default directory; pass workingDir');
   }
-  const workingDir = join(home, dir);
+  const workingDir = join(defaultParent, dir);
   if (existsSync(workingDir)) {
     throw new CollabError(
       'conflict',
-      `the default directory ~/${dir} already exists; pass it as workingDir to use it, or choose another name`,
+      `the default directory ${defaultParent === home ? `~/${dir}` : workingDir} already exists; pass it as workingDir to use it, or choose another name`,
       { details: { reason: 'default_working_dir_exists' } },
     );
   }
