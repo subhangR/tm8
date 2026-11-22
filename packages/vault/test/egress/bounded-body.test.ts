@@ -47,7 +47,8 @@ function filledToCap(fill: (count: number) => unknown): unknown {
 const repeat = <T>(count: number, item: () => T): T[] => Array.from({ length: count }, item);
 
 // Each body puts every small union at the option tried last, and fills the rest of the cap with the
-// smallest element that makes a union try a failing option first.
+// smallest element that makes a union try a failing option first. A content part, an input item or
+// a block is picked by its `type` (a discriminated union), which tries no other option.
 const WORST_PASSING: [connector: string, op: string, what: string, body: () => unknown][] = [
   ['openai', 'chat.completions.create', 'messages with array content', () => filledToCap((count) => ({
     model: 'm', stop: [], tool_choice: { type: 'function', function: { name: 'n' } },
@@ -55,13 +56,16 @@ const WORST_PASSING: [connector: string, op: string, what: string, body: () => u
     messages: repeat(count, () => ({ role: 'user', content: [] })) }))],
   ['anthropic', 'messages.create', 'messages with array content', () => filledToCap((count) => ({
     model: 'm', max_tokens: 1, system: [], tool_choice: { type: 'none' }, thinking: { type: 'disabled' },
-    messages: repeat(count, () => ({ role: 'user', content: [{}] })) }))],
+    messages: repeat(count, () => ({ role: 'user', content: [{ type: 'tool_result', tool_use_id: '', content: [] }] })) }))],
   ['anthropic', 'messages.countTokens', 'messages with array content', () => filledToCap((count) => ({
     model: 'm', system: [], tool_choice: { type: 'none' }, thinking: { type: 'disabled' },
-    messages: repeat(count, () => ({ role: 'user', content: [{}] })) }))],
+    messages: repeat(count, () => ({ role: 'user', content: [{ type: 'tool_result', tool_use_id: '', content: [] }] })) }))],
   ['openai', 'responses.create', 'every union at its last option', () => ({
-    model: 'm', store: false, input: [{}], tool_choice: { type: 'function', name: 'n' },
+    model: 'm', store: false, input: [{ role: 'user', content: [] }], tool_choice: { type: 'function', name: 'n' },
     text: { format: { type: 'json_schema', name: 'n', schema: {} } } })],
+  ['openai', 'responses.create', 'messages with array content', () => filledToCap((count) => ({
+    model: 'm', store: false, tool_choice: { type: 'function', name: 'n' }, text: { format: { type: 'json_schema', name: 'n', schema: {} } },
+    input: repeat(count, () => ({ role: 'user', content: [] })) }))],
   ['openai', 'embeddings.create', '8,192 tokens', () => ({ model: 'm', input: repeat(8192, () => 0) })],
   ['openai', 'embeddings.create', '2,048 strings', () => ({ model: 'm', input: repeat(2048, () => '') })],
   ['openai', 'embeddings.create', '2,048 token lists', () => ({ model: 'm', input: repeat(2048, () => [0]) })],
@@ -115,10 +119,12 @@ describe('connector body checks stop at JSON_BODY_ISSUE_BUDGET (review addendum 
     }
     expect(sites.sort()).toEqual([
       'anthropic messages.countTokens messages[].content 2 options',
+      'anthropic messages.countTokens messages[].content[].content 2 options',
       'anthropic messages.countTokens system 2 options',
       'anthropic messages.countTokens thinking 2 options',
       'anthropic messages.countTokens tool_choice 4 options',
       'anthropic messages.create messages[].content 2 options',
+      'anthropic messages.create messages[].content[].content 2 options',
       'anthropic messages.create system 2 options',
       'anthropic messages.create thinking 2 options',
       'anthropic messages.create tool_choice 4 options',
@@ -128,6 +134,7 @@ describe('connector body checks stop at JSON_BODY_ISSUE_BUDGET (review addendum 
       'openai chat.completions.create tool_choice 2 options',
       'openai embeddings.create input 4 options',
       'openai responses.create input 2 options',
+      'openai responses.create input[].content 2 options',
       'openai responses.create text.format 3 options',
       'openai responses.create tool_choice 2 options',
     ]);

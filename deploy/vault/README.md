@@ -597,7 +597,12 @@ on `01a1fa87` holds the full set with severities. The headline items:
   rule for each query parameter, a strict body schema, and an allowlist of agent headers. The
   broker rebuilds the query and the form body it forwards. Both modes refuse GraphQL, JSON-RPC,
   XML-RPC/SOAP and batch requests, and method-override fields in the query, a form, a multipart
-  part or top-level JSON. Still open:
+  part or top-level JSON. Message content parts, response input items and Slack blocks take only
+  listed types, picked by their `type` and strict like every other object, and Slack attachments
+  take only the legacy text fields. None of them names an object stored at the provider: no file
+  id, stored response item, reasoning item or workspace file (builder-side review, F02). Files
+  and images go inline or by URL. Only tool JSON schemas and tool arguments are free-form JSON.
+  Still open:
   - Generic mode is the weaker mode. It checks the host, method, prefix, the generic deny
     segments and these detectors, but no schema.
     - The UI labels it weaker (brief addendum 5) in three places: the item's API policy, the
@@ -626,6 +631,13 @@ on `01a1fa87` holds the full set with severities. The headline items:
     the response filter does not remove it.
   - A new connector needs its own vetted operation list. `catalogProblems` checks the rules'
     form, not the vendor's semantics.
+  - The content allowlists follow the vendors' documented part types. A part type a vendor adds
+    later is refused until someone vets it, and so are Slack's richer blocks and elements (rich
+    text, actions, inputs, accessories). Until then, sending one needs a generic-mode policy,
+    the weaker mode.
+  - An image or document URL makes the provider fetch a URL the agent chose. The canary checks
+    the whole body, so the credential cannot ride in that URL, but anything else the agent puts
+    in it can.
 - `startUrl` restriction.
 - `devMode` must come from broker config.
 - An origin change should require step-up.

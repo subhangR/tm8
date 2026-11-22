@@ -39,8 +39,11 @@ export const GENERIC_DENY_SEGMENTS: ReadonlySet<string> = new Set([
 // Each list is deliberately narrow. It covers reads plus a few ordinary writes. It holds no
 // credential, grant, webhook or persistence operation, and nothing that runs many requests as
 // one. Every JSON object is `.strict()`: the broker sends the agent's own value, so a key the
-// schema does not name must fail rather than be silently stripped. Content that is plainly
-// data, such as message text or tool JSON schemas, is accepted as any JSON object.
+// schema does not name must fail rather than be silently stripped. A content part, an input
+// item or a Slack block takes only the types listed, picked by its `type`: a provider resolves
+// some others, such as a stored file id, a stored response item or a workspace file (builder-
+// side review, F02). Only data a provider resolves nothing in, tool JSON schemas and tool
+// arguments, is accepted as any JSON object.
 
 /** A JSON object whose unknown keys fail. */
 const strict = <T extends z.ZodRawShape>(shape: T) => z.object(shape).strict();
@@ -103,16 +106,39 @@ const GITHUB_HEADERS = {
 // OpenAI (https://platform.openai.com/docs/api-reference). Function tools only: no MCP, file
 // search, code interpreter or computer tools. Nothing stored: no `store: true`, no background
 // run, no previous response, conversation or stored prompt. No files, batches or fine-tuning.
+// No content part or input item names a stored object either: a file goes inline as
+// `file_data`, never by `file_id`, and no input item is an `item_reference` or carries an id.
 const OPENAI_MODEL = /^[A-Za-z0-9._:-]{1,128}$/;
 const openAiModel = z.string().regex(OPENAI_MODEL);
+const imageDetail = z.enum(['auto', 'low', 'high']);
+const openAiChatPart = z.discriminatedUnion('type', [
+  strict({ type: z.literal('text'), text: z.string() }),
+  strict({ type: z.literal('image_url'), image_url: strict({ url: z.string(), detail: imageDetail.optional() }) }),
+  strict({ type: z.literal('input_audio'), input_audio: strict({ data: z.string(), format: z.enum(['wav', 'mp3']) }) }),
+  strict({ type: z.literal('file'), file: strict({ file_data: z.string(), filename: z.string().max(256).optional() }) }),
+  strict({ type: z.literal('refusal'), refusal: z.string() })]);
+const openAiChatToolCall = strict({ id: z.string().max(256), type: z.literal('function'),
+  function: strict({ name: z.string().regex(TOOL_NAME), arguments: z.string() }) });
+const openAiInputPart = z.discriminatedUnion('type', [
+  strict({ type: z.literal('input_text'), text: z.string() }),
+  strict({ type: z.literal('input_image'), image_url: z.string(), detail: imageDetail.optional() }),
+  strict({ type: z.literal('input_file'), file_data: z.string(), filename: z.string().max(256).optional() }),
+  strict({ type: z.literal('output_text'), text: z.string() }),
+  strict({ type: z.literal('refusal'), refusal: z.string() })]);
+const openAiInputItem = z.discriminatedUnion('type', [
+  // A message may leave out its `type`, as the API allows.
+  strict({ type: z.literal('message').optional(), role: z.enum(['user', 'assistant', 'system', 'developer']),
+    content: z.union([z.string(), z.array(openAiInputPart)]) }),
+  strict({ type: z.literal('function_call'), call_id: z.string().max(256), name: z.string().regex(TOOL_NAME), arguments: z.string() }),
+  strict({ type: z.literal('function_call_output'), call_id: z.string().max(256), output: z.string() })]);
 const openAiChatTool = strict({ type: z.literal('function'), function: strict({ name: z.string().regex(TOOL_NAME),
   description: z.string().max(8192).optional(), parameters: anyObject.optional(), strict: z.boolean().nullable().optional() }) });
 const openAiChatFormat = z.union([strict({ type: z.literal('text') }), strict({ type: z.literal('json_object') }),
   strict({ type: z.literal('json_schema'), json_schema: strict({ name: z.string().regex(TOOL_NAME), description: z.string().max(8192).optional(),
     schema: anyObject.optional(), strict: z.boolean().nullable().optional() }) })]);
 const openAiChatMessage = strict({ role: z.enum(['system', 'developer', 'user', 'assistant', 'tool']),
-  content: z.union([z.string(), z.array(anyObject)]).nullable().optional(), name: z.string().max(64).optional(),
-  tool_calls: z.array(anyObject).optional(), tool_call_id: z.string().max(256).optional(), refusal: z.string().nullable().optional() });
+  content: z.union([z.string(), z.array(openAiChatPart)]).nullable().optional(), name: z.string().max(64).optional(),
+  tool_calls: z.array(openAiChatToolCall).optional(), tool_call_id: z.string().max(256).optional(), refusal: z.string().nullable().optional() });
 const openAiResponsesTool = strict({ type: z.literal('function'), name: z.string().regex(TOOL_NAME),
   description: z.string().max(8192).nullable().optional(), parameters: anyObject.nullable().optional(), strict: z.boolean().nullable().optional() });
 const openAiResponsesFormat = z.union([strict({ type: z.literal('text') }), strict({ type: z.literal('json_object') }),
@@ -142,7 +168,7 @@ const OPENAI_OPERATIONS: readonly ConnectorOperation[] = [
     // A stored completion stays readable at the provider. Chat completions do not store by default.
     store: z.literal(false).optional(), stream: z.literal(false).optional() }) } },
   { id: 'responses.create', method: 'POST', path: '/v1/responses', body: { kind: 'json', schema: strict({
-    model: openAiModel, input: z.union([z.string(), z.array(anyObject).min(1)]),
+    model: openAiModel, input: z.union([z.string(), z.array(openAiInputItem).min(1)]),
     instructions: z.string().nullable().optional(), max_output_tokens: z.number().int().positive().nullable().optional(),
     temperature: finite.nullable().optional(), top_p: finite.nullable().optional(),
     tools: z.array(openAiResponsesTool).max(128).optional(),
@@ -158,11 +184,30 @@ const OPENAI_OPERATIONS: readonly ConnectorOperation[] = [
 
 // Anthropic (https://docs.claude.com/en/api). Custom tools only: no server tools, MCP servers or
 // containers. No `anthropic-beta` header, which is what unlocks the Files and other beta APIs.
+// No content block reads a stored file either: a `file` source is refused here, not left to the
+// missing header. Images and documents come inline or by URL.
 // No message batches: /v1/messages/batches is a multiplexer and is refused.
 const ANTHROPIC_ID = /^[A-Za-z0-9._:@-]{1,128}$/;
 const anthropicModel = z.string().regex(ANTHROPIC_ID);
-const anthropicMessages = z.array(strict({ role: z.enum(['user', 'assistant']), content: z.union([z.string(), z.array(anyObject).min(1)]) })).min(1);
-const anthropicSystem = z.union([z.string(), z.array(anyObject)]);
+const anthropicCache = strict({ type: z.literal('ephemeral'), ttl: z.enum(['5m', '1h']).optional() }).nullable().optional();
+const anthropicText = strict({ type: z.literal('text'), text: z.string(), cache_control: anthropicCache });
+const anthropicImage = strict({ type: z.literal('image'), cache_control: anthropicCache, source: z.discriminatedUnion('type', [
+  strict({ type: z.literal('base64'), media_type: z.enum(['image/jpeg', 'image/png', 'image/gif', 'image/webp']), data: z.string() }),
+  strict({ type: z.literal('url'), url: z.string() })]) });
+const anthropicDocument = strict({ type: z.literal('document'), cache_control: anthropicCache, title: z.string().max(500).nullable().optional(),
+  context: z.string().nullable().optional(), citations: strict({ enabled: z.boolean() }).optional(), source: z.discriminatedUnion('type', [
+    strict({ type: z.literal('base64'), media_type: z.literal('application/pdf'), data: z.string() }),
+    strict({ type: z.literal('text'), media_type: z.literal('text/plain'), data: z.string() }),
+    strict({ type: z.literal('url'), url: z.string() })]) });
+const anthropicBlock = z.discriminatedUnion('type', [anthropicText, anthropicImage, anthropicDocument,
+  strict({ type: z.literal('tool_use'), id: z.string().max(256), name: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/), input: anyObject,
+    cache_control: anthropicCache }),
+  strict({ type: z.literal('tool_result'), tool_use_id: z.string().max(256), is_error: z.boolean().optional(), cache_control: anthropicCache,
+    content: z.union([z.string(), z.array(z.discriminatedUnion('type', [anthropicText, anthropicImage]))]).optional() }),
+  strict({ type: z.literal('thinking'), thinking: z.string(), signature: z.string() }),
+  strict({ type: z.literal('redacted_thinking'), data: z.string() })]);
+const anthropicMessages = z.array(strict({ role: z.enum(['user', 'assistant']), content: z.union([z.string(), z.array(anthropicBlock).min(1)]) })).min(1);
+const anthropicSystem = z.union([z.string(), z.array(anthropicText)]);
 const anthropicTool = strict({ name: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/), description: z.string().max(65536).optional(),
   input_schema: anyObject, type: z.literal('custom').optional(),
   cache_control: strict({ type: z.literal('ephemeral'), ttl: z.enum(['5m', '1h']).optional() }).nullable().optional() });
@@ -214,15 +259,36 @@ const STRIPE_OPERATIONS: readonly ConnectorOperation[] = [
 const STRIPE_HEADERS = { accept: JSON_ACCEPT, 'stripe-version': /^[0-9]{4}-[0-9]{2}-[0-9]{2}(?:\.[a-z]+)?$/, 'idempotency-key': /^[A-Za-z0-9_-]{1,255}$/ };
 
 // Slack (https://docs.slack.dev/reference/methods). Conversation and user ids only. A message
-// cannot set its own username or icon, act as the user, or carry app metadata.
+// cannot set its own username or icon, act as the user, or carry app metadata. Blocks are
+// header, section, divider, context and image blocks, with images by URL: a `slack_file` or a
+// remote file block names a file stored in the workspace, and an accessory or action is
+// interactive. Attachments carry the legacy text fields only, with no blocks or actions.
 const SLACK_CHANNEL = /^[CDG][A-Z0-9]{8,12}$/;
 const SLACK_USER = /^[UW][A-Z0-9]{8,12}$/;
 const SLACK_TS = /^[0-9]{10}\.[0-9]{6}$/;
 const SLACK_BOOL = /^(?:true|false|0|1)$/;
+const slackPlainText = strict({ type: z.literal('plain_text'), text: z.string(), emoji: z.boolean().optional() });
+const slackMrkdwn = strict({ type: z.literal('mrkdwn'), text: z.string(), verbatim: z.boolean().optional() });
+const slackTextObject = z.discriminatedUnion('type', [slackPlainText, slackMrkdwn]);
+const slackImageUrl = { image_url: z.string(), alt_text: z.string() };
+const slackBlockId = z.string().max(255).optional();
+const slackBlock = z.discriminatedUnion('type', [
+  strict({ type: z.literal('header'), block_id: slackBlockId, text: slackPlainText }),
+  strict({ type: z.literal('section'), block_id: slackBlockId, text: slackTextObject.optional(), fields: z.array(slackTextObject).max(10).optional() }),
+  strict({ type: z.literal('divider'), block_id: slackBlockId }),
+  strict({ type: z.literal('context'), block_id: slackBlockId,
+    elements: z.array(z.discriminatedUnion('type', [slackPlainText, slackMrkdwn, strict({ type: z.literal('image'), ...slackImageUrl })])).min(1).max(10) }),
+  strict({ type: z.literal('image'), block_id: slackBlockId, ...slackImageUrl, title: slackPlainText.optional() })]);
+const slackAttachment = strict({ fallback: z.string().optional(), color: z.string().max(32).optional(), pretext: z.string().optional(),
+  author_name: z.string().optional(), author_link: z.string().optional(), author_icon: z.string().optional(), title: z.string().optional(),
+  title_link: z.string().optional(), text: z.string().optional(), image_url: z.string().optional(), thumb_url: z.string().optional(),
+  footer: z.string().optional(), footer_icon: z.string().optional(), ts: z.number().int().nonnegative().optional(),
+  fields: z.array(strict({ title: z.string().optional(), value: z.string().optional(), short: z.boolean().optional() })).optional(),
+  mrkdwn_in: z.array(z.enum(['pretext', 'text', 'fields'])).max(3).optional() });
 const SLACK_OPERATIONS: readonly ConnectorOperation[] = [
   { id: 'chat.postMessage', method: 'POST', path: '/api/chat.postMessage', body: { kind: 'json', schema: strict({
-    channel: z.string().regex(SLACK_CHANNEL), text: z.string().max(40000).optional(), blocks: z.array(anyObject).max(50).optional(),
-    attachments: z.array(anyObject).max(100).optional(), thread_ts: z.string().regex(SLACK_TS).optional(),
+    channel: z.string().regex(SLACK_CHANNEL), text: z.string().max(40000).optional(), blocks: z.array(slackBlock).max(50).optional(),
+    attachments: z.array(slackAttachment).max(100).optional(), thread_ts: z.string().regex(SLACK_TS).optional(),
     reply_broadcast: z.boolean().optional(), mrkdwn: z.boolean().optional(), unfurl_links: z.boolean().optional(),
     unfurl_media: z.boolean().optional(), parse: z.enum(['full', 'none']).optional(), link_names: z.boolean().optional(),
   }).refine((message) => message.text !== undefined || message.blocks !== undefined || message.attachments !== undefined) } },
