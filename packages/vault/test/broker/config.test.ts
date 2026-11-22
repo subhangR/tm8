@@ -4,7 +4,7 @@ import { relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { VAULT_OPERATIONS, VAULT_OUTPUT_SCHEMAS } from '@tm8/contract';
 import { BROKER_ENV_KNOBS, BrokerConfigError, assertBrokerConfig, loadBrokerConfig } from '../../src/broker/config.js';
-import { BrokerRateLimiter, BROKER_RATE_LIMITS, BROKER_SHARED_LIMITS, kdfCost, rateClass } from '../../src/broker/rate-limit.js';
+import { BrokerRateLimiter, BROKER_MEMBER_SHARES, BROKER_RATE_LIMITS, BROKER_SHARED_LIMITS, kdfCost, rateClass } from '../../src/broker/rate-limit.js';
 import { parseVaultCookies, serializeVaultCookie } from '../../src/broker/dispatcher.js';
 import { RECOVERY_CODE_COUNT } from '../../src/owner-auth/codes.js';
 import { FixedClock, agentOf, makeCaller, testCaller } from '../support/kit.js';
@@ -172,20 +172,62 @@ describe('cookies and token buckets', () => {
     const clock = new FixedClock();
     const limiter = new BrokerRateLimiter(clock);
     const { capacity, refillPerSecond } = BROKER_SHARED_LIMITS.kdf;
-    limiter.takeShared('kdf', RECOVERY_CODE_COUNT);
-    for (let n = RECOVERY_CODE_COUNT; n < capacity; n += 1) limiter.takeShared('kdf', 1);
+    // Different members, so no member's own share is what refuses here.
+    const person = (n: number) => makeCaller({ memberId: `00000000-0000-4000-8000-${String(200 + n).padStart(12, '0')}` });
+    limiter.takeShared(person(0), 'kdf', RECOVERY_CODE_COUNT);
+    for (let n = RECOVERY_CODE_COUNT; n < capacity; n += 1) limiter.takeShared(person(n), 'kdf', 1);
     let refusal: unknown;
-    try { limiter.takeShared('kdf', 1); } catch (error) { refusal = error; }
+    try { limiter.takeShared(person(capacity), 'kdf', 1); } catch (error) { refusal = error; }
     expect(refusal).toMatchObject({ code: 'rate_limited', extra: { retryAfterSeconds: Math.ceil(1 / refillPerSecond) } });
     // A batch waits for the whole of its cost.
     clock.advanceSeconds((RECOVERY_CODE_COUNT - 1) / refillPerSecond);
-    expect(() => limiter.takeShared('kdf', RECOVERY_CODE_COUNT)).toThrow('rate_limited');
+    expect(() => limiter.takeShared(person(capacity + 1), 'kdf', RECOVERY_CODE_COUNT)).toThrow('rate_limited');
     clock.advanceSeconds(2 / refillPerSecond);
-    expect(() => limiter.takeShared('kdf', RECOVERY_CODE_COUNT)).not.toThrow();
-    for (const cost of [0, -1, 1.5, Number.NaN, capacity + 1]) expect(() => limiter.takeShared('kdf', cost), String(cost)).toThrow('invalid rate cost');
+    expect(() => limiter.takeShared(person(capacity + 1), 'kdf', RECOVERY_CODE_COUNT)).not.toThrow();
+    for (const cost of [0, -1, 1.5, Number.NaN, BROKER_MEMBER_SHARES.kdf.capacity + 1]) {
+      expect(() => limiter.takeShared(testCaller, 'kdf', cost), String(cost)).toThrow('invalid rate cost');
+    }
     expect(() => new BrokerRateLimiter(clock, BROKER_RATE_LIMITS, 100_000, { kdf: { capacity: RECOVERY_CODE_COUNT - 1, refillPerSecond: 1 } }))
       .toThrow('invalid rate limit');
     expect(() => new BrokerRateLimiter(clock, BROKER_RATE_LIMITS, 100_000, { kdf: { capacity: 20, refillPerSecond: 0 } })).toThrow('invalid rate limit');
+  });
+  it("builder-side review C2-1: one member's share of the Argon2id budget leaves the rest of it to every other member", () => {
+    const share = BROKER_MEMBER_SHARES.kdf;
+    const budget = BROKER_SHARED_LIMITS.kdf;
+    expect(share.capacity).toBeLessThan(budget.capacity);
+    expect(share.refillPerSecond).toBeLessThan(budget.refillPerSecond);
+    const clock = new FixedClock();
+    const limiter = new BrokerRateLimiter(clock);
+    const person = (n: number) => makeCaller({ memberId: `00000000-0000-4000-8000-${String(300 + n).padStart(12, '0')}` });
+    // A batch of recovery codes is the whole of one member's share.
+    limiter.takeShared(testCaller, 'kdf', RECOVERY_CODE_COUNT);
+    let refusal: unknown;
+    try { limiter.takeShared(testCaller, 'kdf', 1); } catch (error) { refusal = error; }
+    expect(refusal).toMatchObject({ code: 'rate_limited', extra: { retryAfterSeconds: Math.ceil(1 / share.refillPerSecond) } });
+    // Refusals cost the budget nothing, so however often the member retries, everyone else keeps the rest.
+    for (let n = 0; n < 50; n += 1) expect(() => limiter.takeShared(testCaller, 'kdf', 1)).toThrow('rate_limited');
+    const rest = budget.capacity - share.capacity;
+    for (let n = 0; n < rest; n += 1) limiter.takeShared(person(n), 'kdf', 1);
+    expect(() => limiter.takeShared(person(rest), 'kdf', 1)).toThrow('rate_limited');
+    // Over ten minutes of retrying without pause, the member gets its share's rate and everyone else the remainder.
+    const fresh = new BrokerRateLimiter(clock);
+    let mine = 0;
+    let theirs = 0;
+    const seconds = 600;
+    for (let second = 0; second < seconds; second += 1) {
+      for (;;) { try { fresh.takeShared(testCaller, 'kdf', 1); mine += 1; } catch { break; } }
+      for (;;) { try { fresh.takeShared(person(1000 + second), 'kdf', 1); theirs += 1; } catch { break; } }
+      clock.advanceSeconds(1);
+    }
+    expect(mine).toBeLessThanOrEqual(share.capacity + Math.ceil(seconds * share.refillPerSecond));
+    expect(theirs).toBeGreaterThanOrEqual(rest + Math.floor(seconds * (budget.refillPerSecond - share.refillPerSecond)) - 1);
+    // A share that is not below its budget in burst and in rate, or cannot hold a batch, is refused.
+    const shares = (capacity: number, refillPerSecond: number) => ({ kdf: { capacity, refillPerSecond } });
+    for (const [capacity, refillPerSecond] of [[budget.capacity, share.refillPerSecond], [share.capacity, budget.refillPerSecond],
+      [RECOVERY_CODE_COUNT - 1, share.refillPerSecond], [share.capacity, 0]] as const) {
+      expect(() => new BrokerRateLimiter(clock, BROKER_RATE_LIMITS, 100_000, BROKER_SHARED_LIMITS, shares(capacity, refillPerSecond)),
+        `${capacity} ${refillPerSecond}`).toThrow('invalid rate limit');
+    }
   });
   it('review addendum 2, C2: only the two charged operations reach Argon2id through the API', () => {
     const src = fileURLToPath(new URL('../../src', import.meta.url));

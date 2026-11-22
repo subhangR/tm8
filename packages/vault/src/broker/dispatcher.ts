@@ -194,8 +194,9 @@ export function createBrokerDispatcher(deps: BrokerDependencies): (request: Brok
         if (count >= config.preReview.maxItemsPerMember) throw VaultError.reason('pre_review_limit');
       }
       // Review addendum 2, C2: charged after every authority check, so a refused request costs the shared budget nothing.
+      // The caller's share of it is charged with it (builder-side review C2-1).
       const kdf = kdfCost(row.name, input);
-      if (kdf > 0) limiter.takeShared('kdf', kdf);
+      if (kdf > 0) limiter.takeShared(request.caller, 'kdf', kdf);
       if (request.signal.aborted) throw VaultError.reason('vault_unavailable');
       const ctx: HandlerContext = { op: row.name, requestId: request.requestId, caller: request.caller, actor: actorOf(request.caller),
         config, clock, store, auth, audit, components, ownerSession, stepUp, cookies, signal: request.signal };

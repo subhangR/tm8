@@ -10,7 +10,7 @@ import { signAttestation } from '../../src/relay/attestation.js';
 import { BROKER_BODY_LIMITS, createBrokerServer } from '../../src/broker/server.js';
 import { startBroker } from '../../src/broker/start.js';
 import { buildCanarySet } from '../../src/canary/index.js';
-import { BROKER_RATE_LIMITS, BROKER_SHARED_LIMITS } from '../../src/broker/rate-limit.js';
+import { BROKER_MEMBER_SHARES, BROKER_RATE_LIMITS, BROKER_SHARED_LIMITS } from '../../src/broker/rate-limit.js';
 import { RECOVERY_CODE_COUNT } from '../../src/owner-auth/codes.js';
 import { RecordingAlertSink, agentOf, fakeStepUpProof, makeCaller, newLogin, otherCaller, seedItem, testBroker, testCaller } from '../support/kit.js';
 import { ID, ORIGIN, harness, stubHandlers, validInput, withoutRequestId, type Harness } from './support.js';
@@ -211,6 +211,23 @@ describe('authority, modes and output boundary', () => {
     h.clock.advanceSeconds(2 / refillPerSecond);
     expect((await h.send('vault.recovery.codes.create')).status).toBe(200);
     expect((await h.send('vault.recovery.codes.create')).status).toBe(429);
+  });
+  it("builder-side review C2-1: one member's Argon2id work leaves the rest of the broker's budget to every other member", async () => {
+    const h = await setup({ realCore: false });
+    const share = BROKER_MEMBER_SHARES.kdf;
+    const { capacity } = BROKER_SHARED_LIMITS.kdf;
+    // One member creates recovery codes, which is its whole share, and keeps asking for more.
+    expect((await h.send('vault.recovery.codes.create')).status).toBe(200);
+    for (let n = 0; n < 4; n += 1) expect((await h.send('vault.recovery.codes.create')).status).toBe(429);
+    const refused = await h.send('vault.passkeys.registerBegin');
+    expect(refused.status).toBe(429);
+    expect(refused.headers['retry-after']).toBe(String(Math.ceil(1 / share.refillPerSecond)));
+    // Every other member, each at its own address, still has the rest of the budget.
+    const person = (n: number) => makeCaller({ memberId: `00000000-0000-4000-8000-${String(400 + n).padStart(12, '0')}`, ip: `192.0.2.${50 + n}` });
+    for (let n = 0; n < capacity - share.capacity; n += 1) {
+      expect((await h.send('vault.passkeys.registerBegin', { caller: person(n) })).status, String(n)).toBe(200);
+    }
+    expect((await h.send('vault.passkeys.registerBegin', { caller: person(capacity) })).status).toBe(429);
   });
   it('rejects a schema-invalid result before emitting any of its fields', async () => {
     const handlers = stubHandlers();
