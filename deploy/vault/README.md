@@ -157,8 +157,8 @@ it only over mutual TLS:
 
 | Side | Knobs |
 | --- | --- |
-| Relay (tm8 server) | `TM8_VAULT_MODE`, `TM8_VAULT_BROKER_URL` (an https origin), `TM8_VAULT_RELAY_TLS_KEY_FILE`, `TM8_VAULT_RELAY_TLS_CERT_FILE`, `TM8_VAULT_RELAY_TLS_CA_FILE`, `TM8_VAULT_RELAY_PRIVATE_KEY_FILE` |
-| Broker | `TM8_VAULT_BROKER_MTLS_LISTEN`, `TM8_VAULT_BROKER_TLS_KEY_FILE`, `TM8_VAULT_BROKER_TLS_CERT_FILE`, `TM8_VAULT_BROKER_TLS_CA_FILE`, `TM8_VAULT_RELAY_CLIENT_CERT_SHA256`, `TM8_VAULT_RELAY_PUBLIC_KEY_FILE` |
+| Relay (tm8 server) | `TM8_VAULT_MODE`, `TM8_VAULT_BROKER_URL` (an https origin), `TM8_VAULT_RELAY_TLS_KEY_FILE`, `TM8_VAULT_RELAY_TLS_CERT_FILE`, `TM8_VAULT_RELAY_TLS_CA_FILE`, `TM8_VAULT_RELAY_PRIVATE_KEY_FILE`, `TM8_VAULT_AGENT_RUN_AS`, `TM8_VAULT_RETIRED_KEY_SHA256` |
+| Broker | `TM8_VAULT_BROKER_MTLS_LISTEN`, `TM8_VAULT_BROKER_TLS_KEY_FILE`, `TM8_VAULT_BROKER_TLS_CERT_FILE`, `TM8_VAULT_BROKER_TLS_CA_FILE`, `TM8_VAULT_RELAY_CLIENT_CERT_SHA256`, `TM8_VAULT_RELAY_PUBLIC_KEY_FILE`, `TM8_VAULT_RETIRED_KEY_SHA256` |
 
 - The relay signs every request with an Ed25519 key (`TM8_VAULT_RELAY_PRIVATE_KEY_FILE`).
   The broker holds only the public half (`TM8_VAULT_RELAY_PUBLIC_KEY_FILE`).
@@ -200,12 +200,12 @@ own sandbox (codex `--sandbox`). That sandbox runs as the same user, depends on 
 does not cover terminals, and does not work on every node (`spawn/sandbox-probe.ts`). The keys
 cannot rely on it.
 
-Two controls ship now. Neither one is the boundary itself.
+Five controls ship now. None of them is the boundary itself.
 
 - **The relay refuses `production`.** Boot stops with
   `vault relay: TM8_VAULT_MODE production is refused (review F03): ...`. It comes after the
   checks that exactly one of the socket and the URL is set and that production uses the URL,
-  and before any key file is opened. No knob lifts it. Only a
+  after the agent-boundary checks below, and before any key file is opened. No knob lifts it. Only a
   code change in `packages/server/src/vault/config.ts` does, and only after all of these:
   1. Agent execution runs outside the key holder's reach, behind an OS or service boundary that
      the agents cannot change. The open owner decisions are D1 (the docker group), D2 (which
@@ -244,6 +244,56 @@ Two controls ship now. Neither one is the boundary itself.
   - **Rotation.** The broker accepts exactly one pin. Issue the new relay certificate, set the
     broker's pin to it and restart the broker, then restart the relay with the new certificate.
     The relay is refused in between, so plan a short outage.
+- **The relay checks the agent boundary at boot (design doc `01a1fe13`, D5: checks R1 to R8).**
+  `TM8_VAULT_AGENT_RUN_AS` names where agent sessions run, apart from this server:
+  `uid:<uid>`, `uids:<first>-<last>` or `gvisor:<first>-<last>`, in decimal uids from 1 to
+  4294967294. Which form is the owner's decision D2, so it is a knob and not a constant.
+  - Production refuses to boot without it. In `dev` and `pre_review` it is optional, and
+    without it boot is unchanged. A malformed value refuses in every mode but `off`.
+  - With it set, boot refuses in every mode on any failure, and names each one:
+    `vault relay: refused (review F03 agent boundary): R3 TM8_VAULT_AGENT_RUN_AS cannot be met while ...`.
+    The files checked are the signing key and, over mutual TLS, the TLS key, certificate and CA.
+  - On a host shaped like today's (the server in the docker group, `/proc` without `hidepid`,
+    cores piped to a program), setting it stops boot. Leave it unset there.
+
+  | Check | Refuses when |
+  | --- | --- |
+  | R1 | this server's uid is in the agent range, or an agent uid owns one of the files |
+  | R2 | a file's path is not canonical (a link, `.` or `..` in it), or the file or any directory up to `/` is owned by an agent uid or writable by group or others; a sticky directory is allowed |
+  | R3 | this server is in the docker group, or can open a container daemon socket: docker, containerd, podman, CRI-O or BuildKit, under `/run` or `/var/run` |
+  | R4 | an agent could hold a group that reaches root, the journal, the vault or this server (`FORBIDDEN_AGENT_GROUPS` in `packages/server/src/vault/boundary.ts`, and every group this server is in): as its private group, its passwd primary group, or a listed member |
+  | R5 | Yama `ptrace_scope` is 0; or, for `uid:` and `uids:`, a proc mount this process sees lacks `hidepid=invisible` (or `2`, `4`, `ptraceable`) or names an agent group in `gid=`. A gVisor sandbox has its own `/proc`, so that half is skipped |
+  | R6 | the core limit is not 0 soft and hard (`LimitCORE=0`), or `kernel.core_pattern` pipes cores to a program, which ignores the limit |
+  | R7 | a relay key is on `TM8_VAULT_RETIRED_KEY_SHA256` (next item) |
+  | R8 | over mutual TLS: the certificate does not match the TLS key, is a CA, or is outside its validity, or the CA file is not exactly one PEM block holding a CA certificate |
+
+  The order is the knob's form, each file's `stat`, R1 to R6, the production refusal, the reads,
+  R7, then R8. An unreadable or malformed host file fails its check.
+  - **A pass is not the boundary.** These are this process's reads of its own host, once, at
+    boot. A pass does not lift the production refusal.
+  - **Not checked.** R9, the signer socket's peer, waits on decision D3. The spawner does not
+    read the knob yet (design doc N1), so nothing makes agents run as it. Users and groups only
+    NSS knows (N2), ACLs beyond the group mask, LSM rules and other mount namespaces are not seen.
+    R4 assumes an agent's private group has its uid as gid. A change after boot is not seen: the
+    design's 10-minute re-check is a follow-up. A file can still change between its `stat` and its
+    read; R2 is what keeps agents from changing it.
+- **Retired keys (checks R7 and B2).** `TM8_VAULT_RETIRED_KEY_SHA256` lists the SHA-256 of each
+  retired key's public half as DER SubjectPublicKeyInfo: up to 256 entries, comma-separated, each
+  64 hex digits or 32 colon-separated pairs. Set the same list on both sides.
+  - The relay refuses to load a listed signing key or TLS client key. With a non-empty list it
+    parses the TLS key at boot, and refuses one it cannot parse.
+  - The broker refuses a listed relay public key at start, and closes an mTLS connection whose
+    certificate carries a listed key.
+  - A malformed list refuses in every mode but `off`.
+  - Compute an entry with `openssl pkey -in relay.key -pubout -outform DER | sha256sum`, or
+    `openssl pkey -pubin -in relay.pub -outform DER | sha256sum`. A fingerprint is not secret.
+  - The list ships empty. No key has been rotated or listed.
+- **The broker checks its own host at start (check B3).** It may not be in the docker group or
+  able to open a container daemon socket (the R3 list). Production refuses to start with
+  `vault broker: refused (host boundary: docker_group, container_socket)`; `dev` and
+  `pre_review` log `vault_broker_host_boundary` and run. The core-dump and swap half of B3 is the
+  memory check in *Plaintext in broker memory*. Groups only NSS knows, a daemon on another path
+  or on TCP, and sudo grants are not seen.
 
 ### Database
 
@@ -347,6 +397,9 @@ Two controls ship now. Neither one is the boundary itself.
 
 - Run under a dedicated non-login uid. Share the `tm8-vault` group only with the fill
   worker; agents and the tm8 server uid must not join it.
+- Keep the broker out of the docker group and away from every container daemon socket. In
+  production it checks both at start and refuses to run otherwise (check B3, *Relay key
+  isolation* above).
 - Set:
   - `LimitCORE=0` and `MemorySwapMax=0`. In production the broker checks both at start and
     refuses to run without them (see *Plaintext in broker memory* below);
@@ -493,9 +546,12 @@ on `01a1fa87` holds the full set with severities. The headline items:
   other modes only log it.
 - Relay key isolation (review F03). Agent sessions run under the tm8 server's uid, so
   `chmod 600` does not keep the relay's signing key or TLS key from them. The relay now refuses
-  `production`, and the broker pins the relay's certificate (§5, *Relay key isolation*).
-  Still open:
-  - the boundary itself, its reach checks, and the staging cross-member forgery test;
+  `production`, the broker pins the relay's certificate, both sides refuse a retired key, and both
+  check their host at start: the relay R1 to R8 when `TM8_VAULT_AGENT_RUN_AS` is set, the broker
+  B3 (§5, *Relay key isolation*). Still open:
+  - the boundary itself, its reach checks, and the staging cross-member forgery test. The boot
+    checks are point-in-time reads of a host's configuration, not proof of the boundary, and R9
+    and the periodic re-check are not built;
   - owner decisions D1-D9 (design doc `01a1fe13`);
   - agents can read a `pre_review` relay's keys today. That relay holds test secrets only, and
     its keys must be rotated before any production cutover;

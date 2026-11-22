@@ -12,6 +12,7 @@ import { VAULT_OPERATIONS } from '@tm8/contract';
 import { BROKER_ENV_KNOBS, BrokerConfigError } from '../../src/broker/config.js';
 import { AUDIT_GENESIS_HASH, checkpointSigningInput } from '../../src/audit/chain.js';
 import { VaultAuditGate } from '../../src/audit/gate.js';
+import { HostBoundaryError } from '../../src/broker/host-boundary.js';
 import { HostMemoryError } from '../../src/broker/host-memory.js';
 import { BROKER_RUNTIME_ENV_KNOBS, auditMaintenance, composeBroker, createVaultHandlers, failureMessage, type ComposedBroker } from '../../src/broker/main.js';
 import { SYSTEM_ACTOR, VaultError, actorOf, systemClock, type AuditVerification, type VaultAlert, type VaultTx } from '../../src/core-types.js';
@@ -23,7 +24,7 @@ import { publicKeySha256 } from '../../src/relay/retired-keys.js';
 import { OWNER_ID, SPACE_A, fakeSecret, newLogin, otherCaller, scopeOf, testCaller } from '../support/kit.js';
 import { json, keyName, keyVersionName, loopbackSuite, tokens } from '../gcp/fake.js';
 import { PG_ENABLED, PG_REASON, pgHarness, type PgHarness } from '../store/pg-harness.js';
-import { exposedHost, hardenedHost } from '../support/host-memory.js';
+import { DOCKER_SOCKETS, exposedHost, hardenedHost, syntheticHost } from '../support/host-memory.js';
 
 const dirs: string[] = [];
 const brokers: ComposedBroker[] = [];
@@ -225,6 +226,45 @@ describe('broker composition root: static refusals', () => {
     expect(await readdir(dir)).toEqual([]);
   });
 
+  it.each([
+    ['in the docker group', { groups: [996, 999] }, ['docker_group'], { dockerGroup: true, containerSockets: [] }],
+    ['able to open a container socket', { sockets: ['/run/containerd/containerd.sock'] }, ['container_socket'],
+      { dockerGroup: false, containerSockets: ['/run/containerd/containerd.sock'] }],
+    ['in the docker group with its socket open', { groups: [999], sockets: DOCKER_SOCKETS }, ['docker_group', 'container_socket'],
+      { dockerGroup: true, containerSockets: [...DOCKER_SOCKETS] }],
+  ] as const)('review F03, B3: production refuses a broker %s, after the memory check and before it reads a key or calls KMS, a database or the network', async (_name, shape, failures, facts) => {
+    const dir = await temporary();
+    const host = syntheticHost({}, shape);
+    const records: Record<string, unknown>[] = [];
+    // The F05 env above: every prerequisite met, and a host whose memory check passes.
+    const error = await composeBroker(preReviewEnv(dir, { TM8_VAULT_MODE: 'production', TM8_VAULT_REVIEW_GATE: 'passed',
+      TM8_VAULT_KMS_KIND: 'gcp-kms', TM8_VAULT_AUDIT_SINK: 'gcs', TM8_VAULT_GCP_CHECKPOINT_KEY_VERSION: keyVersionName,
+      TM8_VAULT_LOCAL_KEK_FILE: undefined }), { hostProc: host.proc, log: (record) => records.push(record) })
+      .then(() => null, (reason: unknown) => reason);
+    expect(error).toBeInstanceOf(HostBoundaryError);
+    expect(failureMessage(error)).toBe(`vault broker: refused (host boundary: ${failures.join(', ')})`);
+    expect(records).toEqual([
+      { event: 'vault_broker_host_memory', ok: true, failures: [], coreFilter: 0, coreLimit: { soft: '0', hard: '0' }, corePattern: 'file', swapAreas: 0, swapMax: '0' },
+      { event: 'vault_broker_host_boundary', ok: false, failures, ...facts },
+    ]);
+    expect(host.writes).toEqual([['/proc/self/coredump_filter', '0']]);
+    expect(await readdir(dir)).toEqual([]);
+  });
+
+  it('review F03, B3: dev and pre_review log a broker host that fails it, and go on to the next check', async () => {
+    for (const mode of ['dev', 'pre_review']) {
+      const dir = await temporary();
+      const records: Record<string, unknown>[] = [];
+      const error = await refusal(composeBroker(preReviewEnv(dir, { TM8_VAULT_MODE: mode, TM8_VAULT_DATABASE_URL: undefined }),
+        { hostProc: exposedHost().proc, log: (record) => records.push(record) }));
+      // The next check refused, so B3 did not.
+      expect(error.knob).toBe('TM8_VAULT_DATABASE_URL');
+      expect(records).toContainEqual({ event: 'vault_broker_host_boundary', ok: false, failures: ['docker_group', 'container_socket'],
+        dockerGroup: true, containerSockets: [...DOCKER_SOCKETS] });
+      expect(await readdir(dir)).toEqual([]);
+    }
+  });
+
   it('refuses a canary file that is not private, not text or has a short value, and never echoes it', async () => {
     const dir = await temporary();
     const decoy = ['vault', 'test', 'decoy', 'value', 'one'].join('-');
@@ -378,6 +418,9 @@ else describe('broker composition root over Postgres', () => {
     expect(host.writes).toEqual([['/proc/self/coredump_filter', '0']]);
     expect(records).toContainEqual(expect.objectContaining({ event: 'vault_broker_host_memory', ok: false,
       failures: ['core_limit', 'core_pattern', 'swap_limit'], coreFilter: 0 }));
+    // Review F03, B3: and on one where it is in the docker group and can open docker's socket.
+    expect(records).toContainEqual({ event: 'vault_broker_host_boundary', ok: false, failures: ['docker_group', 'container_socket'],
+      dockerGroup: true, containerSockets: [...DOCKER_SOCKETS] });
 
     expect(broker.databaseRole.dedicated).toBe(false);
     expect(records).toContainEqual({ event: 'vault_broker_database_role_not_dedicated', mode: 'pre_review' });

@@ -33,6 +33,7 @@ import type { VaultMode } from '../types.js';
 import { RelayAlertQueue } from './alerts.js';
 import { BrokerConfigError, loadBrokerConfig } from './config.js';
 import { createBrokerCoreHandlers } from './handlers/index.js';
+import { HostBoundaryError, checkHostBoundary } from './host-boundary.js';
 import { HostMemoryError, protectHostMemory, type HostProc } from './host-memory.js';
 import type { BrokerServer } from './server.js';
 import { startBroker } from './start.js';
@@ -336,6 +337,10 @@ export async function composeBroker(env: Env, options: {
   const host = protectHostMemory(options.hostProc);
   log({ event: 'vault_broker_host_memory', ok: host.failures.length === 0, failures: host.failures, ...host.facts });
   if (mode === 'production' && host.failures.length > 0) throw new HostMemoryError(host.failures);
+  // Review F03, B3: and that this process cannot drive a container daemon. Both are point-in-time reads.
+  const boundary = checkHostBoundary(options.hostProc);
+  log({ event: 'vault_broker_host_boundary', ok: boundary.failures.length === 0, failures: boundary.failures, ...boundary.facts });
+  if (mode === 'production' && boundary.failures.length > 0) throw new HostBoundaryError(boundary.failures);
   const connectionString = databaseUrl(env);
   const socketPath = path(env, 'TM8_VAULT_BROKER_SOCKET', DEFAULT_BROKER_SOCKET, 100);
   const relayPublicKeyFile = path(env, 'TM8_VAULT_RELAY_PUBLIC_KEY_FILE');
@@ -477,6 +482,7 @@ export function auditMaintenance(options: {
 export function failureMessage(error: unknown): string {
   if (error instanceof BrokerConfigError) return error.message;
   if (error instanceof HostMemoryError) return error.message;
+  if (error instanceof HostBoundaryError) return error.message;
   if (error instanceof VaultError) return `vault broker: refused (${error.reason ?? error.code})`;
   return 'vault broker: start failed';
 }

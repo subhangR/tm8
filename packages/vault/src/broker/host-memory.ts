@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, readFileSync, writeFileSync } from 'node:fs';
 
 /**
  * Keeps the broker's memory out of core dumps, and checks that the host will not write it to
@@ -23,10 +23,17 @@ import { readFileSync, writeFileSync } from 'node:fs';
  * the VM's memory. The deploy README lists the host checks for those.
  */
 
-/** What the check reads and writes; tests pass a synthetic one. Errors read as null or false. */
+/**
+ * What the host checks read and write (this one, and host-boundary.ts); tests pass a synthetic one.
+ * Errors read as null or false.
+ */
 export interface HostProc {
   read(path: string): string | null;
   write(path: string, value: string): boolean;
+  /** This process's supplementary groups and its effective gid. */
+  groups(): readonly number[] | null;
+  /** access(path, W_OK) for this process: for a socket, whether it may connect. */
+  canWrite(path: string): boolean;
 }
 
 export const realHostProc: HostProc = {
@@ -35,6 +42,13 @@ export const realHostProc: HostProc = {
   },
   write(path, value) {
     try { writeFileSync(path, value); return true; } catch { return false; }
+  },
+  groups() {
+    if (typeof process.getgroups !== 'function' || typeof process.getegid !== 'function') return null;
+    try { return [...new Set([...process.getgroups(), process.getegid()])]; } catch { return null; }
+  },
+  canWrite(path) {
+    try { accessSync(path, constants.W_OK); return true; } catch { return false; }
   },
 };
 
