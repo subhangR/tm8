@@ -20,10 +20,14 @@ export function projectDirName(name: string): string {
     .slice(0, 100);
 }
 
-/** The path a project with no folder gets, written with `~` for display. */
-export function projectHomeDisplayPath(name: string): string | null {
+/**
+ * The path a project with no folder gets: beneath `base` (the node's
+ * `projectsHome`, from a directory listing) when known, else written as `~/<dir>`.
+ */
+export function projectHomeDisplayPath(name: string, base?: string | null): string | null {
   const dir = projectDirName(name);
-  return dir ? `~/${dir}` : null;
+  if (!dir) return null;
+  return base ? `${base.replace(/\/+$/, '')}/${dir}` : `~/${dir}`;
 }
 
 /**

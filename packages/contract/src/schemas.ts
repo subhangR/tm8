@@ -3936,6 +3936,7 @@ export const ProjectDirectoryListingSchema: z.ZodType<ProjectDirectoryListing> =
   separator: z.enum(['/', '\\']),
   directories: z.array(ProjectDirectoryEntrySchema),
   truncated: z.boolean(),
+  projectsHome: z.string().min(1).optional(),
 }).strict();
 
 export const ProjectFileEntrySchema: z.ZodType<ProjectFileEntry> = z.object({

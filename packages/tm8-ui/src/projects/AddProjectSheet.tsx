@@ -125,11 +125,21 @@ export function AddProjectSheet(props: AddProjectSheetProps) {
 
   useEffect(() => () => { alive.current = false; }, []);
 
+  // The node's folder for new projects, so the default shown is the one the
+  // server creates (a service install's is not `~`). Unknown keeps `~/<name>`.
+  const [projectsHome, setProjectsHome] = useState<string | null>(null);
+  useEffect(() => {
+    props.port.directories().then(
+      (listing) => { if (alive.current) setProjectsHome(listing.projectsHome ?? null); },
+      () => {},
+    );
+  }, [props.port]);
+
   const validate = (): string | null => {
     if (!projectName.trim()) return 'Give the project a name.';
-    // An empty folder is the home default, `~/<name>`; the name must give one.
+    // An empty folder is the default, `<projects folder>/<name>`; the name must give one.
     if (draft.sourceKind === 'folder') {
-      return draft.workingDir.trim() || projectHomeDisplayPath(projectName)
+      return draft.workingDir.trim() || projectHomeDisplayPath(projectName, projectsHome)
         ? null
         : 'Use letters or digits in the name, or choose the folder this project lives in.';
     }
@@ -252,7 +262,7 @@ export function AddProjectSheet(props: AddProjectSheetProps) {
               nodeLabel={props.nodeLabel}
               githubMode="clone"
               uploadUnavailableReason={props.port.importFolder ? null : FOLDER_UPLOAD_UNAVAILABLE}
-              defaultWorkingDir={projectHomeDisplayPath(projectName)}
+              defaultWorkingDir={projectHomeDisplayPath(projectName, projectsHome)}
             />
             <p className="project-onboard__note">
               The project is added untrusted: agents ask for confirmation before running in it until a node admin

@@ -174,6 +174,9 @@ tm8_env_paths() {
       TM8_ENV_ENVFILE="/etc/tm8/$slot.env"
       TM8_ENV_DATA_DIR="/var/lib/tm8/$slot/data"
       TM8_ENV_PROJECT_DIR="/var/lib/tm8/$slot/workspace"
+      # Parent of new projects' folders. The run user's home is the checkout,
+      # which it cannot write and a redeploy replaces.
+      TM8_ENV_PROJECTS_HOME="/var/lib/tm8/$slot/projects"
       TM8_ENV_RUN_USER="${TM8_RUN_USER:-tm8}"
       ;;
     user)
@@ -182,6 +185,7 @@ tm8_env_paths() {
       TM8_ENV_ENVFILE="$clone/.env.$slot.local"
       TM8_ENV_DATA_DIR="$HOME/.tm8-$slot/data"
       TM8_ENV_PROJECT_DIR="$HOME/.tm8-$slot/workspace"
+      TM8_ENV_PROJECTS_HOME=""   # unset: new projects go in the user's home (~/<name>)
       TM8_ENV_RUN_USER="$(id -un)"
       ;;
     *)
@@ -189,7 +193,7 @@ tm8_env_paths() {
       return 2
       ;;
   esac
-  export TM8_ENV_CHECKOUT TM8_ENV_ENVFILE TM8_ENV_DATA_DIR TM8_ENV_PROJECT_DIR TM8_ENV_RUN_USER
+  export TM8_ENV_CHECKOUT TM8_ENV_ENVFILE TM8_ENV_DATA_DIR TM8_ENV_PROJECT_DIR TM8_ENV_PROJECTS_HOME TM8_ENV_RUN_USER
 }
 
 # Print the table. Kept next to the data so it cannot drift from it.
