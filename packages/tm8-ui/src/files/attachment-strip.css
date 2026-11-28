@@ -500,6 +500,11 @@
 .fn-picker {
   position: absolute;
   top: calc(100% + var(--pn-space-1));
+  /* project-folder-picker.css styles the modal `.fn-picker` with `inset: 0`.
+     Both sheets load together, so its `bottom: 0` leaked in here and pinned
+     the dropdown's bottom to its anchor's, collapsing the list to ~0px.
+     Reset it; attach-picker-css.test.ts keeps it reset. */
+  bottom: auto;
   left: 0;
   z-index: 60;
   width: min(320px, calc(100vw - 32px));
